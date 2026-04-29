@@ -31,6 +31,23 @@ export const updateCurrency = mutation({
   },
 });
 
+/** Actualiza el tema del usuario. */
+export const updateTheme = mutation({
+  args: {
+    theme: v.union(v.literal("light"), v.literal("dark"), v.literal("system")),
+  },
+  handler: async (ctx, { theme }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("No autenticado");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) throw new Error("Usuario no encontrado");
+    await ctx.db.patch(user._id, { theme, updatedAt: Date.now() });
+  },
+});
+
 // ─── Query interna: buscar usuario por clerkId ────────────────────────────────
 
 export const getByClerkId = query({

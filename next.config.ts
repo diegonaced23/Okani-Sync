@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import withSerwistInit from "@serwist/next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
@@ -10,8 +11,6 @@ const securityHeaders = [
 ];
 
 const baseConfig: NextConfig = {
-  // Turbopack explícito: evita el conflicto con plugins webpack en Next.js 16.
-  // Serwist (que usa webpack) solo se aplica en `next build`, no en `next dev`.
   turbopack: {},
   headers: async () => [{ source: "/(.*)", headers: securityHeaders }],
   images: {
@@ -22,14 +21,24 @@ const baseConfig: NextConfig = {
   },
 };
 
-// En producción envolvemos con Serwist para generar el Service Worker.
-// En desarrollo Turbopack no necesita webpack, y el SW está deshabilitado de todas formas.
 const withSerwist = withSerwistInit({
   swSrc: "src/app/sw.ts",
   swDest: "public/sw.js",
   disable: process.env.NODE_ENV === "development",
 });
 
-export default process.env.NODE_ENV === "production"
-  ? withSerwist(baseConfig)
-  : baseConfig;
+// En dev: config base sin webpack plugins
+// En prod: Serwist (SW) + Sentry (error tracking)
+const productionConfig = withSentryConfig(
+  withSerwist(baseConfig),
+  {
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+    // Solo sube source maps si la clave está configurada
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+    silent: true,
+    telemetry: false,
+  }
+);
+
+export default process.env.NODE_ENV === "production" ? productionConfig : baseConfig;

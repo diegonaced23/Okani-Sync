@@ -2,7 +2,8 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,10 +14,84 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Doc } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransferForm } from "@/components/transactions/TransferForm";
 import { currentMonth, formatMonth, formatCents } from "@/lib/money";
+
+// ─── Virtual list ─────────────────────────────────────────────────────────────
+
+const ITEM_HEIGHT = 65; // altura aproximada de cada TransactionItem en px
+
+function VirtualTransactionList({
+  transactions,
+  catMap,
+}: {
+  transactions: Doc<"transactions">[];
+  catMap: Record<string, string>;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: transactions.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ITEM_HEIGHT,
+    overscan: 5,
+  });
+
+  // Para listas cortas (< 30 items), renderizado normal es más fluido
+  if (transactions.length < 30) {
+    return (
+      <ul className="divide-y divide-border">
+        {transactions.map((tx) => (
+          <li key={tx._id}>
+            <TransactionItem
+              transaction={tx}
+              categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+            />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <div
+      ref={parentRef}
+      className="overflow-auto"
+      style={{ maxHeight: "60dvh" }}
+    >
+      <div
+        style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const tx = transactions[virtualRow.index];
+          return (
+            <div
+              key={tx._id}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+              className="border-b border-border"
+            >
+              <TransactionItem
+                transaction={tx}
+                categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 function shiftMonth(m: string, delta: number) {
   const [y, mo] = m.split("-").map(Number);
@@ -28,6 +103,7 @@ export default function TransaccionesPage() {
   const [month, setMonth] = useState(() => currentMonth());
   const [open, setOpen] = useState(false);
   const [txTab, setTxTab] = useState<"ingreso_gasto" | "transferencia">("ingreso_gasto");
+  const listRef = useRef<HTMLDivElement>(null);
 
   const transactions = useQuery(api.transactions.listByMonth, { month });
   const categories = useQuery(api.categories.list, {});
@@ -123,7 +199,7 @@ export default function TransaccionesPage() {
         </div>
       )}
 
-      {/* Lista */}
+      {/* Lista con virtual scroll para meses con muchas transacciones */}
       <div className="rounded-xl bg-card border border-border overflow-hidden">
         {isLoading ? (
           <div className="p-4 space-y-3">
@@ -136,16 +212,10 @@ export default function TransaccionesPage() {
             No hay transacciones en {formatMonth(month).toLowerCase()}.
           </p>
         ) : (
-          <ul className="divide-y divide-border">
-            {transactions!.map((tx) => (
-              <li key={tx._id}>
-                <TransactionItem
-                  transaction={tx}
-                  categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
-                />
-              </li>
-            ))}
-          </ul>
+          <VirtualTransactionList
+            transactions={transactions!}
+            catMap={catMap}
+          />
         )}
       </div>
     </div>

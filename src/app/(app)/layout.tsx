@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Header } from "@/components/layout/Header";
+import { AuthGuard } from "@/components/layout/AuthGuard";
 import { PushSubscriptionBanner } from "@/components/notifications/PushSubscriptionBanner";
 
 export default async function AppLayout({
@@ -22,7 +23,7 @@ export default async function AppLayout({
         <Header />
         <PushSubscriptionBanner />
         <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
-          {children}
+          <AuthGuard>{children}</AuthGuard>
         </main>
       </div>
 
