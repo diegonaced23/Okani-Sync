@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/ui/money-input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -118,8 +119,8 @@ export function CardForm({ onSuccess }: CardFormProps) {
 
         <div className="col-span-2 space-y-1.5">
           <Label htmlFor="card-limit">Cupo total</Label>
-          <Input id="card-limit" type="number" min="1" step="any" placeholder="5000000"
-            value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} required />
+          <MoneyInput id="card-limit" placeholder="5.000.000"
+            value={creditLimit} onChange={setCreditLimit} required />
         </div>
 
         <div className="space-y-1.5">

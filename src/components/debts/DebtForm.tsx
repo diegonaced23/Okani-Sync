@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -99,8 +101,8 @@ export function DebtForm({ onSuccess }: { onSuccess?: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="debt-amount">Monto original</Label>
-          <Input id="debt-amount" type="number" min="1" step="any" placeholder="0"
-            value={originalAmount} onChange={(e) => setOriginalAmount(e.target.value)} required />
+          <MoneyInput id="debt-amount" placeholder="0"
+            value={originalAmount} onChange={setOriginalAmount} required />
         </div>
         <div className="space-y-1.5">
           <Label>Moneda</Label>
@@ -121,21 +123,19 @@ export function DebtForm({ onSuccess }: { onSuccess?: () => void }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="debt-payment">Cuota mensual (opcional)</Label>
-          <Input id="debt-payment" type="number" min="0" step="any" placeholder="0"
-            value={monthlyPayment} onChange={(e) => setMonthlyPayment(e.target.value)} />
+          <MoneyInput id="debt-payment" placeholder="0"
+            value={monthlyPayment} onChange={setMonthlyPayment} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="debt-start">Fecha inicio</Label>
-          <Input id="debt-start" type="date" value={startDate}
-            onChange={(e) => setStartDate(e.target.value)} required />
+          <DatePicker id="debt-start" value={startDate} onChange={setStartDate} required />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="debt-due">Fecha límite (opcional)</Label>
-          <Input id="debt-due" type="date" value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)} />
+          <DatePicker id="debt-due" value={dueDate} onChange={setDueDate} />
         </div>
       </div>
 

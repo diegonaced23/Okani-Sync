@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -82,14 +84,13 @@ export function DebtPaymentSheet({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="pay-amount">Monto del abono ({currency})</Label>
-            <Input id="pay-amount" type="number" min="0.01" step="any" placeholder="0"
-              value={amount} onChange={(e) => setAmount(e.target.value)} required />
+            <MoneyInput id="pay-amount" placeholder="0"
+              value={amount} onChange={setAmount} required />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="pay-date">Fecha del abono</Label>
-            <Input id="pay-date" type="date" value={date}
-              onChange={(e) => setDate(e.target.value)} required />
+            <DatePicker id="pay-date" value={date} onChange={setDate} required />
           </div>
 
           <div className="space-y-1.5">

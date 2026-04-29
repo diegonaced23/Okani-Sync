@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -107,8 +109,8 @@ export function PurchaseForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="pu-amount">Monto ({currency})</Label>
-          <Input id="pu-amount" type="number" min="0.01" step="any" placeholder="0"
-            value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <MoneyInput id="pu-amount" placeholder="0"
+            value={amount} onChange={setAmount} required />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pu-inst">Número de cuotas</Label>
@@ -152,8 +154,8 @@ export function PurchaseForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pu-date">Fecha de compra</Label>
-          <Input id="pu-date" type="date" value={purchaseDate}
-            onChange={(e) => setPurchaseDate(e.target.value)} required />
+          <DatePicker id="pu-date" value={purchaseDate}
+            onChange={setPurchaseDate} required />
         </div>
       </div>
 

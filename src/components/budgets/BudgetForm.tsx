@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/ui/money-input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -69,8 +70,8 @@ export function BudgetForm({ defaultMonth, onSuccess }: BudgetFormProps) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="budget-amount">Monto (COP)</Label>
-          <Input id="budget-amount" type="number" min="1" step="any" placeholder="0"
-            value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <MoneyInput id="budget-amount" placeholder="0"
+            value={amount} onChange={setAmount} required />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="budget-month">Mes</Label>

@@ -16,6 +16,78 @@ export const getMe = query({
   },
 });
 
+/**
+ * Crea el documento de usuario si aún no existe (carrera webhook vs. primer acceso).
+ * Llamar desde el cliente inmediatamente después del login.
+ */
+export const ensureExists = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("No autenticado");
+
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (existing) return existing._id;
+
+    // El webhook aún no llegó — crear usuario mínimo con seed
+    const now = Date.now();
+    const name = identity.name ?? identity.email ?? "Usuario";
+    const email = identity.email ?? "";
+
+    const userId = await ctx.db.insert("users", {
+      clerkId: identity.subject,
+      email,
+      name,
+      imageUrl: identity.pictureUrl,
+      role: "user",
+      active: true,
+      locale: "es-CO",
+      currency: "COP",
+      theme: "dark",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("accounts", {
+      ownerId: identity.subject,
+      name: "Billetera",
+      type: "billetera",
+      balance: 0,
+      initialBalance: 0,
+      currency: "COP",
+      color: "#4ADE80",
+      icon: "wallet",
+      isDefault: true,
+      isShared: false,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
+      const cat = DEFAULT_CATEGORIES[i];
+      await ctx.db.insert("categories", {
+        userId: identity.subject,
+        name: cat.name,
+        type: cat.type,
+        color: cat.color,
+        icon: cat.icon,
+        isDefault: true,
+        archived: false,
+        order: i,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return userId;
+  },
+});
+
 /** Actualiza la moneda preferida del usuario. */
 export const updateCurrency = mutation({
   args: { currency: v.string() },

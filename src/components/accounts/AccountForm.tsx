@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/ui/money-input";
 import {
   Select,
   SelectContent,
@@ -132,14 +133,11 @@ export function AccountForm({ onSuccess }: AccountFormProps) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="acc-balance">Saldo inicial</Label>
-          <Input
+          <MoneyInput
             id="acc-balance"
-            type="number"
-            min="0"
-            step="any"
             placeholder="0"
             value={initialBalance}
-            onChange={(e) => setInitialBalance(e.target.value)}
+            onChange={setInitialBalance}
           />
         </div>
         <div className="space-y-1.5">

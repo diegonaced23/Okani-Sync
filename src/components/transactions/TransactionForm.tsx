@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -103,14 +105,11 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
       <div className="grid grid-cols-3 gap-2">
         <div className="col-span-2 space-y-1.5">
           <Label htmlFor="tx-amount">Monto</Label>
-          <Input
+          <MoneyInput
             id="tx-amount"
-            type="number"
-            min="0.01"
-            step="any"
-            placeholder="0.00"
+            placeholder="0,00"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={setAmount}
             required
           />
         </div>
@@ -144,11 +143,10 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
       {/* Fecha */}
       <div className="space-y-1.5">
         <Label htmlFor="tx-date">Fecha</Label>
-        <Input
+        <DatePicker
           id="tx-date"
-          type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={setDate}
           required
         />
       </div>

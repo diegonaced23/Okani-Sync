@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -141,14 +143,11 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         <Label htmlFor="tf-amount">
           Monto{fromAccount ? ` (${fromAccount.currency})` : ""}
         </Label>
-        <Input
+        <MoneyInput
           id="tf-amount"
-          type="number"
-          min="0.01"
-          step="any"
-          placeholder="0.00"
+          placeholder="0,00"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={setAmount}
           required
         />
         {fromAccount && (
@@ -201,13 +200,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
       {/* Fecha */}
       <div className="space-y-1.5">
         <Label htmlFor="tf-date">Fecha</Label>
-        <Input
-          id="tf-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          required
-        />
+        <DatePicker id="tf-date" value={date} onChange={setDate} required />
       </div>
 
       {/* Notas */}
