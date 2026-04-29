@@ -29,6 +29,17 @@ export function truncate(str: string, maxLength: number): string {
   return `${str.slice(0, maxLength - 3)}...`;
 }
 
+/** Retorna los últimos N meses como strings "YYYY-MM" en orden cronológico. */
+export function lastNMonths(n: number): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+
 /** Genera un UUID v4. */
 export function generateId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {

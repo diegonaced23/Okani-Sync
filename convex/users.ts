@@ -1,6 +1,35 @@
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { DEFAULT_CATEGORIES, AUDIT_ACTIONS } from "../src/lib/constants";
+
+// ─── Query pública: usuario autenticado actual ────────────────────────────────
+
+export const getMe = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    return await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+  },
+});
+
+/** Actualiza la moneda preferida del usuario. */
+export const updateCurrency = mutation({
+  args: { currency: v.string() },
+  handler: async (ctx, { currency }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("No autenticado");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) throw new Error("Usuario no encontrado");
+    await ctx.db.patch(user._id, { currency, updatedAt: Date.now() });
+  },
+});
 
 // ─── Query interna: buscar usuario por clerkId ────────────────────────────────
 

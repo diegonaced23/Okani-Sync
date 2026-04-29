@@ -96,6 +96,73 @@ export const getById = query({
   },
 });
 
+/** Gastos del mes agrupados por categoría — para el gráfico Pie del dashboard. */
+export const spendingByCategory = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", clerkId).eq("type", "gasto").eq("month", month)
+      )
+      .collect();
+
+    const grouped = new Map<string, { amount: number; categoryId: string | null }>();
+    for (const tx of txs) {
+      const key = tx.categoryId ?? "__none__";
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.amount += tx.amount;
+      } else {
+        grouped.set(key, { amount: tx.amount, categoryId: tx.categoryId ?? null });
+      }
+    }
+
+    return await Promise.all(
+      [...grouped.entries()].map(async ([key, data]) => {
+        if (key === "__none__" || !data.categoryId) {
+          return { name: "Sin categoría", amount: data.amount, color: "#6B7280" };
+        }
+        const cat = await ctx.db.get(data.categoryId as Id<"categories">);
+        return {
+          name: cat?.name ?? "Sin categoría",
+          amount: data.amount,
+          color: cat?.color ?? "#6B7280",
+        };
+      })
+    ).then((items) => items.sort((a, b) => b.amount - a.amount));
+  },
+});
+
+/** Totales de ingresos y gastos por mes — para el LineChart de 6 meses. */
+export const monthlySummary = query({
+  args: { months: v.array(v.string()) },
+  handler: async (ctx, { months }) => {
+    const clerkId = await getCurrentUserId(ctx);
+
+    return await Promise.all(
+      months.map(async (month) => {
+        const txs = await ctx.db
+          .query("transactions")
+          .withIndex("by_user_month", (q) =>
+            q.eq("userId", clerkId).eq("month", month)
+          )
+          .collect();
+
+        const ingresos = txs
+          .filter((t) => t.type === "ingreso")
+          .reduce((s, t) => s + t.amount, 0);
+        const gastos = txs
+          .filter((t) => t.type === "gasto")
+          .reduce((s, t) => s + t.amount, 0);
+
+        return { month, ingresos, gastos };
+      })
+    );
+  },
+});
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export const create = mutation({

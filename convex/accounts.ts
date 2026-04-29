@@ -4,6 +4,79 @@ import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
+/**
+ * Balance consolidado en la moneda preferida del usuario.
+ * Convierte cada cuenta usando currentExchangeRates.
+ * Si no hay tasa para un par → suma el balance sin convertir y marca como "sin tasa".
+ */
+export const consolidatedBalance = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const clerkId = identity.subject;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .unique();
+    if (!user) return null;
+
+    const preferredCurrency = user.currency ?? "COP";
+
+    // Cuentas propias
+    const ownAccounts = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) =>
+        q.eq("ownerId", clerkId).eq("archived", false)
+      )
+      .collect();
+
+    // Cuentas compartidas aceptadas
+    const shares = await ctx.db
+      .query("accountShares")
+      .withIndex("by_shared_user_status", (q) =>
+        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
+      )
+      .collect();
+    const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
+    const sharedAccounts = sharedRaw.filter(
+      (a): a is NonNullable<typeof a> => a !== null
+    );
+
+    // Tasas actuales
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = new Map(
+      currentRates.map((r) => [`${r.fromCurrency}→${r.toCurrency}`, r.rate])
+    );
+
+    function convert(amount: number, fromCurrency: string): { converted: number; hasRate: boolean } {
+      if (fromCurrency === preferredCurrency) return { converted: amount, hasRate: true };
+      const rate = rateMap.get(`${fromCurrency}→${preferredCurrency}`);
+      if (!rate) return { converted: amount, hasRate: false };
+      return { converted: Math.round(amount * rate), hasRate: true };
+    }
+
+    let total = 0;
+    let missingRates: string[] = [];
+
+    for (const account of [...ownAccounts, ...sharedAccounts]) {
+      const { converted, hasRate } = convert(account.balance, account.currency);
+      total += converted;
+      if (!hasRate && account.currency !== preferredCurrency) {
+        missingRates.push(account.currency);
+      }
+    }
+
+    return {
+      total,
+      currency: preferredCurrency,
+      missingRates: [...new Set(missingRates)],
+      accountCount: ownAccounts.length + sharedAccounts.length,
+    };
+  },
+});
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
