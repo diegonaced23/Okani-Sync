@@ -4,9 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,57 +71,54 @@ export function DebtPaymentSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[90dvh] overflow-y-auto rounded-t-xl">
-        <SheetHeader className="pb-4">
-          <SheetTitle>Registrar abono — {debtName}</SheetTitle>
-          <p className="text-sm text-muted-foreground">
-            Saldo pendiente: {formatCents(currentBalance, currency)}
-          </p>
-        </SheetHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="pay-amount">Monto del abono ({currency})</Label>
-            <MoneyInput id="pay-amount" placeholder="0"
-              value={amount} onChange={setAmount} required />
-          </div>
+    <AppSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Registrar abono — ${debtName}`}
+      description={`Saldo pendiente: ${formatCents(currentBalance, currency)}`}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="pay-amount">Monto del abono ({currency})</Label>
+          <MoneyInput id="pay-amount" placeholder="0"
+            value={amount} onChange={setAmount} required />
+        </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="pay-date">Fecha del abono</Label>
-            <DatePicker id="pay-date" value={date} onChange={setDate} required />
-          </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pay-date">Fecha del abono</Label>
+          <DatePicker id="pay-date" value={date} onChange={setDate} required />
+        </div>
 
-          <div className="space-y-1.5">
-            <Label>Cuenta de origen (opcional)</Label>
-            <Select value={fromAccountId} onValueChange={(v) => setFromAccountId(v ?? "")}>
-              <SelectTrigger><SelectValue placeholder="Sin cuenta específica" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Sin cuenta</SelectItem>
-                {(accounts ?? []).map((a) => (
-                  <SelectItem key={a._id} value={a._id}>
-                    {a.name} — {formatCents(a.balance, a.currency)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-1.5">
+          <Label>Cuenta de origen (opcional)</Label>
+          <Select value={fromAccountId} onValueChange={(v) => setFromAccountId(v ?? "")}>
+            <SelectTrigger><SelectValue placeholder="Sin cuenta específica" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Sin cuenta</SelectItem>
+              {(accounts ?? []).map((a) => (
+                <SelectItem key={a._id} value={a._id}>
+                  {a.name} — {formatCents(a.balance, a.currency)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="pay-notes">Notas (opcional)</Label>
-            <Textarea id="pay-notes" rows={2} value={notes}
-              onChange={(e) => setNotes(e.target.value)} />
-          </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pay-notes">Notas (opcional)</Label>
+          <Textarea id="pay-notes" rows={2} value={notes}
+            onChange={(e) => setNotes(e.target.value)} />
+        </div>
 
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? "Registrando…" : "Registrar abono"}
-            </Button>
-          </div>
-        </form>
-      </SheetContent>
-    </Sheet>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="submit" className="flex-1" disabled={loading}>
+            {loading ? "Registrando…" : "Registrar abono"}
+          </Button>
+        </div>
+      </form>
+    </AppSheet>
   );
 }

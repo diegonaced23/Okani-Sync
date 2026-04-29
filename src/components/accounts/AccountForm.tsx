@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents } from "@/lib/money";
-import { CURRENCIES, ACCOUNT_COLORS } from "@/lib/constants";
+import { CURRENCIES, ACCOUNT_GRADIENTS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 interface AccountFormProps {
@@ -39,7 +39,7 @@ export function AccountForm({ onSuccess }: AccountFormProps) {
   const [accountNumber, setAccountNumber] = useState("");
   const [initialBalance, setInitialBalance] = useState("");
   const [currency, setCurrency] = useState("COP");
-  const [color, setColor] = useState(ACCOUNT_COLORS[0]);
+  const [color, setColor] = useState<string>(ACCOUNT_GRADIENTS[0].key);
   const [loading, setLoading] = useState(false);
 
   const showBank = type !== "billetera";
@@ -157,21 +157,22 @@ export function AccountForm({ onSuccess }: AccountFormProps) {
         </div>
       </div>
 
-      {/* Color */}
+      {/* Gradiente */}
       <div className="space-y-1.5">
-        <Label>Color</Label>
+        <Label>Color de tarjeta</Label>
         <div className="flex flex-wrap gap-2">
-          {ACCOUNT_COLORS.map((c) => (
+          {ACCOUNT_GRADIENTS.map((g) => (
             <button
-              key={c}
+              key={g.key}
               type="button"
-              onClick={() => setColor(c)}
+              onClick={() => setColor(g.key)}
+              title={g.label}
               className={cn(
-                "h-7 w-7 rounded-full border-2 transition-transform",
-                color === c ? "border-foreground scale-110" : "border-transparent"
+                "h-8 w-8 rounded-full border-2 transition-all",
+                color === g.key ? "border-foreground scale-110 shadow-md" : "border-transparent"
               )}
-              style={{ backgroundColor: c }}
-              aria-label={`Color ${c}`}
+              style={{ background: g.gradient }}
+              aria-label={g.label}
             />
           ))}
         </div>

@@ -14,13 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -102,59 +96,56 @@ export default function CategoriasPage() {
     <div className="space-y-6 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Categorías</h1>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger render={<Button size="sm" className="gap-1.5" />}>
-            <Plus className="h-4 w-4" /> Nueva
-          </SheetTrigger>
-          <SheetContent side="bottom" className="rounded-t-xl">
-            <SheetHeader className="pb-4">
-              <SheetTitle>Nueva categoría</SheetTitle>
-            </SheetHeader>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="cat-name">Nombre</Label>
-                <Input
-                  id="cat-name"
-                  placeholder="Ej: Mascotas"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
+        <AppSheet
+          open={open}
+          onOpenChange={setOpen}
+          title="Nueva categoría"
+          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+        >
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="cat-name">Nombre</Label>
+              <Input
+                id="cat-name"
+                placeholder="Ej: Mascotas"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tipo</Label>
+              <Select value={type} onValueChange={(v) => { if (v) setType(v as CategoryType); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gasto">Gasto</SelectItem>
+                  <SelectItem value="ingreso">Ingreso</SelectItem>
+                  <SelectItem value="ambos">Ambos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Color</Label>
+              <div className="flex flex-wrap gap-2">
+                {ACCOUNT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    className={cn(
+                      "h-7 w-7 rounded-full border-2 transition-transform",
+                      color === c ? "border-foreground scale-110" : "border-transparent"
+                    )}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
               </div>
-              <div className="space-y-1.5">
-                <Label>Tipo</Label>
-                <Select value={type} onValueChange={(v) => { if (v) setType(v as CategoryType); }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="gasto">Gasto</SelectItem>
-                    <SelectItem value="ingreso">Ingreso</SelectItem>
-                    <SelectItem value="ambos">Ambos</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Color</Label>
-                <div className="flex flex-wrap gap-2">
-                  {ACCOUNT_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setColor(c)}
-                      className={cn(
-                        "h-7 w-7 rounded-full border-2 transition-transform",
-                        color === c ? "border-foreground scale-110" : "border-transparent"
-                      )}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Guardando…" : "Crear categoría"}
-              </Button>
-            </form>
-          </SheetContent>
-        </Sheet>
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Guardando…" : "Crear categoría"}
+            </Button>
+          </form>
+        </AppSheet>
       </div>
 
       {isLoading ? (

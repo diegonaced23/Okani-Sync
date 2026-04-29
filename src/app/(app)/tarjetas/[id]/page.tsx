@@ -9,9 +9,7 @@ import { ArrowLeft, Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { CardSummary } from "@/components/cards/CardSummary";
 import { PurchaseForm } from "@/components/cards/PurchaseForm";
 import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
@@ -188,22 +186,19 @@ export default function CardDetailPage({
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Compras activas ({(purchases ?? []).length})
           </h2>
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger render={<Button size="sm" variant="outline" className="gap-1.5 h-8" />}>
-              <Plus className="h-3.5 w-3.5" /> Nueva compra
-            </SheetTrigger>
-            <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto rounded-t-xl">
-              <SheetHeader className="pb-4">
-                <SheetTitle>Nueva compra — {card.name}</SheetTitle>
-              </SheetHeader>
-              <PurchaseForm
-                cardId={cardId}
-                defaultInterestRate={card.interestRate}
-                currency={card.currency}
-                onSuccess={() => setOpen(false)}
-              />
-            </SheetContent>
-          </Sheet>
+          <AppSheet
+            open={open}
+            onOpenChange={setOpen}
+            title={`Nueva compra — ${card.name}`}
+            trigger={<Button size="sm" variant="outline" className="gap-1.5 h-8"><Plus className="h-3.5 w-3.5" /> Nueva compra</Button>}
+          >
+            <PurchaseForm
+              cardId={cardId}
+              defaultInterestRate={card.interestRate}
+              currency={card.currency}
+              onSuccess={() => setOpen(false)}
+            />
+          </AppSheet>
         </div>
 
         {purchases === undefined ? (

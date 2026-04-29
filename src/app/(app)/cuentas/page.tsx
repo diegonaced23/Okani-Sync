@@ -5,13 +5,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { AccountCard } from "@/components/accounts/AccountCard";
@@ -43,21 +37,14 @@ export default function CuentasPage() {
             </p>
           )}
         </div>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger render={<Button size="sm" className="gap-1.5" />}>
-            <Plus className="h-4 w-4" />
-            Nueva
-          </SheetTrigger>
-          <SheetContent
-            side="bottom"
-            className="max-h-[92dvh] overflow-y-auto rounded-t-xl"
-          >
-            <SheetHeader className="pb-4">
-              <SheetTitle>Nueva cuenta</SheetTitle>
-            </SheetHeader>
-            <AccountForm onSuccess={() => setOpen(false)} />
-          </SheetContent>
-        </Sheet>
+        <AppSheet
+          open={open}
+          onOpenChange={setOpen}
+          title="Nueva cuenta"
+          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+        >
+          <AccountForm onSuccess={() => setOpen(false)} />
+        </AppSheet>
       </div>
 
       {/* Mis cuentas */}

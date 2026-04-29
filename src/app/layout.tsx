@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { esES } from "@clerk/localizations";
 import { ConvexClientProvider } from "@/components/providers/ConvexClientProvider";
@@ -8,6 +8,11 @@ import "./globals.css";
 
 const geist = Geist({
   variable: "--font-geist",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
@@ -24,7 +29,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1F262A",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "oklch(0.985 0.006 90)" },
+    { media: "(prefers-color-scheme: dark)",  color: "oklch(0.16 0.025 255)" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -46,7 +54,7 @@ export default function RootLayout({
         },
       }}
     >
-      <html lang="es-CO" className={geist.variable} suppressHydrationWarning>
+      <html lang="es-CO" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <head>
           <link rel="apple-touch-icon" href="/icons/placeholder.svg" />
         </head>

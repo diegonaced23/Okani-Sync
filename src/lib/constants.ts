@@ -52,14 +52,89 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
   { name: "Otros ingresos", type: "ingreso", color: "#6B7280", icon: "circle-ellipsis" },
 ];
 
-// ─── Colores de cuentas / tarjetas ───────────────────────────────────────────
+// ─── Colores de categorías / deudas (sólidos) ────────────────────────────────
 
 export const ACCOUNT_COLORS = [
-  "#1F262A", "#343434", "#2A3236",
-  "#4ADE80", "#38BDF8", "#F59E0B",
-  "#EF4444", "#8B5CF6", "#EC4899",
-  "#06B6D4", "#10B981", "#F97316",
+  "#4ade80",  // lima
+  "#22d3ee",  // cyan
+  "#f97316",  // naranja
+  "#8b5cf6",  // violeta
+  "#ef4444",  // rojo
+  "#fbbf24",  // amarillo
+  "#a78bfa",  // violeta-2
+  "#34d399",  // esmeralda
+  "#fb923c",  // naranja-2
+  "#38bdf8",  // cielo
+  "#f472b6",  // rosa
+  "#a3e635",  // lima brillante
 ];
+
+// ─── Gradientes de cuentas / tarjetas de crédito ─────────────────────────────
+
+export const ACCOUNT_GRADIENTS = [
+  {
+    key: "g-night",
+    label: "Noche",
+    gradient: "linear-gradient(135deg, oklch(0.30 0.04 270), oklch(0.18 0.05 260))",
+    darkText: false,
+    preview: "#1b2538",
+  },
+  {
+    key: "g-red",
+    label: "Rojo",
+    gradient: "linear-gradient(135deg, oklch(0.55 0.22 27), oklch(0.32 0.14 20))",
+    darkText: false,
+    preview: "#9e2219",
+  },
+  {
+    key: "g-ember",
+    label: "Fuego",
+    gradient: "linear-gradient(135deg, oklch(0.76 0.18 55), oklch(0.55 0.22 27))",
+    darkText: false,
+    preview: "#c84b10",
+  },
+  {
+    key: "g-lime",
+    label: "Lima",
+    gradient: "linear-gradient(135deg, oklch(0.78 0.19 142), oklch(0.78 0.14 215))",
+    darkText: true,
+    preview: "#4ade80",
+  },
+  {
+    key: "g-ocean",
+    label: "Océano",
+    gradient: "linear-gradient(135deg, oklch(0.78 0.14 215), oklch(0.65 0.22 295))",
+    darkText: false,
+    preview: "#0ea5e9",
+  },
+  {
+    key: "g-violet",
+    label: "Violeta",
+    gradient: "linear-gradient(135deg, oklch(0.65 0.22 295), oklch(0.30 0.04 270))",
+    darkText: false,
+    preview: "#7c3aed",
+  },
+  {
+    key: "g-rose",
+    label: "Rosa",
+    gradient: "linear-gradient(135deg, oklch(0.65 0.22 340), oklch(0.50 0.18 295))",
+    darkText: false,
+    preview: "#e11d48",
+  },
+  {
+    key: "g-gold",
+    label: "Oro",
+    gradient: "linear-gradient(135deg, oklch(0.88 0.17 95), oklch(0.76 0.18 55))",
+    darkText: true,
+    preview: "#eab308",
+  },
+] as const;
+
+export type GradientKey = (typeof ACCOUNT_GRADIENTS)[number]["key"];
+
+export const GRADIENT_MAP = Object.fromEntries(
+  ACCOUNT_GRADIENTS.map((g) => [g.key, g])
+) as Record<string, typeof ACCOUNT_GRADIENTS[number]>;
 
 // ─── Audit log — acciones registradas ────────────────────────────────────────
 

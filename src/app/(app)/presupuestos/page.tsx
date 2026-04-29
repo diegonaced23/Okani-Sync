@@ -6,9 +6,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { useState } from "react";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BudgetCard } from "@/components/budgets/BudgetCard";
 import { BudgetForm } from "@/components/budgets/BudgetForm";
@@ -49,17 +47,14 @@ export default function PresupuestosPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Presupuestos</h1>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger render={<Button size="sm" className="gap-1.5" />}>
-            <Plus className="h-4 w-4" /> Nuevo
-          </SheetTrigger>
-          <SheetContent side="bottom" className="rounded-t-xl">
-            <SheetHeader className="pb-4">
-              <SheetTitle>Nuevo presupuesto</SheetTitle>
-            </SheetHeader>
-            <BudgetForm defaultMonth={month} onSuccess={() => setOpen(false)} />
-          </SheetContent>
-        </Sheet>
+        <AppSheet
+          open={open}
+          onOpenChange={setOpen}
+          title="Nuevo presupuesto"
+          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nuevo</Button>}
+        >
+          <BudgetForm defaultMonth={month} onSuccess={() => setOpen(false)} />
+        </AppSheet>
       </div>
 
       {/* Selector de mes */}

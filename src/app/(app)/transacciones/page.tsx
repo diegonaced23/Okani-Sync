@@ -6,13 +6,7 @@ import { useState, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Doc } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
@@ -125,42 +119,34 @@ export default function TransaccionesPage() {
     <div className="space-y-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Transacciones</h1>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger render={<Button size="sm" className="gap-1.5" />}>
-            <Plus className="h-4 w-4" />
-            Nueva
-          </SheetTrigger>
-          <SheetContent
-            side="bottom"
-            className="max-h-[92dvh] overflow-y-auto rounded-t-xl"
-          >
-            <SheetHeader className="pb-2">
-              <SheetTitle>Nueva transacción</SheetTitle>
-            </SheetHeader>
-            {/* Tabs ingreso/gasto vs transferencia */}
-            <div className="flex rounded-lg border border-border overflow-hidden mb-4">
-              {(["ingreso_gasto", "transferencia"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setTxTab(tab)}
-                  className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                    txTab === tab
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {tab === "ingreso_gasto" ? "Ingreso / Gasto" : "Transferencia"}
-                </button>
-              ))}
-            </div>
-            {txTab === "ingreso_gasto" ? (
-              <TransactionForm onSuccess={() => setOpen(false)} />
-            ) : (
-              <TransferForm onSuccess={() => setOpen(false)} />
-            )}
-          </SheetContent>
-        </Sheet>
+        <AppSheet
+          open={open}
+          onOpenChange={setOpen}
+          title="Nueva transacción"
+          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+        >
+          <div className="flex rounded-lg border border-border overflow-hidden mb-4">
+            {(["ingreso_gasto", "transferencia"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setTxTab(tab)}
+                className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                  txTab === tab
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {tab === "ingreso_gasto" ? "Ingreso / Gasto" : "Transferencia"}
+              </button>
+            ))}
+          </div>
+          {txTab === "ingreso_gasto" ? (
+            <TransactionForm onSuccess={() => setOpen(false)} />
+          ) : (
+            <TransferForm onSuccess={() => setOpen(false)} />
+          )}
+        </AppSheet>
       </div>
 
       {/* Selector de mes */}

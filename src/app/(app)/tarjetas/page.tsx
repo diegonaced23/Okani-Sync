@@ -5,9 +5,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CardSummary } from "@/components/cards/CardSummary";
 import { CardForm } from "@/components/cards/CardForm";
@@ -33,17 +31,14 @@ export default function TarjetasPage() {
             </p>
           )}
         </div>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger render={<Button size="sm" className="gap-1.5" />}>
-            <Plus className="h-4 w-4" /> Nueva
-          </SheetTrigger>
-          <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto rounded-t-xl">
-            <SheetHeader className="pb-4">
-              <SheetTitle>Nueva tarjeta de crédito</SheetTitle>
-            </SheetHeader>
-            <CardForm onSuccess={() => setOpen(false)} />
-          </SheetContent>
-        </Sheet>
+        <AppSheet
+          open={open}
+          onOpenChange={setOpen}
+          title="Nueva tarjeta de crédito"
+          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+        >
+          <CardForm onSuccess={() => setOpen(false)} />
+        </AppSheet>
       </div>
 
       {isLoading ? (

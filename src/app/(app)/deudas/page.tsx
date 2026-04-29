@@ -6,9 +6,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-} from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DebtCard } from "@/components/debts/DebtCard";
@@ -58,17 +56,14 @@ export default function DeudasPage() {
             </p>
           )}
         </div>
-        <Sheet open={newOpen} onOpenChange={setNewOpen}>
-          <SheetTrigger render={<Button size="sm" className="gap-1.5" />}>
-            <Plus className="h-4 w-4" /> Nueva
-          </SheetTrigger>
-          <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto rounded-t-xl">
-            <SheetHeader className="pb-4">
-              <SheetTitle>Registrar deuda</SheetTitle>
-            </SheetHeader>
-            <DebtForm onSuccess={() => setNewOpen(false)} />
-          </SheetContent>
-        </Sheet>
+        <AppSheet
+          open={newOpen}
+          onOpenChange={setNewOpen}
+          title="Registrar deuda"
+          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+        >
+          <DebtForm onSuccess={() => setNewOpen(false)} />
+        </AppSheet>
       </div>
 
       {isLoading ? (

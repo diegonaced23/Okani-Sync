@@ -15,11 +15,13 @@ export default async function AppLayout({
   if (!userId) redirect("/sign-in");
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background overflow-x-hidden">
+      {/* Aurora de fondo — efecto sutil de profundidad */}
+      <div aria-hidden className="os-aurora" />
       <Sidebar />
 
-      {/* Área principal — empujada a la derecha del sidebar en desktop */}
-      <div className="flex flex-1 flex-col lg:pl-64">
+      {/* Área principal — min-w-0 evita que el flex item se expanda más allá del viewport */}
+      <div className="flex flex-1 flex-col min-w-0 lg:pl-64 overflow-x-hidden">
         <Header />
         <PushSubscriptionBanner />
         <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
