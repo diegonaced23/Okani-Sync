@@ -15,8 +15,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
+import { TransferForm } from "@/components/transactions/TransferForm";
 import { currentMonth, formatMonth, formatCents } from "@/lib/money";
-// currentMonth es una función — siempre llamarla con ()
 
 function shiftMonth(m: string, delta: number) {
   const [y, mo] = m.split("-").map(Number);
@@ -27,6 +27,7 @@ function shiftMonth(m: string, delta: number) {
 export default function TransaccionesPage() {
   const [month, setMonth] = useState(() => currentMonth());
   const [open, setOpen] = useState(false);
+  const [txTab, setTxTab] = useState<"ingreso_gasto" | "transferencia">("ingreso_gasto");
 
   const transactions = useQuery(api.transactions.listByMonth, { month });
   const categories = useQuery(api.categories.list, {});
@@ -57,10 +58,31 @@ export default function TransaccionesPage() {
             side="bottom"
             className="max-h-[92dvh] overflow-y-auto rounded-t-xl"
           >
-            <SheetHeader className="pb-4">
+            <SheetHeader className="pb-2">
               <SheetTitle>Nueva transacción</SheetTitle>
             </SheetHeader>
-            <TransactionForm onSuccess={() => setOpen(false)} />
+            {/* Tabs ingreso/gasto vs transferencia */}
+            <div className="flex rounded-lg border border-border overflow-hidden mb-4">
+              {(["ingreso_gasto", "transferencia"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setTxTab(tab)}
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                    txTab === tab
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {tab === "ingreso_gasto" ? "Ingreso / Gasto" : "Transferencia"}
+                </button>
+              ))}
+            </div>
+            {txTab === "ingreso_gasto" ? (
+              <TransactionForm onSuccess={() => setOpen(false)} />
+            ) : (
+              <TransferForm onSuccess={() => setOpen(false)} />
+            )}
           </SheetContent>
         </Sheet>
       </div>

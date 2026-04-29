@@ -4,7 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanWrite } from "./lib/permissions";
-import { toMonthString } from "./lib/utils";
+import { toMonthString, generateId } from "./lib/utils";
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
@@ -211,5 +211,103 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(transactionId);
+  },
+});
+
+// ─── Transferencia — doble entrada ───────────────────────────────────────────
+//
+// Genera dos transactions enlazadas por transferGroupId:
+//   - Salida: type="transferencia", accountId=fromAccountId, amount=-X
+//   - Entrada: type="transferencia", accountId=toAccountId,  amount=+Y
+// Si las monedas difieren, toAmount usa la tasa provista.
+
+export const createTransfer = mutation({
+  args: {
+    fromAccountId: v.id("accounts"),
+    toAccountId: v.id("accounts"),
+    amount: v.number(),          // en centavos, moneda de la cuenta origen
+    date: v.number(),
+    description: v.string(),
+    exchangeRate: v.optional(v.number()), // requerido si las monedas difieren
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    // Verificar permisos en ambas cuentas
+    await assertCanWrite(ctx, args.fromAccountId);
+    await assertCanWrite(ctx, args.toAccountId);
+
+    const fromAccount = await ctx.db.get(args.fromAccountId);
+    const toAccount = await ctx.db.get(args.toAccountId);
+    if (!fromAccount || !toAccount) throw new Error("Cuenta no encontrada");
+    if (args.fromAccountId === args.toAccountId) {
+      throw new Error("Las cuentas origen y destino deben ser distintas");
+    }
+
+    const sameCurrency = fromAccount.currency === toAccount.currency;
+    if (!sameCurrency && !args.exchangeRate) {
+      throw new Error(
+        "Debes proporcionar la tasa de cambio para transferir entre cuentas con distinta moneda"
+      );
+    }
+
+    const toAmount = sameCurrency
+      ? args.amount
+      : Math.round(args.amount * args.exchangeRate!);
+
+    const transferGroupId = generateId();
+    const month = toMonthString(args.date);
+    const now = Date.now();
+
+    // Transacción de salida (cuenta origen)
+    const outTxId = await ctx.db.insert("transactions", {
+      userId: user.clerkId,
+      type: "transferencia",
+      amount: args.amount,
+      description: args.description,
+      date: args.date,
+      month,
+      currency: fromAccount.currency,
+      accountId: args.fromAccountId,
+      toAccountId: args.toAccountId,
+      transferGroupId,
+      exchangeRate: args.exchangeRate,
+      toAmount,
+      toCurrency: toAccount.currency,
+      notes: args.notes,
+      status: "completada",
+      isRecurring: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Transacción de entrada (cuenta destino)
+    await ctx.db.insert("transactions", {
+      userId: user.clerkId,
+      type: "transferencia",
+      amount: toAmount,
+      description: args.description,
+      date: args.date,
+      month,
+      currency: toAccount.currency,
+      accountId: args.toAccountId,
+      toAccountId: args.fromAccountId, // referencia de vuelta
+      transferGroupId,
+      exchangeRate: args.exchangeRate ? 1 / args.exchangeRate : undefined,
+      toAmount: args.amount,
+      toCurrency: fromAccount.currency,
+      notes: args.notes,
+      status: "completada",
+      isRecurring: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Actualizar saldos
+    await applyAccountDelta(ctx, args.fromAccountId, -args.amount);
+    await applyAccountDelta(ctx, args.toAccountId, toAmount);
+
+    return { transferGroupId, outTxId };
   },
 });
