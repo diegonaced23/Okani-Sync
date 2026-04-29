@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -376,5 +376,101 @@ export const createTransfer = mutation({
     await applyAccountDelta(ctx, args.toAccountId, toAmount);
 
     return { transferGroupId, outTxId };
+  },
+});
+
+/** Interna: crea transacción sin verificar auth (para crons de recurrentes). */
+export const createInternal = internalMutation({
+  args: {
+    userId: v.string(),
+    type: v.union(
+      v.literal("ingreso"),
+      v.literal("gasto"),
+      v.literal("pago_tarjeta"),
+      v.literal("pago_deuda")
+    ),
+    amount: v.number(),
+    description: v.string(),
+    date: v.number(),
+    currency: v.string(),
+    accountId: v.optional(v.id("accounts")),
+    categoryId: v.optional(v.id("categories")),
+    recurringId: v.optional(v.id("recurringTransactions")),
+  },
+  handler: async (ctx, args) => {
+    const month = toMonthString(args.date);
+    const now = Date.now();
+
+    const txId = await ctx.db.insert("transactions", {
+      userId: args.userId,
+      type: args.type,
+      amount: args.amount,
+      description: args.description,
+      date: args.date,
+      month,
+      currency: args.currency,
+      accountId: args.accountId,
+      categoryId: args.categoryId,
+      status: "completada",
+      isRecurring: true,
+      recurringId: args.recurringId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Actualizar saldo de cuenta
+    if (args.accountId) {
+      const account = await ctx.db.get(args.accountId);
+      if (account) {
+        const delta = args.type === "ingreso" ? args.amount : -args.amount;
+        await ctx.db.patch(args.accountId, {
+          balance: account.balance + delta,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // Actualizar budget.spent si es gasto con categoría
+    if (args.type === "gasto" && args.categoryId) {
+      const budget = await ctx.db
+        .query("budgets")
+        .withIndex("by_user_category_month", (q) =>
+          q.eq("userId", args.userId)
+            .eq("categoryId", args.categoryId!)
+            .eq("month", month)
+        )
+        .unique();
+      if (budget) {
+        await ctx.db.patch(budget._id, {
+          spent: budget.spent + args.amount,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return txId;
+  },
+});
+
+/** Interna: consulta recurrentes que vencen ahora. */
+export const listDueRecurring = internalQuery({
+  args: { now: v.number() },
+  handler: async (ctx, { now }) => {
+    return await ctx.db
+      .query("recurringTransactions")
+      .withIndex("by_next_occurrence", (q) => q.lte("nextOccurrence", now))
+      .filter((q) => q.eq(q.field("active"), true))
+      .collect();
+  },
+});
+
+/** Interna: actualiza nextOccurrence tras generar la transacción. */
+export const updateNextOccurrence = internalMutation({
+  args: {
+    recurringId: v.id("recurringTransactions"),
+    nextOccurrence: v.number(),
+  },
+  handler: async (ctx, { recurringId, nextOccurrence }) => {
+    await ctx.db.patch(recurringId, { nextOccurrence, updatedAt: Date.now() });
   },
 });

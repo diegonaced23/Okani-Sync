@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -189,6 +189,26 @@ export const addPayment = mutation({
     }
 
     return txId;
+  },
+});
+
+/** Interna: deudas activas cuya fecha límite ya pasó. */
+export const listOverdue = internalQuery({
+  args: { now: v.number() },
+  handler: async (ctx, { now }) => {
+    const all = await ctx.db
+      .query("debts")
+      .filter((q) => q.eq(q.field("status"), "activa"))
+      .collect();
+    return all.filter((d) => d.dueDate !== undefined && d.dueDate < now);
+  },
+});
+
+/** Interna: marcar deuda como vencida (desde cron). */
+export const markOverdueInternal = internalMutation({
+  args: { debtId: v.id("debts") },
+  handler: async (ctx, { debtId }) => {
+    await ctx.db.patch(debtId, { status: "vencida", updatedAt: Date.now() });
   },
 });
 

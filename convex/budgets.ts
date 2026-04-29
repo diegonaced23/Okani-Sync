@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 
@@ -89,5 +89,40 @@ export const remove = mutation({
     const budget = await ctx.db.get(budgetId);
     if (!budget || budget.userId !== user.clerkId) throw new Error("Presupuesto no encontrado");
     await ctx.db.delete(budgetId);
+  },
+});
+
+/** Interna: presupuestos que superan su umbral y no han sido notificados hoy. */
+export const listExceedingThreshold = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const all = await ctx.db.query("budgets").collect();
+    return await Promise.all(
+      all
+        .filter((b) => {
+          if (b.amount === 0) return false;
+          const pct = b.spent / b.amount;
+          const threshold = (b.alertThreshold ?? 80) / 100;
+          if (pct < threshold) return false;
+          // No re-notificar si ya se notificó hoy
+          if (b.notifiedAt && b.notifiedAt >= todayStart.getTime()) return false;
+          return true;
+        })
+        .map(async (b) => {
+          const cat = await ctx.db.get(b.categoryId);
+          return { ...b, categoryName: cat?.name };
+        })
+    );
+  },
+});
+
+/** Interna: actualiza notifiedAt tras enviar alerta. */
+export const updateNotifiedAt = internalMutation({
+  args: { budgetId: v.id("budgets"), notifiedAt: v.number() },
+  handler: async (ctx, { budgetId, notifiedAt }) => {
+    await ctx.db.patch(budgetId, { notifiedAt, updatedAt: Date.now() });
   },
 });

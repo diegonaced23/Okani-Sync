@@ -1,4 +1,4 @@
-import { query } from "./_generated/server";
+import { query, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserId } from "./lib/auth";
 
@@ -54,5 +54,19 @@ export const listUnpaidByUser = query({
         q.eq("userId", clerkId).eq("paid", false)
       )
       .collect();
+  },
+});
+
+/** Interna: cuotas no pagadas cuya fecha de vencimiento cae en una ventana dada. */
+export const listUpcomingUnpaid = internalQuery({
+  args: { afterTs: v.number(), beforeTs: v.number() },
+  handler: async (ctx, { afterTs, beforeTs }) => {
+    // Scan todas las cuotas no pagadas y filtra por dueDate en la ventana
+    // (No hay índice por dueDate; el volumen es manejable para MVP)
+    const all = await ctx.db
+      .query("cardInstallments")
+      .filter((q) => q.eq(q.field("paid"), false))
+      .collect();
+    return all.filter((i) => i.dueDate >= afterTs && i.dueDate <= beforeTs);
   },
 });
