@@ -14,32 +14,37 @@ interface TransactionItemProps {
 const TYPE_CONFIG = {
   ingreso: {
     icon: ArrowDownLeft,
-    colorVar: "var(--os-lime)",
-    bgVar: "color-mix(in oklch, var(--os-lime) 18%, transparent)",
+    iconColor: "var(--os-lime)",
+    iconBg: "color-mix(in oklch, var(--os-lime) 18%, transparent)",
+    amountColor: "var(--os-lime)",
     sign: "+",
   },
   gasto: {
     icon: ArrowUpRight,
-    colorVar: "var(--os-magenta)",
-    bgVar: "color-mix(in oklch, var(--os-magenta) 16%, transparent)",
+    iconColor: "var(--os-magenta)",
+    iconBg: "color-mix(in oklch, var(--os-magenta) 16%, transparent)",
+    amountColor: "var(--foreground)",
     sign: "-",
   },
   transferencia: {
     icon: ArrowLeftRight,
-    colorVar: "var(--os-cyan)",
-    bgVar: "color-mix(in oklch, var(--os-cyan) 16%, transparent)",
+    iconColor: "var(--os-cyan)",
+    iconBg: "color-mix(in oklch, var(--os-cyan) 16%, transparent)",
+    amountColor: "var(--muted-foreground)",
     sign: "",
   },
   pago_tarjeta: {
     icon: CreditCard,
-    colorVar: "var(--os-orange)",
-    bgVar: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
+    iconColor: "var(--os-orange)",
+    iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
+    amountColor: "var(--foreground)",
     sign: "-",
   },
   pago_deuda: {
     icon: HandCoins,
-    colorVar: "var(--os-orange)",
-    bgVar: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
+    iconColor: "var(--os-orange)",
+    iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
+    amountColor: "var(--foreground)",
     sign: "-",
   },
 };
@@ -67,8 +72,8 @@ export function TransactionItem({ transaction: tx, categoryName, onPress }: Tran
         style={{
           width: 40, height: 40,
           borderRadius: 13,
-          background: config.bgVar,
-          color: config.colorVar,
+          background: config.iconBg,
+          color: config.iconColor,
         }}
       >
         <Icon className="h-[18px] w-[18px]" />
@@ -82,8 +87,8 @@ export function TransactionItem({ transaction: tx, categoryName, onPress }: Tran
       </div>
 
       <p
-        className={cn("text-sm font-bold tabular shrink-0")}
-        style={{ color: config.colorVar, letterSpacing: "-0.02em" }}
+        className="text-sm font-bold tabular shrink-0"
+        style={{ color: config.amountColor, letterSpacing: "-0.02em" }}
       >
         {config.sign}{formatCents(tx.amount, tx.currency)}
       </p>

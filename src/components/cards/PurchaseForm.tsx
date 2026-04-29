@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
@@ -143,7 +143,13 @@ export function PurchaseForm({
         <div className="space-y-1.5">
           <Label>Categoría (opcional)</Label>
           <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-            <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
+            <SelectTrigger>
+              <span className="flex-1 text-left text-sm truncate">
+                {categoryId
+                  ? (categories ?? []).find(c => c._id === categoryId)?.name ?? "Categoría"
+                  : <span className="text-muted-foreground">Sin categoría</span>}
+              </span>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="">Sin categoría</SelectItem>
               {(categories ?? []).map((c) => (

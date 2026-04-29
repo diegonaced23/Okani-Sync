@@ -17,11 +17,10 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents } from "@/lib/money";
-import { ArrowRight } from "lucide-react";
+import { ArrowDown, Check } from "lucide-react";
 
 interface TransferFormProps {
   onSuccess?: () => void;
@@ -95,16 +94,20 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Cuentas */}
-      <div className="grid grid-cols-[1fr,auto,1fr] items-end gap-2">
-        <div className="space-y-1.5">
-          <Label>Origen</Label>
+      {/* Cuentas — apiladas verticalmente con flecha de ilusión de transferencia */}
+      <div className="space-y-1">
+        <div>
+          <p className="text-[12px] font-semibold text-foreground mb-2">Origen</p>
           <Select
             value={fromAccountId}
             onValueChange={(v) => { if (v) setFromAccountId(v); }}
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Seleccionar" />
+            <SelectTrigger className="w-full">
+              <span className="flex-1 text-left text-sm truncate">
+                {fromAccount
+                  ? `${fromAccount.name} (${fromAccount.currency})`
+                  : <span className="text-muted-foreground">Seleccionar cuenta</span>}
+              </span>
             </SelectTrigger>
             <SelectContent>
               {allAccounts.map((a) => (
@@ -115,15 +118,33 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
             </SelectContent>
           </Select>
         </div>
-        <ArrowRight className="h-4 w-4 text-muted-foreground mb-2.5" />
-        <div className="space-y-1.5">
-          <Label>Destino</Label>
+
+        {/* Flecha hacia abajo — ilusión de flujo de transferencia */}
+        <div className="flex justify-center py-1">
+          <span
+            className="flex items-center justify-center rounded-full"
+            style={{
+              width: 28, height: 28,
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+          </span>
+        </div>
+
+        <div>
+          <p className="text-[12px] font-semibold text-foreground mb-2">Destino</p>
           <Select
             value={toAccountId}
             onValueChange={(v) => { if (v) setToAccountId(v); }}
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Seleccionar" />
+            <SelectTrigger className="w-full">
+              <span className="flex-1 text-left text-sm truncate">
+                {toAccount
+                  ? `${toAccount.name} (${toAccount.currency})`
+                  : <span className="text-muted-foreground">Seleccionar cuenta</span>}
+              </span>
             </SelectTrigger>
             <SelectContent>
               {allAccounts
@@ -139,19 +160,26 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
       </div>
 
       {/* Monto */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tf-amount">
+      <div>
+        <p className="text-[12px] font-semibold text-foreground mb-2">
           Monto{fromAccount ? ` (${fromAccount.currency})` : ""}
-        </Label>
-        <MoneyInput
-          id="tf-amount"
-          placeholder="0,00"
-          value={amount}
-          onChange={setAmount}
-          required
-        />
+        </p>
+        <div
+          className="flex items-center justify-center rounded-xl"
+          style={{ background: "var(--surface-2)", padding: "18px 16px" }}
+        >
+          <MoneyInput
+            id="tf-amount"
+            placeholder="0"
+            value={amount}
+            onChange={setAmount}
+            required
+            className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
+            style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em" }}
+          />
+        </div>
         {fromAccount && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground mt-1.5">
             Saldo disponible: {formatCents(fromAccount.balance, fromAccount.currency)}
           </p>
         )}
@@ -214,9 +242,23 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         />
       </div>
 
-      <Button type="submit" className="w-full" disabled={loading}>
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
+        style={{
+          padding: "15px 18px",
+          fontSize: 15,
+          background: "linear-gradient(135deg, var(--os-cyan), var(--os-lime))",
+          color: "var(--primary-foreground)",
+          border: "none",
+          cursor: loading ? "not-allowed" : "pointer",
+          boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-cyan) 55%, transparent)",
+        }}
+      >
+        <Check className="h-4 w-4" strokeWidth={2.5} />
         {loading ? "Procesando…" : "Registrar transferencia"}
-      </Button>
+      </button>
     </form>
   );
 }

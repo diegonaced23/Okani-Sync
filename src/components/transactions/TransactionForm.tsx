@@ -3,22 +3,58 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, currentMonth } from "@/lib/money";
-import { CURRENCIES } from "@/lib/constants";
+import { toCents, formatCents } from "@/lib/money";
+import { cn } from "@/lib/utils";
+import { Check } from "lucide-react";
+import type { Doc } from "../../../convex/_generated/dataModel";
+import {
+  UtensilsCrossed, Car, Home, Zap, HeartPulse, Music, BookOpen, Shirt,
+  MoreHorizontal, Briefcase, Laptop, TrendingUp, Gift, ShoppingCart,
+  CreditCard, Heart, Tv, Coffee, Wallet, CircleDollarSign,
+} from "lucide-react";
+import type { LucideProps } from "lucide-react";
+
+// ─── Mapa de iconos para categorías ───────────────────────────────────────────
+
+type LucideIcon = React.ComponentType<LucideProps>;
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  "utensils":        UtensilsCrossed,
+  "car":             Car,
+  "home":            Home,
+  "zap":             Zap,
+  "heart-pulse":     HeartPulse,
+  "music":           Music,
+  "book-open":       BookOpen,
+  "shirt":           Shirt,
+  "circle-ellipsis": MoreHorizontal,
+  "briefcase":       Briefcase,
+  "laptop":          Laptop,
+  "trending-up":     TrendingUp,
+  "gift":            Gift,
+  "cart":            ShoppingCart,
+  "credit-card":     CreditCard,
+  "heart":           Heart,
+  "tv":              Tv,
+  "coffee":          Coffee,
+  "wallet":          Wallet,
+  "home2":           Home,
+};
+
+function CategoryIcon({ name, ...props }: { name: string } & LucideProps) {
+  const Icon = ICON_MAP[name] ?? CircleDollarSign;
+  return <Icon {...props} />;
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
 
 type TxType = "ingreso" | "gasto";
 
@@ -29,18 +65,22 @@ interface TransactionFormProps {
 
 export function TransactionForm({ defaultType = "gasto", onSuccess }: TransactionFormProps) {
   const createTransaction = useMutation(api.transactions.create);
-  const accounts = useQuery(api.accounts.list);
+  const accounts   = useQuery(api.accounts.list);
   const categories = useQuery(api.categories.list, {});
 
-  const [type, setType] = useState<TxType>(defaultType);
-  const [amount, setAmount] = useState("");
+  const [type]        = useState<TxType>(defaultType);
+  const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
-  const [accountId, setAccountId] = useState<string>("");
-  const [categoryId, setCategoryId] = useState<string>("");
-  const [currency, setCurrency] = useState("COP");
-  const [date, setDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [notes, setNotes] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [accountId, setAccountId]     = useState<string>("");
+  const [categoryId, setCategoryId]   = useState<string>("");
+  const [date, setDate]               = useState(() => new Date().toISOString().substring(0, 10));
+  const [loading, setLoading]         = useState(false);
+
+  // Las cuentas que muestra el select
+  const accountList = accounts ?? [];
+  // La moneda de la cuenta seleccionada (default COP)
+  const selectedAccount = accountList.find((a) => a._id === accountId);
+  const currency = selectedAccount?.currency ?? "COP";
 
   const filteredCategories = (categories ?? []).filter(
     (c) => c.type === type || c.type === "ambos"
@@ -66,9 +106,12 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         description: description.trim(),
         date: new Date(date).getTime(),
         currency,
-        accountId: accountId ? (accountId as Parameters<typeof createTransaction>[0]["accountId"]) : undefined,
-        categoryId: categoryId ? (categoryId as Parameters<typeof createTransaction>[0]["categoryId"]) : undefined,
-        notes: notes.trim() || undefined,
+        accountId: accountId
+          ? (accountId as Parameters<typeof createTransaction>[0]["accountId"])
+          : undefined,
+        categoryId: categoryId
+          ? (categoryId as Parameters<typeof createTransaction>[0]["categoryId"])
+          : undefined,
       });
       toast.success(type === "ingreso" ? "Ingreso registrado" : "Gasto registrado");
       onSuccess?.();
@@ -81,127 +124,129 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Tipo */}
-      <div className="flex rounded-lg border border-border overflow-hidden">
-        {(["gasto", "ingreso"] as TxType[]).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setType(t)}
-            className={`flex-1 py-2 text-sm font-medium transition-colors capitalize ${
-              type === t
-                ? t === "gasto"
-                  ? "bg-danger text-white"
-                  : "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
 
-      {/* Monto y moneda */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="col-span-2 space-y-1.5">
-          <Label htmlFor="tx-amount">Monto</Label>
+      {/* ── Monto — campo grande centrado ──────────────────────────────────── */}
+      <div>
+        <p className="text-[12px] font-semibold text-foreground mb-2">Monto</p>
+        <div
+          className="flex items-center justify-center rounded-xl"
+          style={{ background: "var(--surface-2)", padding: "18px 16px" }}
+        >
           <MoneyInput
             id="tx-amount"
-            placeholder="0,00"
             value={amount}
             onChange={setAmount}
+            placeholder="0"
             required
+            className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
+            style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.025em" }}
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Moneda</Label>
-          <Select value={currency} onValueChange={(v) => { if (v) setCurrency(v); }}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CURRENCIES.map((c) => (
-                <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
-      {/* Descripción */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tx-desc">Descripción</Label>
+      {/* ── Descripción ────────────────────────────────────────────────────── */}
+      <div>
+        <p className="text-[12px] font-semibold text-foreground mb-2">Descripción</p>
         <Input
           id="tx-desc"
-          placeholder="Ej: Almuerzo, gasolina…"
+          placeholder="Ej: Cena con amigos"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           required
+          style={{ background: "var(--surface-2)" }}
         />
       </div>
 
-      {/* Fecha */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tx-date">Fecha</Label>
-        <DatePicker
-          id="tx-date"
-          value={date}
-          onChange={setDate}
-          required
-        />
-      </div>
-
-      {/* Cuenta */}
-      <div className="space-y-1.5">
-        <Label>Cuenta (opcional)</Label>
+      {/* ── Cuenta ─────────────────────────────────────────────────────────── */}
+      <div>
+        <p className="text-[12px] font-semibold text-foreground mb-2">Cuenta</p>
         <Select value={accountId} onValueChange={(v) => setAccountId(v ?? "")}>
-          <SelectTrigger>
-            <SelectValue placeholder="Sin cuenta" />
+          <SelectTrigger className="w-full" style={{ background: "var(--surface-2)" }}>
+            <span className="flex-1 text-left text-sm truncate">
+              {selectedAccount
+                ? `${selectedAccount.name} · ${formatCents(selectedAccount.balance, selectedAccount.currency)}`
+                : <span className="text-muted-foreground">Sin cuenta</span>}
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Sin cuenta</SelectItem>
-            {(accounts ?? []).map((a) => (
+            {accountList.map((a) => (
               <SelectItem key={a._id} value={a._id}>
-                {a.name} — {a.currency}
+                {a.name} · {formatCents(a.balance, a.currency)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Categoría */}
-      <div className="space-y-1.5">
-        <Label>Categoría (opcional)</Label>
-        <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-          <SelectTrigger>
-            <SelectValue placeholder="Sin categoría" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">Sin categoría</SelectItem>
-            {filteredCategories.map((c) => (
-              <SelectItem key={c._id} value={c._id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* ── Fecha ──────────────────────────────────────────────────────────── */}
+      <div>
+        <p className="text-[12px] font-semibold text-foreground mb-2">Fecha</p>
+        <DatePicker id="tx-date" value={date} onChange={setDate} required />
       </div>
 
-      {/* Notas */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tx-notes">Notas (opcional)</Label>
-        <Textarea
-          id="tx-notes"
-          rows={2}
-          placeholder="Observaciones adicionales…"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
-      </div>
+      {/* ── Categoría — grid de íconos ─────────────────────────────────────── */}
+      {filteredCategories.length > 0 && (
+        <div>
+          <p className="text-[12px] font-semibold text-foreground mb-2">Categoría</p>
+          <div className="grid grid-cols-4 gap-2">
+            {filteredCategories.slice(0, 8).map((cat) => {
+              const isActive = categoryId === cat._id;
+              return (
+                <button
+                  key={cat._id}
+                  type="button"
+                  onClick={() => setCategoryId(isActive ? "" : cat._id)}
+                  className="flex flex-col items-center gap-1.5 py-3 px-1 transition-all active:scale-95"
+                  style={{
+                    borderRadius: 14,
+                    background: isActive
+                      ? "color-mix(in oklch, var(--os-lime) 14%, var(--surface))"
+                      : "var(--surface-2)",
+                    border: isActive
+                      ? "1.5px solid var(--os-lime)"
+                      : "1.5px solid transparent",
+                    transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+                  }}
+                >
+                  <CategoryIcon
+                    name={cat.icon}
+                    className="h-[20px] w-[20px]"
+                    style={{ color: isActive ? "var(--os-lime)" : cat.color }}
+                    strokeWidth={1.8}
+                  />
+                  <span
+                    className="text-[10px] font-semibold leading-tight text-center"
+                    style={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
+                  >
+                    {cat.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Guardando…" : type === "ingreso" ? "Registrar ingreso" : "Registrar gasto"}
-      </Button>
+      {/* ── Botón guardar — gradiente ───────────────────────────────────────── */}
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
+        style={{
+          padding: "15px 18px",
+          fontSize: 15,
+          background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
+          color: "var(--primary-foreground)",
+          border: "none",
+          cursor: loading ? "not-allowed" : "pointer",
+          boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-lime) 55%, transparent)",
+        }}
+      >
+        <Check className="h-4 w-4" strokeWidth={2.5} />
+        {loading ? "Guardando…" : "Guardar movimiento"}
+      </button>
+
     </form>
   );
 }

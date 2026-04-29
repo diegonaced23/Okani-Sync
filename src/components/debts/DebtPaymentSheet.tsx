@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, fromCents, formatCents } from "@/lib/money";
@@ -92,7 +92,13 @@ export function DebtPaymentSheet({
         <div className="space-y-1.5">
           <Label>Cuenta de origen (opcional)</Label>
           <Select value={fromAccountId} onValueChange={(v) => setFromAccountId(v ?? "")}>
-            <SelectTrigger><SelectValue placeholder="Sin cuenta específica" /></SelectTrigger>
+            <SelectTrigger>
+              <span className="flex-1 text-left text-sm truncate">
+                {fromAccountId
+                  ? (() => { const a = (accounts ?? []).find(x => x._id === fromAccountId); return a ? `${a.name} — ${formatCents(a.balance, a.currency)}` : "Cuenta"; })()
+                  : <span className="text-muted-foreground">Sin cuenta específica</span>}
+              </span>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="">Sin cuenta</SelectItem>
               {(accounts ?? []).map((a) => (

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MoneyInput } from "@/components/ui/money-input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, currentMonth } from "@/lib/money";
@@ -58,7 +58,13 @@ export function BudgetForm({ defaultMonth, onSuccess }: BudgetFormProps) {
       <div className="space-y-1.5">
         <Label>Categoría</Label>
         <Select value={categoryId} onValueChange={(v) => { if (v) setCategoryId(v); }}>
-          <SelectTrigger><SelectValue placeholder="Seleccionar categoría" /></SelectTrigger>
+          <SelectTrigger>
+            <span className="flex-1 text-left text-sm truncate">
+              {categoryId
+                ? (categories ?? []).find(c => c._id === categoryId)?.name ?? "Categoría"
+                : <span className="text-muted-foreground">Seleccionar categoría</span>}
+            </span>
+          </SelectTrigger>
           <SelectContent>
             {(categories ?? []).map((c) => (
               <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>

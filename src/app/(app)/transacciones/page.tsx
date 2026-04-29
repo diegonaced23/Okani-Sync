@@ -2,9 +2,9 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useState, useRef } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,80 +12,22 @@ import type { Doc } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransferForm } from "@/components/transactions/TransferForm";
-import { currentMonth, formatMonth, formatCents } from "@/lib/money";
+import { currentMonth, formatCents } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
-// ─── Virtual list ─────────────────────────────────────────────────────────────
+// ─── Tipos de filtro ───────────────────────────────────────────────────────────
 
-const ITEM_HEIGHT = 65; // altura aproximada de cada TransactionItem en px
+type TxFilter = "all" | "ingreso" | "gasto" | "transferencia" | "pago_tarjeta";
 
-function VirtualTransactionList({
-  transactions,
-  catMap,
-}: {
-  transactions: Doc<"transactions">[];
-  catMap: Record<string, string>;
-}) {
-  const parentRef = useRef<HTMLDivElement>(null);
+const FILTER_PILLS: { key: TxFilter; label: string }[] = [
+  { key: "all",            label: "Todos" },
+  { key: "ingreso",        label: "Ingresos" },
+  { key: "gasto",          label: "Gastos" },
+  { key: "transferencia",  label: "Transfer." },
+  { key: "pago_tarjeta",   label: "Tarjeta" },
+];
 
-  const virtualizer = useVirtualizer({
-    count: transactions.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ITEM_HEIGHT,
-    overscan: 5,
-  });
-
-  // Para listas cortas (< 30 items), renderizado normal es más fluido
-  if (transactions.length < 30) {
-    return (
-      <ul className="divide-y divide-border">
-        {transactions.map((tx) => (
-          <li key={tx._id}>
-            <TransactionItem
-              transaction={tx}
-              categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
-            />
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  return (
-    <div
-      ref={parentRef}
-      className="overflow-auto"
-      style={{ maxHeight: "60dvh" }}
-    >
-      <div
-        style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          const tx = transactions[virtualRow.index];
-          return (
-            <div
-              key={tx._id}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-              className="border-b border-border"
-            >
-              <TransactionItem
-                transaction={tx}
-                categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Utilidades ────────────────────────────────────────────────────────────────
 
 function shiftMonth(m: string, delta: number) {
   const [y, mo] = m.split("-").map(Number);
@@ -93,117 +35,304 @@ function shiftMonth(m: string, delta: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Formatea "2026-04" → "Abril 2026"
+function monthLabel(m: string) {
+  const [year, month] = m.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  const name = date.toLocaleDateString("es-CO", { month: "long" })
+    .replace(/^\w/, (c) => c.toUpperCase());
+  return `${name} ${year}`;
+}
+
+// ─── Componente de fila separador ─────────────────────────────────────────────
+
+function TxSeparator() {
+  return <div style={{ height: 1, background: "var(--border)", margin: "0 16px" }} />;
+}
+
+// ─── Página ───────────────────────────────────────────────────────────────────
+
 export default function TransaccionesPage() {
-  const [month, setMonth] = useState(() => currentMonth());
-  const [open, setOpen] = useState(false);
-  const [txTab, setTxTab] = useState<"ingreso_gasto" | "transferencia">("ingreso_gasto");
-  const listRef = useRef<HTMLDivElement>(null);
+  const today        = currentMonth();
+  const searchParams = useSearchParams();
+  const router       = useRouter();
+
+  const [month, setMonth]   = useState(() => today);
+  const [filter, setFilter] = useState<TxFilter>("all");
+  const [open, setOpen]     = useState(false);
+  const [txTab, setTxTab]   = useState<"ingreso" | "gasto" | "transferencia">("gasto");
+
+  // Abre el sheet cuando el FAB navega a ?nuevo=true y limpia la URL
+  const nuevoParam = searchParams.get("nuevo");
+  useEffect(() => {
+    if (nuevoParam === "true") {
+      setOpen(true);
+      router.replace("/transacciones", { scroll: false });
+    }
+  }, [nuevoParam, router]);
 
   const transactions = useQuery(api.transactions.listByMonth, { month });
-  const categories = useQuery(api.categories.list, {});
+  const categories   = useQuery(api.categories.list, {});
 
-  const catMap = Object.fromEntries(
-    (categories ?? []).map((c) => [c._id, c.name])
+  const catMap = useMemo(
+    () => Object.fromEntries((categories ?? []).map((c) => [c._id, c.name])),
+    [categories]
   );
 
-  const ingresos = (transactions ?? [])
-    .filter((t) => t.type === "ingreso")
-    .reduce((s, t) => s + t.amount, 0);
-  const gastos = (transactions ?? [])
-    .filter((t) => t.type === "gasto")
-    .reduce((s, t) => s + t.amount, 0);
+  // ── Totales del mes (independientes del filtro) ────────────────────────────
+  const monthIngresos = useMemo(
+    () => (transactions ?? []).filter((t) => t.type === "ingreso").reduce((s, t) => s + t.amount, 0),
+    [transactions]
+  );
+  const monthGastos = useMemo(
+    () => (transactions ?? [])
+      .filter((t) => ["gasto", "pago_tarjeta", "pago_deuda"].includes(t.type))
+      .reduce((s, t) => s + t.amount, 0),
+    [transactions]
+  );
 
-  const isLoading = transactions === undefined;
+  // ── Lista filtrada ─────────────────────────────────────────────────────────
+  const filtered: Doc<"transactions">[] = useMemo(() => {
+    const all = transactions ?? [];
+    if (filter === "all") return all;
+    return all.filter((t) => t.type === filter);
+  }, [transactions, filter]);
+
+  const totalCount    = (transactions ?? []).length;
+  const filteredCount = filtered.length;
+  const isFiltered    = filter !== "all";
+  const currency      = "COP";
+
+  const canGoForward  = month < today;
 
   return (
-    <div className="space-y-4 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Transacciones</h1>
+    <div className="max-w-2xl mx-auto space-y-0">
+
+      {/* ── Encabezado ──────────────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between pb-4">
+        <div>
+          <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.03em", margin: 0, lineHeight: 1.1 }}>
+            Movimientos
+          </h1>
+          {/* Selector de mes inline */}
+          <div className="flex items-center gap-1 mt-1">
+            <button
+              type="button"
+              onClick={() => setMonth((m) => shiftMonth(m, -1))}
+              className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              aria-label="Mes anterior"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-sm text-muted-foreground">
+              {monthLabel(month)}
+              {transactions !== undefined && (
+                <>
+                  {" · "}
+                  <span className="font-medium">
+                    {isFiltered
+                      ? `${filteredCount} de ${totalCount} transacciones`
+                      : `${totalCount} transacciones`}
+                  </span>
+                </>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMonth((m) => shiftMonth(m, 1))}
+              disabled={!canGoForward}
+              className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30"
+              aria-label="Mes siguiente"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Botón nueva transacción — solo visible en desktop; en mobile usa el FAB del bottom nav */}
         <AppSheet
           open={open}
           onOpenChange={setOpen}
-          title="Nueva transacción"
-          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+          title="Nuevo movimiento"
+          description="Registra un ingreso, gasto o transferencia."
+          trigger={
+            <Button size="sm" className="gap-1.5 mt-1 hidden lg:inline-flex">
+              <Plus className="h-4 w-4" /> Nueva
+            </Button>
+          }
         >
-          <div className="flex rounded-lg border border-border overflow-hidden mb-4">
-            {(["ingreso_gasto", "transferencia"] as const).map((tab) => (
+          {/* Pill tabs — 3 opciones */}
+          <div
+            className="flex rounded-[14px] p-1 mb-5"
+            style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+          >
+            {(["ingreso", "gasto", "transferencia"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setTxTab(tab)}
-                className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                  txTab === tab
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted"
-                }`}
+                className="flex-1 py-2 text-[13px] transition-all"
+                style={{
+                  borderRadius: 10,
+                  background: txTab === tab ? "var(--surface)" : "transparent",
+                  color: txTab === tab ? "var(--foreground)" : "var(--muted-foreground)",
+                  fontWeight: txTab === tab ? 700 : 600,
+                  boxShadow: txTab === tab ? "var(--shadow-sm)" : "none",
+                  transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+                }}
               >
-                {tab === "ingreso_gasto" ? "Ingreso / Gasto" : "Transferencia"}
+                {tab === "ingreso" ? "Ingreso" : tab === "gasto" ? "Gasto" : "Transferir"}
               </button>
             ))}
           </div>
-          {txTab === "ingreso_gasto" ? (
-            <TransactionForm onSuccess={() => setOpen(false)} />
-          ) : (
+
+          {txTab === "transferencia" ? (
             <TransferForm onSuccess={() => setOpen(false)} />
+          ) : (
+            <TransactionForm
+              key={txTab}
+              defaultType={txTab}
+              onSuccess={() => setOpen(false)}
+            />
           )}
         </AppSheet>
       </div>
 
-      {/* Selector de mes */}
-      <div className="flex items-center justify-between rounded-xl bg-card border border-border px-4 py-2">
-        <button
-          type="button"
-          onClick={() => setMonth((m) => shiftMonth(m, -1))}
-          className="p-1 rounded hover:bg-muted transition-colors"
-          aria-label="Mes anterior"
-        >
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-        </button>
-        <span className="text-sm font-medium capitalize">{formatMonth(month)}</span>
-        <button
-          type="button"
-          onClick={() => setMonth((m) => shiftMonth(m, 1))}
-          disabled={month >= currentMonth()}
-          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30"
-          aria-label="Mes siguiente"
-        >
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </button>
+      {/* ── Stats del mes ───────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 pb-4">
+        {transactions === undefined ? (
+          <>
+            <Skeleton className="h-[76px] rounded-xl" />
+            <Skeleton className="h-[76px] rounded-xl" />
+          </>
+        ) : (
+          <>
+            <div
+              className="rounded-xl p-4"
+              style={{
+                background: "color-mix(in oklch, var(--os-lime) 12%, var(--card))",
+                border: "1px solid color-mix(in oklch, var(--os-lime) 28%, var(--border))",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+                  letterSpacing: "0.08em", color: "var(--muted-foreground)", marginBottom: 4,
+                }}
+              >
+                Ingresos
+              </p>
+              <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-lime)" }}>
+                {formatCents(monthIngresos, currency)}
+              </p>
+            </div>
+            <div
+              className="rounded-xl p-4"
+              style={{
+                background: "color-mix(in oklch, var(--os-magenta) 10%, var(--card))",
+                border: "1px solid color-mix(in oklch, var(--os-magenta) 25%, var(--border))",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+                  letterSpacing: "0.08em", color: "var(--muted-foreground)", marginBottom: 4,
+                }}
+              >
+                Gastos
+              </p>
+              <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-magenta)" }}>
+                {formatCents(monthGastos, currency)}
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Resumen */}
-      {!isLoading && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-accent/10 border border-accent/20 p-3">
-            <p className="text-xs text-muted-foreground">Ingresos</p>
-            <p className="text-lg font-bold text-accent">{formatCents(ingresos, "COP")}</p>
+      {/* ── Filter pills ────────────────────────────────────────────────────── */}
+      <div
+        className="flex gap-2 pb-4 overflow-x-auto"
+        style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+      >
+        {FILTER_PILLS.map(({ key, label }) => {
+          const isActive = filter === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setFilter(key)}
+              className="flex-none whitespace-nowrap transition-all"
+              style={{
+                padding: "8px 16px",
+                borderRadius: 9999,
+                fontSize: 13,
+                fontWeight: isActive ? 700 : 600,
+                cursor: "pointer",
+                border: isActive
+                  ? "1.5px solid var(--os-lime)"
+                  : "1.5px solid var(--border)",
+                background: isActive
+                  ? "color-mix(in oklch, var(--os-lime) 12%, var(--surface))"
+                  : "var(--surface)",
+                color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
+                transition: "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Lista de transacciones ───────────────────────────────────────────── */}
+      {transactions === undefined ? (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          <div className="p-4 space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-14 rounded-xl" />
+            ))}
           </div>
-          <div className="rounded-xl bg-danger/10 border border-danger/20 p-3">
-            <p className="text-xs text-muted-foreground">Gastos</p>
-            <p className="text-lg font-bold text-danger">{formatCents(gastos, "COP")}</p>
-          </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div
+          className="rounded-xl p-12 text-center"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          <p className="text-sm text-muted-foreground">
+            {filter === "all"
+              ? `No hay transacciones en ${monthLabel(month).toLowerCase()}.`
+              : `No hay ${FILTER_PILLS.find((f) => f.key === filter)?.label.toLowerCase() ?? "registros"} en ${monthLabel(month).toLowerCase()}.`}
+          </p>
+          {filter !== "all" && (
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className="mt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Ver todos
+            </button>
+          )}
+        </div>
+      ) : (
+        <div
+          className="rounded-xl overflow-hidden"
+          style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+        >
+          {filtered.map((tx, i) => (
+            <div key={tx._id}>
+              <TransactionItem
+                transaction={tx}
+                categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+              />
+              {i < filtered.length - 1 && <TxSeparator />}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Lista con virtual scroll para meses con muchas transacciones */}
-      <div className="rounded-xl bg-card border border-border overflow-hidden">
-        {isLoading ? (
-          <div className="p-4 space-y-3">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-14 rounded-lg" />
-            ))}
-          </div>
-        ) : (transactions ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground py-12 text-center">
-            No hay transacciones en {formatMonth(month).toLowerCase()}.
-          </p>
-        ) : (
-          <VirtualTransactionList
-            transactions={transactions!}
-            catMap={catMap}
-          />
-        )}
-      </div>
     </div>
   );
 }
