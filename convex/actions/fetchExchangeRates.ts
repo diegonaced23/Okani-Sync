@@ -1,3 +1,4 @@
+"use node";
 import { internalAction } from "../_generated/server";
 import { EXCHANGE_RATE_PAIRS } from "../../src/lib/constants";
 

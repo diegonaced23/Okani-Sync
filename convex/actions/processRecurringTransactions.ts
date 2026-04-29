@@ -1,3 +1,4 @@
+"use node";
 import { internalAction } from "../_generated/server";
 
 // Stub — implementación completa en Sprint 8
