@@ -165,3 +165,10 @@ export function toMonthString(timestamp: number): string {
 export function currentMonth(): string {
   return toMonthString(Date.now());
 }
+
+/** Formatea un string "YYYY-MM" como "Abril 2026". */
+export function formatMonth(yearMonth: string): string {
+  const [year, month] = yearMonth.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+}
