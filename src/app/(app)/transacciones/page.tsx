@@ -156,7 +156,10 @@ export default function TransaccionesPage() {
           title="Nuevo movimiento"
           description="Registra un ingreso, gasto o transferencia."
           trigger={
-            <Button size="sm" className="gap-1.5 mt-1 hidden lg:inline-flex">
+            <Button
+              size="sm"
+              className="gap-1.5 mt-1 hidden lg:inline-flex bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+            >
               <Plus className="h-4 w-4" /> Nueva
             </Button>
           }

@@ -100,7 +100,14 @@ export default function CategoriasPage() {
           open={open}
           onOpenChange={setOpen}
           title="Nueva categoría"
-          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+          trigger={
+            <Button
+              size="sm"
+              className="gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+            >
+              <Plus className="h-4 w-4" /> Nueva
+            </Button>
+          }
         >
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-1.5">

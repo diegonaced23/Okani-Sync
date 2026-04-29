@@ -47,11 +47,19 @@ export default function PresupuestosPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Presupuestos</h1>
+        {/* Botón desktop */}
         <AppSheet
           open={open}
           onOpenChange={setOpen}
           title="Nuevo presupuesto"
-          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nuevo</Button>}
+          trigger={
+            <Button
+              size="sm"
+              className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+            >
+              <Plus className="h-4 w-4" /> Nuevo presupuesto
+            </Button>
+          }
         >
           <BudgetForm defaultMonth={month} onSuccess={() => setOpen(false)} />
         </AppSheet>
@@ -112,14 +120,9 @@ export default function PresupuestosPage() {
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
         </div>
       ) : (budgets ?? []).length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-14 text-center">
-          <p className="text-sm text-muted-foreground">
-            No hay presupuestos para {formatMonth(month).toLowerCase()}.
-          </p>
-          <Button size="sm" onClick={() => setOpen(true)} className="gap-1.5">
-            <Plus className="h-4 w-4" /> Crear presupuesto
-          </Button>
-        </div>
+        <p className="text-sm text-muted-foreground py-14 text-center">
+          No hay presupuestos para {formatMonth(month).toLowerCase()}.
+        </p>
       ) : (
         <div className="space-y-3">
           {budgets!
@@ -131,6 +134,24 @@ export default function PresupuestosPage() {
                 onDelete={() => handleDelete(budget._id as Id<"budgets">)}
               />
             ))}
+        </div>
+      )}
+
+      {/* Botón mobile — debajo de los presupuestos */}
+      {!isLoading && (
+        <div className="md:hidden">
+          <AppSheet
+            open={open}
+            onOpenChange={setOpen}
+            title="Nuevo presupuesto"
+            trigger={
+              <Button className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold">
+                <Plus className="h-5 w-5" /> Agregar presupuesto
+              </Button>
+            }
+          >
+            <BudgetForm defaultMonth={month} onSuccess={() => setOpen(false)} />
+          </AppSheet>
         </div>
       )}
     </div>

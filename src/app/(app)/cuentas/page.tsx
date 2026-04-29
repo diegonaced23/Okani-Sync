@@ -37,11 +37,19 @@ export default function CuentasPage() {
             </p>
           )}
         </div>
+        {/* Botón desktop */}
         <AppSheet
           open={open}
           onOpenChange={setOpen}
           title="Nueva cuenta"
-          trigger={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Nueva</Button>}
+          trigger={
+            <Button
+              size="sm"
+              className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+            >
+              <Plus className="h-4 w-4" /> Nueva cuenta
+            </Button>
+          }
         >
           <AccountForm onSuccess={() => setOpen(false)} />
         </AppSheet>
@@ -98,6 +106,22 @@ export default function CuentasPage() {
           </section>
         </>
       )}
+
+      {/* Botón mobile — debajo de las cuentas */}
+      <div className="md:hidden">
+        <AppSheet
+          open={open}
+          onOpenChange={setOpen}
+          title="Nueva cuenta"
+          trigger={
+            <Button className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold">
+              <Plus className="h-5 w-5" /> Agregar cuenta
+            </Button>
+          }
+        >
+          <AccountForm onSuccess={() => setOpen(false)} />
+        </AppSheet>
+      </div>
     </div>
   );
 }
