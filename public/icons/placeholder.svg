@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="80" fill="#1F262A"/>
+  <text x="50%" y="55%" font-family="system-ui,sans-serif" font-size="200" font-weight="700"
+        fill="#4ADE80" text-anchor="middle" dominant-baseline="middle">O</text>
+</svg>

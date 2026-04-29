@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
+/* ─── Variables del tema — Dark (por defecto) ─────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #1F262A;
+  --surface: #343434;
+  --surface-elevated: #2A3236;
+  --border: #3D4448;
+  --foreground: #F5F5F5;
+  --muted-foreground: #A3A8AB;
+  --accent: #4ADE80;
+  --accent-foreground: #052e16;
+  --danger: #EF4444;
+  --warning: #F59E0B;
+  --info: #38BDF8;
+  --muted: #2A3236;
+  --card: #343434;
+  --card-foreground: #F5F5F5;
+  --popover: #343434;
+  --popover-foreground: #F5F5F5;
+  --primary: #4ADE80;
+  --primary-foreground: #052e16;
+  --secondary: #2A3236;
+  --secondary-foreground: #F5F5F5;
+  --input: #3D4448;
+  --ring: #4ADE80;
+  --radius: 0.5rem;
 }
 
+/* ─── Variables del tema — Light ─────────────────────────────────────────── */
+.light {
+  --background: #FAFAF9;
+  --surface: #FFFFFF;
+  --surface-elevated: #F5F5F4;
+  --border: #E7E5E4;
+  --foreground: #1C1917;
+  --muted-foreground: #57534E;
+  --accent: #16A34A;
+  --accent-foreground: #f0fdf4;
+  --danger: #DC2626;
+  --warning: #D97706;
+  --info: #0284C7;
+  --muted: #F5F5F4;
+  --card: #FFFFFF;
+  --card-foreground: #1C1917;
+  --popover: #FFFFFF;
+  --popover-foreground: #1C1917;
+  --primary: #16A34A;
+  --primary-foreground: #f0fdf4;
+  --secondary: #F5F5F4;
+  --secondary-foreground: #1C1917;
+  --input: #E7E5E4;
+  --ring: #16A34A;
+}
+
+/* ─── Tailwind v4 — mapeo de tokens ─────────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Base ───────────────────────────────────────────────────────────────── */
+* {
+  border-color: var(--border);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Safe area para notch/home bar de iOS */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Scrollbar estilizado */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
 }

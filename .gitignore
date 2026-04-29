@@ -30,8 +30,19 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — nunca subir .env.local
+.env
+.env.local
+.env.*.local
+
+# Convex generated
+convex/_generated/
+
+# Serwist / PWA generated
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/workbox-*.js.map
 
 # vercel
 .vercel
