@@ -3,7 +3,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { clerkCreateUser, clerkFindUserByEmail } from "../lib/clerkApi";
 
-const ADMIN_EMAIL = "admin@okanysync.com";
+const ADMIN_EMAIL = "diego-naced@hotmail.com";
 const ADMIN_NAME = "Admin OkanySync";
 const ADMIN_PASSWORD = "Okanysync123*";
 
