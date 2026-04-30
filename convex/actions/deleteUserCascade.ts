@@ -141,7 +141,7 @@ export const run = internalAction({
     });
 
     console.log(
-      `deleteUserCascade: ${user.email} eliminado. Conteos:`,
+      `deleteUserCascade: usuario ${clerkId} eliminado. Conteos:`,
       counts
     );
   },

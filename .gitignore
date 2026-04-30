@@ -129,6 +129,17 @@ $RECYCLE.BIN/
 *#
 .#*
 
+# ── Claude y agentes ───────────────────────────────────────────────────────
+.claude/
+.agents/
+.skills/
+.projects/
+.memory/
+.history/
+.notes/
+.tasks/
+.docs/
+
 # ── Archivos temporales ───────────────────────────────────────────────────────
 tmp/
 temp/

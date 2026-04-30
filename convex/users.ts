@@ -125,6 +125,16 @@ export const updateTheme = mutation({
 export const getByClerkId = query({
   args: { clerkId: v.string() },
   handler: async (ctx, { clerkId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    // Solo el propio usuario o un admin pueden consultar datos completos de otro usuario
+    if (identity.subject !== clerkId) {
+      const caller = await ctx.db
+        .query("users")
+        .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+        .unique();
+      if (!caller || caller.role !== "admin") return null;
+    }
     return await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
@@ -252,6 +262,19 @@ export const updateByAdmin = mutation({
       .withIndex("by_clerkId", (q) => q.eq("clerkId", targetClerkId))
       .unique();
     if (!target) throw new Error("Usuario no encontrado");
+
+    // Evitar que el último admin activo quede sin acceso administrativo
+    const isDemotion = target.role === "admin" && (fields.role === "user" || fields.active === false);
+    if (isDemotion) {
+      const activeAdmins = await ctx.db
+        .query("users")
+        .withIndex("by_role", (q) => q.eq("role", "admin"))
+        .filter((q) => q.eq(q.field("active"), true))
+        .collect();
+      if (activeAdmins.length <= 1) {
+        throw new Error("No se puede remover o desactivar el último administrador activo del sistema");
+      }
+    }
 
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     if (fields.name !== undefined)   patch.name   = fields.name;

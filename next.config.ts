@@ -2,12 +2,32 @@ import type { NextConfig } from "next";
 import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// CSP en modo Report-Only: registra violaciones sin bloquear.
+// Una vez verificado en prod (24-48h sin falsos positivos), cambiar a Content-Security-Policy.
+const csp = [
+  "default-src 'self'",
+  // Clerk inyecta scripts inline; Cloudflare Turnstile es requerido por Clerk para bot detection
+  "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://clerk.accounts.dev https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://img.clerk.com https://images.clerk.dev",
+  "font-src 'self' data:",
+  // Convex (REST + WebSocket), Clerk, Sentry
+  "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.clerk.accounts.dev https://clerk.accounts.dev https://*.sentry.io wss://*.sentry.io https://challenges.cloudflare.com",
+  // Clerk OAuth popups y Cloudflare Turnstile iframe
+  "frame-src https://*.clerk.accounts.dev https://clerk.accounts.dev https://challenges.cloudflare.com",
+  "frame-ancestors 'none'",
+  // Serwist Service Worker
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+].join("; ");
+
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  { key: "Content-Security-Policy-Report-Only", value: csp },
 ];
 
 const baseConfig: NextConfig = {

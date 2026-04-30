@@ -160,6 +160,12 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.name.length === 0 || args.name.length > 100) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
+    if (!Number.isFinite(args.initialBalance) || args.initialBalance < 0) throw new Error("El saldo inicial debe ser mayor o igual a cero");
+    if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
+    if (args.accountNumber !== undefined && args.accountNumber.length > 50) throw new Error("El número de cuenta no puede superar 50 caracteres");
+    if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const now = Date.now();
     return await ctx.db.insert("accounts", {
@@ -200,6 +206,10 @@ export const update = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, { accountId, ...fields }) => {
+    if (fields.name !== undefined && (fields.name.length === 0 || fields.name.length > 100)) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
+    if (fields.accountNumber !== undefined && fields.accountNumber.length > 50) throw new Error("El número de cuenta no puede superar 50 caracteres");
+    if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const account = await ctx.db.get(accountId);
     if (!account || account.ownerId !== user.clerkId) {

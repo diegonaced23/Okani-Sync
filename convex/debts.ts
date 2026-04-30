@@ -78,6 +78,16 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.name.length === 0 || args.name.length > 100) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
+    if (args.creditor.length === 0 || args.creditor.length > 100) throw new Error("El acreedor debe tener entre 1 y 100 caracteres");
+    if (args.originalAmount <= 0 || !Number.isFinite(args.originalAmount)) throw new Error("El monto original debe ser mayor que cero");
+    if (args.originalAmount > 9_999_999_999) throw new Error("Monto fuera de rango permitido");
+    if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
+    if (args.interestRate !== undefined && (args.interestRate < 0 || args.interestRate > 1000)) throw new Error("La tasa de interés debe estar entre 0 y 1000");
+    if (args.monthlyPayment !== undefined && (args.monthlyPayment <= 0 || !Number.isFinite(args.monthlyPayment))) throw new Error("El pago mensual debe ser mayor que cero");
+    if (args.description !== undefined && args.description.length > 500) throw new Error("La descripción no puede superar 500 caracteres");
+    if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const now = Date.now();
     return await ctx.db.insert("debts", {
@@ -114,6 +124,11 @@ export const update = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, { debtId, ...fields }) => {
+    if (fields.name !== undefined && (fields.name.length === 0 || fields.name.length > 100)) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
+    if (fields.creditor !== undefined && (fields.creditor.length === 0 || fields.creditor.length > 100)) throw new Error("El acreedor debe tener entre 1 y 100 caracteres");
+    if (fields.monthlyPayment !== undefined && (fields.monthlyPayment <= 0 || !Number.isFinite(fields.monthlyPayment))) throw new Error("El pago mensual debe ser mayor que cero");
+    if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const debt = await ctx.db.get(debtId);
     if (!debt || debt.userId !== user.clerkId) throw new Error("Deuda no encontrada");
@@ -135,6 +150,10 @@ export const addPayment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.amount <= 0 || !Number.isFinite(args.amount)) throw new Error("El monto del abono debe ser mayor que cero");
+    if (args.amount > 9_999_999_999) throw new Error("Monto fuera de rango permitido");
+    if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const debt = await ctx.db.get(args.debtId);
     if (!debt || debt.userId !== user.clerkId) throw new Error("Deuda no encontrada");

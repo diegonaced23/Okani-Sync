@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
-import { assertCanWrite } from "./lib/permissions";
+import { assertCanRead, assertCanWrite } from "./lib/permissions";
 import { toMonthString, generateId } from "./lib/utils";
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
@@ -60,17 +60,14 @@ export const listByMonth = query({
 export const listByAccountMonth = query({
   args: { accountId: v.id("accounts"), month: v.string() },
   handler: async (ctx, { accountId, month }) => {
-    const clerkId = await getCurrentUserId(ctx);
-    // Incluye tanto tx donde accountId = origen como transferencias donde toAccountId = esta cuenta
-    const direct = await ctx.db
+    await assertCanRead(ctx, accountId);
+    return await ctx.db
       .query("transactions")
       .withIndex("by_account_month", (q) =>
         q.eq("accountId", accountId).eq("month", month)
       )
       .order("desc")
       .collect();
-    // Filtramos solo las que pertenecen al usuario autenticado (o cuentas compartidas)
-    return direct.filter((t) => t.userId === clerkId || t.accountId === accountId);
   },
 });
 
@@ -78,11 +75,12 @@ export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit = 10 }) => {
     const clerkId = await getCurrentUserId(ctx);
+    const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
     return await ctx.db
       .query("transactions")
       .withIndex("by_user_date", (q) => q.eq("userId", clerkId))
       .order("desc")
-      .take(limit);
+      .take(safeLimit);
   },
 });
 
@@ -140,9 +138,10 @@ export const monthlySummary = query({
   args: { months: v.array(v.string()) },
   handler: async (ctx, { months }) => {
     const clerkId = await getCurrentUserId(ctx);
+    const safeMonths = months.slice(0, 24);
 
     return await Promise.all(
-      months.map(async (month) => {
+      safeMonths.map(async (month) => {
         const txs = await ctx.db
           .query("transactions")
           .withIndex("by_user_month", (q) =>
@@ -184,7 +183,34 @@ export const create = mutation({
     receiptStorageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
+    if (args.amount <= 0 || !Number.isFinite(args.amount)) throw new Error("El monto debe ser mayor que cero");
+    if (args.amount > 9_999_999_999) throw new Error("Monto fuera de rango permitido");
+    if (args.description.length === 0 || args.description.length > 200) throw new Error("La descripción debe tener entre 1 y 200 caracteres");
+    if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
+    if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
+    // Validación nominal de MIME type del comprobante (el contentType es declarado por el cliente,
+    // no verificado por magic bytes — defensa-en-profundidad, no garantía de contenido)
+    if (args.receiptStorageId !== undefined) {
+      const meta = await ctx.storage.getMetadata(args.receiptStorageId);
+      const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+      if (!meta || !meta.contentType || !allowed.includes(meta.contentType)) {
+        throw new Error("El comprobante debe ser una imagen (JPEG, PNG, WebP) o PDF");
+      }
+    }
+
     const user = await getCurrentUser(ctx);
+
+    // Rate limiting: máximo 30 transacciones por minuto por usuario
+    const latestTxs = await ctx.db
+      .query("transactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .order("desc")
+      .take(31);
+    const cutoff = Date.now() - 60_000;
+    if (latestTxs.filter((t) => t.createdAt >= cutoff).length >= 30) {
+      throw new Error("Demasiadas transacciones en poco tiempo. Intenta de nuevo en un minuto.");
+    }
 
     if (args.accountId) {
       await assertCanWrite(ctx, args.accountId);
@@ -237,6 +263,11 @@ export const update = mutation({
     date: v.optional(v.number()),
   },
   handler: async (ctx, { transactionId, ...fields }) => {
+    if (fields.description !== undefined && (fields.description.length === 0 || fields.description.length > 200)) {
+      throw new Error("La descripción debe tener entre 1 y 200 caracteres");
+    }
+    if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const tx = await ctx.db.get(transactionId);
     if (!tx || tx.userId !== user.clerkId) {
@@ -299,6 +330,11 @@ export const createTransfer = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.amount <= 0 || !Number.isFinite(args.amount)) throw new Error("El monto debe ser mayor que cero");
+    if (args.amount > 9_999_999_999) throw new Error("Monto fuera de rango permitido");
+    if (args.description.length === 0 || args.description.length > 200) throw new Error("La descripción debe tener entre 1 y 200 caracteres");
+    if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
 
     // Verificar permisos en ambas cuentas

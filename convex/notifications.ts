@@ -8,11 +8,12 @@ export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit = 20 }) => {
     const clerkId = await getCurrentUserId(ctx);
+    const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
     return await ctx.db
       .query("notifications")
       .withIndex("by_user", (q) => q.eq("userId", clerkId))
       .order("desc")
-      .take(limit);
+      .take(safeLimit);
   },
 });
 

@@ -1,5 +1,16 @@
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /** HTML del email de bienvenida. Sin JSX para compatibilidad con el runtime de Convex. */
 export function welcomeEmailHtml(name: string, signInUrl: string): string {
+  const safeName = escapeHtml(name);
+  const safeSignInUrl = signInUrl.startsWith("https://") ? escapeHtml(signInUrl) : "#";
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -23,7 +34,7 @@ export function welcomeEmailHtml(name: string, signInUrl: string): string {
           <tr>
             <td style="padding:32px 40px;">
               <h1 style="margin:0 0 16px;font-size:20px;color:#F5F5F5;">
-                ¡Bienvenido, ${name}! 👋
+                ¡Bienvenido, ${safeName}! 👋
               </h1>
               <p style="margin:0 0 12px;font-size:14px;color:#A3A8AB;line-height:1.6;">
                 Tu cuenta en <strong style="color:#F5F5F5;">Okany Sync</strong> ha sido creada exitosamente.
@@ -32,7 +43,7 @@ export function welcomeEmailHtml(name: string, signInUrl: string): string {
               <p style="margin:0 0 24px;font-size:14px;color:#A3A8AB;line-height:1.6;">
                 Inicia sesión con tu correo electrónico usando Google o el enlace mágico que Clerk te enviará.
               </p>
-              <a href="${signInUrl}"
+              <a href="${safeSignInUrl}"
                  style="display:inline-block;background:#4ADE80;color:#052e16;font-weight:700;
                         font-size:14px;padding:12px 28px;border-radius:8px;text-decoration:none;">
                 Iniciar sesión →

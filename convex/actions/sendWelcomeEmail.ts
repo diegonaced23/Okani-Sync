@@ -44,7 +44,7 @@ export const run = internalAction({
       }
 
       await ctx.runMutation(internal.users.markWelcomeEmailSent, { clerkId });
-      console.log(`sendWelcomeEmail: enviado a ${user.email}`);
+      console.log(`sendWelcomeEmail: email enviado al usuario ${clerkId}`);
     } catch (err) {
       console.error("sendWelcomeEmail: error inesperado →", err);
     }

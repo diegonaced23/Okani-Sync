@@ -7,9 +7,13 @@ import webpush from "web-push";
 function getVapidConfig() {
   const publicKey  = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject    = process.env.VAPID_SUBJECT ?? "mailto:admin@okany.app";
+  const subject    = process.env.VAPID_SUBJECT;
 
   if (!publicKey || !privateKey) return null;
+  if (!subject) {
+    console.error("sendPushNotification: VAPID_SUBJECT no configurada — define la variable de entorno");
+    return null;
+  }
   return { publicKey, privateKey, subject };
 }
 

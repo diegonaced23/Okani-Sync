@@ -47,6 +47,11 @@ export const create = mutation({
     recurring: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    if (args.amount <= 0 || !Number.isFinite(args.amount)) throw new Error("El monto del presupuesto debe ser mayor que cero");
+    if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
+    if (args.alertThreshold !== undefined && (args.alertThreshold < 0 || args.alertThreshold > 100)) throw new Error("El umbral de alerta debe estar entre 0 y 100");
+    if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const now = Date.now();
     return await ctx.db.insert("budgets", {
@@ -74,6 +79,10 @@ export const update = mutation({
     recurring: v.optional(v.boolean()),
   },
   handler: async (ctx, { budgetId, ...fields }) => {
+    if (fields.amount !== undefined && (fields.amount <= 0 || !Number.isFinite(fields.amount))) throw new Error("El monto del presupuesto debe ser mayor que cero");
+    if (fields.alertThreshold !== undefined && (fields.alertThreshold < 0 || fields.alertThreshold > 100)) throw new Error("El umbral de alerta debe estar entre 0 y 100");
+    if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+
     const user = await getCurrentUser(ctx);
     const budget = await ctx.db.get(budgetId);
     if (!budget || budget.userId !== user.clerkId) throw new Error("Presupuesto no encontrado");

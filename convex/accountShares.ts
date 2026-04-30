@@ -105,15 +105,33 @@ export const share = mutation({
     const currentUser = await getCurrentUser(ctx);
     await assertCanManage(ctx, accountId);
 
+    // Validación de formato de email antes de cualquier consulta a BD
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      throw new Error("El formato del correo electrónico no es válido");
+    }
+
+    // Rate limiting: máximo 10 invitaciones por minuto por usuario
+    const recentShares = await ctx.db
+      .query("accountShares")
+      .withIndex("by_owner", (q) => q.eq("ownerId", currentUser.clerkId))
+      .order("desc")
+      .take(11);
+    const cutoff = Date.now() - 60_000;
+    if (recentShares.filter((s) => s.invitedAt >= cutoff).length >= 10) {
+      throw new Error("Demasiadas invitaciones en poco tiempo. Intenta de nuevo en un minuto.");
+    }
+
     // Buscar usuario invitado por email
     const invitedUser = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", email.toLowerCase().trim()))
+      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
       .unique();
 
+    // Mensaje genérico para no revelar si un email está registrado en el sistema
     if (!invitedUser) {
       throw new Error(
-        "No se encontró un usuario con ese correo. Solo puedes compartir con usuarios registrados en Okany Sync."
+        "No se pudo completar la invitación. Verifica el correo e intenta de nuevo."
       );
     }
     if (invitedUser.clerkId === currentUser.clerkId) {
