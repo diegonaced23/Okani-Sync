@@ -139,6 +139,8 @@ $RECYCLE.BIN/
 .notes/
 .tasks/
 .docs/
+AGENTS.md
+CLAUDE.md
 
 # ── Archivos temporales ───────────────────────────────────────────────────────
 tmp/
