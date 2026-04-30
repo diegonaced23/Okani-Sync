@@ -54,7 +54,7 @@ export default function RootLayout({
     >
       <html lang="es-CO" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <head>
-          <link rel="apple-touch-icon" href="/icons/placeholder.svg" />
+          <link rel="apple-touch-icon" href="/icon.svg" />
         </head>
         <body className="min-h-screen bg-background font-sans antialiased">
           <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
