@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ClerkProvider } from "@clerk/nextjs";
-import { esES } from "@clerk/localizations";
+import { ClerkThemeProvider } from "@/components/providers/ClerkThemeProvider";
 import { ConvexClientProvider } from "@/components/providers/ConvexClientProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import "./globals.css";
@@ -41,27 +40,17 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider
-      localization={esES}
-      appearance={{
-        variables: {
-          colorPrimary: "#4ADE80",
-          colorBackground: "#060e18",
-          colorInputBackground: "#182535",
-          colorText: "#F5F5F5",
-        },
-      }}
-    >
-      <html lang="es-CO" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
-        <head>
-          <link rel="apple-touch-icon" href="/icon.svg" />
-        </head>
-        <body className="min-h-screen bg-background font-sans antialiased">
-          <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+    <html lang="es-CO" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/icon.svg" />
+      </head>
+      <body className="min-h-screen bg-background font-sans antialiased">
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <ClerkThemeProvider>
             <ConvexClientProvider>{children}</ConvexClientProvider>
-          </ThemeProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+          </ClerkThemeProvider>
+        </ThemeProvider>
+      </body>
+    </html>
   );
 }
