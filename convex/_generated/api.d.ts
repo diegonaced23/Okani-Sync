@@ -14,6 +14,7 @@ import type * as actions_adminUsers from "../actions/adminUsers.js";
 import type * as actions_deleteUserCascade from "../actions/deleteUserCascade.js";
 import type * as actions_fetchExchangeRates from "../actions/fetchExchangeRates.js";
 import type * as actions_processRecurringTransactions from "../actions/processRecurringTransactions.js";
+import type * as actions_seedAdmin from "../actions/seedAdmin.js";
 import type * as actions_sendAlerts from "../actions/sendAlerts.js";
 import type * as actions_sendPushNotification from "../actions/sendPushNotification.js";
 import type * as actions_sendWelcomeEmail from "../actions/sendWelcomeEmail.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "actions/deleteUserCascade": typeof actions_deleteUserCascade;
   "actions/fetchExchangeRates": typeof actions_fetchExchangeRates;
   "actions/processRecurringTransactions": typeof actions_processRecurringTransactions;
+  "actions/seedAdmin": typeof actions_seedAdmin;
   "actions/sendAlerts": typeof actions_sendAlerts;
   "actions/sendPushNotification": typeof actions_sendPushNotification;
   "actions/sendWelcomeEmail": typeof actions_sendWelcomeEmail;

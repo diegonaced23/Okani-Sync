@@ -12,7 +12,8 @@
     "typecheck:sw": "tsc --noEmit -p tsconfig.sw.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "seed:admin": "npx convex run actions/seedAdmin:run"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

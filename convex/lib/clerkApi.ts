@@ -25,17 +25,24 @@ export async function clerkCreateUser(args: {
   email: string;
   firstName: string;
   lastName?: string;
+  password?: string;
   secretKey: string;
 }): Promise<ClerkUserCreated> {
+  const body: Record<string, unknown> = {
+    email_address: [args.email],
+    first_name: args.firstName,
+    last_name: args.lastName ?? "",
+  };
+  if (args.password) {
+    body.password = args.password;
+  } else {
+    body.skip_password_requirement = true;
+  }
+
   const res = await fetch(`${CLERK_API}/users`, {
     method: "POST",
     headers: authHeaders(args.secretKey),
-    body: JSON.stringify({
-      email_address: [args.email],
-      first_name: args.firstName,
-      last_name: args.lastName ?? "",
-      skip_password_requirement: true,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -47,6 +54,20 @@ export async function clerkCreateUser(args: {
     );
   }
   return res.json() as Promise<ClerkUserCreated>;
+}
+
+/** Busca un usuario en Clerk por email. Devuelve null si no existe. */
+export async function clerkFindUserByEmail(args: {
+  email: string;
+  secretKey: string;
+}): Promise<ClerkUserCreated | null> {
+  const params = new URLSearchParams({ email_address: args.email });
+  const res = await fetch(`${CLERK_API}/users?${params.toString()}`, {
+    headers: authHeaders(args.secretKey),
+  });
+  if (!res.ok) return null;
+  const list = (await res.json()) as ClerkUserCreated[];
+  return list[0] ?? null;
 }
 
 /** Elimina un usuario en Clerk. */

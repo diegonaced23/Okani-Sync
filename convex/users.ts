@@ -482,6 +482,20 @@ export const deleteOwnedAccounts = internalMutation({
 
 // ─── Mutation interna: borrar usuario (llamada desde deleteUserCascade) ────────
 
+/** Garantiza role=admin en un usuario existente (usado solo por seedAdmin). */
+export const patchAdminRole = internalMutation({
+  args: { clerkId: v.string() },
+  handler: async (ctx, { clerkId }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .unique();
+    if (!user) return;
+    if (user.role === "admin") return;
+    await ctx.db.patch(user._id, { role: "admin", updatedAt: Date.now() });
+  },
+});
+
 export const deleteByClerkId = internalMutation({
   args: { clerkId: v.string(), deletedBy: v.string() },
   handler: async (ctx, { clerkId }) => {
