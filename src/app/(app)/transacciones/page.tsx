@@ -13,7 +13,6 @@ import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransferForm } from "@/components/transactions/TransferForm";
 import { currentMonth, formatCents } from "@/lib/money";
-import { cn } from "@/lib/utils";
 
 // ─── Tipos de filtro ───────────────────────────────────────────────────────────
 
@@ -57,23 +56,26 @@ export default function TransaccionesPage() {
   const searchParams = useSearchParams();
   const router       = useRouter();
 
-  const [month, setMonth]   = useState(() => today);
-  const [filter, setFilter] = useState<TxFilter>("all");
-  const [open, setOpen]     = useState(false);
-  const [txTab, setTxTab]   = useState<"ingreso" | "gasto" | "transferencia">("gasto");
-
-  // Abre el sheet cuando el FAB navega a ?nuevo=true y limpia la URL
+  // Leer params antes de los useState para poder inicializar desde la URL
   const nuevoParam = searchParams.get("nuevo");
   const tabParam   = searchParams.get("tab");
+
+  const [month, setMonth]   = useState(() => today);
+  const [filter, setFilter] = useState<TxFilter>("all");
+  const [open, setOpen]     = useState(nuevoParam === "true");
+  const [txTab, setTxTab]   = useState<"ingreso" | "gasto" | "transferencia">(() => {
+    if (tabParam === "ingreso" || tabParam === "gasto" || tabParam === "transferencia") {
+      return tabParam;
+    }
+    return "gasto";
+  });
+
+  // Limpiar URL tras leer los params (sin setState — solo side-effect de navegación)
   useEffect(() => {
     if (nuevoParam === "true") {
-      if (tabParam === "ingreso" || tabParam === "gasto" || tabParam === "transferencia") {
-        setTxTab(tabParam);
-      }
-      setOpen(true);
       router.replace("/transacciones", { scroll: false });
     }
-  }, [nuevoParam, tabParam, router]);
+  }, [nuevoParam, router]);
 
   const transactions = useQuery(api.transactions.listByMonth, { month });
   const categories   = useQuery(api.categories.list, {});

@@ -53,7 +53,7 @@ dist/
 next-env.d.ts
 
 # ── Convex ────────────────────────────────────────────────────────────────────
-convex/_generated/
+# _generated/ se commitea (tipos TypeScript que afectan el typecheck del equipo)
 .convex/
 
 # ── Serwist / PWA ─────────────────────────────────────────────────────────────

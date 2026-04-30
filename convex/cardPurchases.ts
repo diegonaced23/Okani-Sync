@@ -35,7 +35,7 @@ export const listByCard = query({
     const card = await ctx.db.get(cardId);
     if (!card || card.userId !== clerkId) return [];
 
-    let q = ctx.db
+    const q = ctx.db
       .query("cardPurchases")
       .withIndex("by_card", (q) => q.eq("cardId", cardId));
 

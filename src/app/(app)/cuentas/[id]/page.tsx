@@ -7,7 +7,7 @@ import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
-  ArrowLeft, Share2, UserMinus, Archive, Plus, ChevronLeft, ChevronRight,
+  ArrowLeft, Share2, UserMinus, Archive, ChevronLeft, ChevronRight,
   Pencil, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";

@@ -14,16 +14,18 @@ import {
 export type PushStatus = "unsupported" | "denied" | "subscribed" | "unsubscribed" | "loading";
 
 export function usePushNotifications() {
-  const [status, setStatus] = useState<PushStatus>("loading");
+  const [status, setStatus] = useState<PushStatus>(() => {
+    if (!isPushSupported()) return "unsupported";
+    const perm = getNotificationPermission();
+    if (perm === "denied") return "denied";
+    return "loading";
+  });
   const saveSubscription   = useMutation(api.pushSubscriptions.save);
   const removeSubscription = useMutation(api.pushSubscriptions.remove);
 
   useEffect(() => {
-    if (!isPushSupported()) { setStatus("unsupported"); return; }
-
-    const perm = getNotificationPermission();
-    if (perm === "denied") { setStatus("denied"); return; }
-
+    if (!isPushSupported()) return;
+    if (getNotificationPermission() === "denied") return;
     getCurrentSubscription().then((sub) => {
       setStatus(sub ? "subscribed" : "unsubscribed");
     });

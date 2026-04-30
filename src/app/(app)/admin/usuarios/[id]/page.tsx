@@ -7,8 +7,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ShieldCheck, User, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -17,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { DeleteUserDialog } from "@/components/admin/DeleteUserDialog";
 import { toast } from "sonner";
-import { formatDate, formatRelative } from "@/lib/utils";
+import { formatRelative } from "@/lib/utils";
 
 const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.created":          "Usuario creado",

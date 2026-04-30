@@ -1,7 +1,7 @@
 "use client";
 
 import { formatCents } from "@/lib/money";
-import { cn, formatDateShort } from "@/lib/utils";
+import { formatDateShort } from "@/lib/utils";
 import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins } from "lucide-react";
 import type { Doc } from "../../../convex/_generated/dataModel";
 

@@ -14,7 +14,7 @@ export const runByAdmin = action({
     targetClerkId: v.string(),
     targetEmail: v.string(),
   },
-  handler: async (ctx, { targetClerkId, targetEmail }) => {
+  handler: async (ctx, { targetClerkId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("No autenticado");
 

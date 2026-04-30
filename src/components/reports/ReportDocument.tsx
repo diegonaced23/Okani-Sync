@@ -2,7 +2,7 @@
 // Uso: const ReportDocument = dynamic(() => import('./ReportDocument'), { ssr: false })
 
 import {
-  Document, Page, Text, View, StyleSheet, Font,
+  Document, Page, Text, View, StyleSheet,
 } from "@react-pdf/renderer";
 import type { ReportRow } from "@/lib/reports";
 import { formatCents } from "@/lib/money";

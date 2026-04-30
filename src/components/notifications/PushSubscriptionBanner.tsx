@@ -1,12 +1,12 @@
 "use client";
 
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import { Bell, BellOff, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 export function PushSubscriptionBanner() {
-  const { status, enable, disable } = usePushNotifications();
+  const { status, enable } = usePushNotifications();
   const [dismissed, setDismissed] = useState(false);
   const [loading, setLoading] = useState(false);
 

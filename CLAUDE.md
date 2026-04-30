@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Reglas obligatorias
+
+- **Nunca hacer `git commit` ni `git push`.** Solo el usuario puede crear commits y pushear al repositorio. Claude puede editar archivos, pero los commits son responsabilidad exclusiva del usuario.
+
 @AGENTS.md
 
 <!-- convex-ai-start -->

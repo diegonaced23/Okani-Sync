@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,18 +17,6 @@ import { currentMonth, formatMonth, formatCents } from "@/lib/money";
 import { FileDown, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { pdf } from "@react-pdf/renderer";
-
-// Dynamic import del componente PDF (no SSR)
-const ReportDocument = dynamic(
-  () => import("@/components/reports/ReportDocument"),
-  { ssr: false }
-);
-
-function shiftMonth(m: string, delta: number) {
-  const [y, mo] = m.split("-").map(Number);
-  const d = new Date(y, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 type FilterType = "todos" | "ingreso" | "gasto";
 

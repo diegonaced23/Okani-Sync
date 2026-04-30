@@ -58,7 +58,7 @@ export const consolidatedBalance = query({
     }
 
     let total = 0;
-    let missingRates: string[] = [];
+    const missingRates: string[] = [];
 
     for (const account of [...ownAccounts, ...sharedAccounts]) {
       const { converted, hasRate } = convert(account.balance, account.currency);

@@ -7,7 +7,6 @@ import { api } from "../../../convex/_generated/api";
 import { Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatRelative } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 
 const TYPE_ICONS: Record<string, string> = {
   presupuesto_alerta:    "⚠️",

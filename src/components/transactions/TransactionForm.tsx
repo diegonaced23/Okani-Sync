@@ -12,9 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents } from "@/lib/money";
-import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
-import type { Doc } from "../../../convex/_generated/dataModel";
 import {
   UtensilsCrossed, Car, Home, Zap, HeartPulse, Music, BookOpen, Shirt,
   MoreHorizontal, Briefcase, Laptop, TrendingUp, Gift, ShoppingCart,

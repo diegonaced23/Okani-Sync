@@ -27,9 +27,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Convex types
-        run: npx convex codegen
-
       - name: Typecheck
         run: npm run typecheck
 
