@@ -127,9 +127,11 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
 
       {/* ── Monto — campo grande centrado ──────────────────────────────────── */}
       <div>
-        <p className="text-[12px] font-semibold text-foreground mb-2">Monto</p>
+        <Label htmlFor="tx-amount" className="text-[12px] font-semibold text-foreground mb-2 block">
+          Monto <span aria-hidden="true" className="text-danger">*</span>
+        </Label>
         <div
-          className="flex items-center justify-center rounded-xl"
+          className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
           style={{ background: "var(--surface-2)", padding: "18px 16px" }}
         >
           <MoneyInput
@@ -138,6 +140,7 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
             onChange={setAmount}
             placeholder="0"
             required
+            aria-required="true"
             className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
             style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.025em" }}
           />
@@ -146,22 +149,27 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
 
       {/* ── Descripción ────────────────────────────────────────────────────── */}
       <div>
-        <p className="text-[12px] font-semibold text-foreground mb-2">Descripción</p>
+        <Label htmlFor="tx-desc" className="text-[12px] font-semibold text-foreground mb-2 block">
+          Descripción <span aria-hidden="true" className="text-danger">*</span>
+        </Label>
         <Input
           id="tx-desc"
           placeholder="Ej: Cena con amigos"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           required
+          aria-required="true"
           style={{ background: "var(--surface-2)" }}
         />
       </div>
 
       {/* ── Cuenta ─────────────────────────────────────────────────────────── */}
       <div>
-        <p className="text-[12px] font-semibold text-foreground mb-2">Cuenta</p>
+        <Label htmlFor="tx-account" className="text-[12px] font-semibold text-foreground mb-2 block">
+          Cuenta
+        </Label>
         <Select value={accountId} onValueChange={(v) => setAccountId(v ?? "")}>
-          <SelectTrigger className="w-full" style={{ background: "var(--surface-2)" }}>
+          <SelectTrigger id="tx-account" className="w-full" style={{ background: "var(--surface-2)" }}>
             <span className="flex-1 text-left text-sm truncate">
               {selectedAccount
                 ? `${selectedAccount.name} · ${formatCents(selectedAccount.balance, selectedAccount.currency)}`
@@ -181,21 +189,25 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
 
       {/* ── Fecha ──────────────────────────────────────────────────────────── */}
       <div>
-        <p className="text-[12px] font-semibold text-foreground mb-2">Fecha</p>
+        <Label htmlFor="tx-date" className="text-[12px] font-semibold text-foreground mb-2 block">
+          Fecha
+        </Label>
         <DatePicker id="tx-date" value={date} onChange={setDate} required />
       </div>
 
       {/* ── Categoría — grid de íconos ─────────────────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
-          <p className="text-[12px] font-semibold text-foreground mb-2">Categoría</p>
-          <div className="grid grid-cols-4 gap-2">
+          <p id="tx-category-label" className="text-[12px] font-semibold text-foreground mb-2">Categoría</p>
+          <div role="group" aria-labelledby="tx-category-label" className="grid grid-cols-4 gap-2">
             {filteredCategories.slice(0, 8).map((cat) => {
               const isActive = categoryId === cat._id;
               return (
                 <button
                   key={cat._id}
                   type="button"
+                  aria-pressed={isActive}
+                  aria-label={cat.name}
                   onClick={() => setCategoryId(isActive ? "" : cat._id)}
                   className="flex flex-col items-center gap-1.5 py-3 px-1 transition-all active:scale-95"
                   style={{
@@ -211,11 +223,13 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
                 >
                   <CategoryIcon
                     name={cat.icon}
+                    aria-hidden="true"
                     className="h-[20px] w-[20px]"
                     style={{ color: isActive ? "var(--os-lime)" : cat.color }}
                     strokeWidth={1.8}
                   />
                   <span
+                    aria-hidden="true"
                     className="text-[10px] font-semibold leading-tight text-center"
                     style={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
                   >

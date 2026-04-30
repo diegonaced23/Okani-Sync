@@ -24,4 +24,11 @@ crons.daily(
   internal.actions.sendAlerts.run
 );
 
+// Copia presupuestos recurrentes al nuevo mes: día 1 a las 5 AM Colombia (10 UTC)
+crons.monthly(
+  "rollover presupuestos recurrentes",
+  { day: 1, hourUTC: 10, minuteUTC: 0 },
+  internal.budgets.rolloverRecurring
+);
+
 export default crons;

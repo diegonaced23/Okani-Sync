@@ -2,7 +2,7 @@
 
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { Trash2 } from "lucide-react";
+import { Trash2, Pencil, RefreshCw } from "lucide-react";
 
 interface BudgetCardProps {
   budget: {
@@ -13,11 +13,13 @@ interface BudgetCardProps {
     alertThreshold?: number;
     categoryName?: string;
     categoryColor?: string;
+    recurring?: boolean;
   };
+  onEdit?: () => void;
   onDelete?: () => void;
 }
 
-export function BudgetCard({ budget, onDelete }: BudgetCardProps) {
+export function BudgetCard({ budget, onEdit, onDelete }: BudgetCardProps) {
   const threshold = budget.alertThreshold ?? 80;
   const percent = budget.amount > 0
     ? Math.min(100, (budget.spent / budget.amount) * 100)
@@ -38,6 +40,12 @@ export function BudgetCard({ budget, onDelete }: BudgetCardProps) {
           <p className="font-medium text-foreground truncate">
             {budget.categoryName ?? "Sin categoría"}
           </p>
+          {budget.recurring && (
+            <span className="flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
+              <RefreshCw className="h-2.5 w-2.5" />
+              Recurrente
+            </span>
+          )}
           {isOver && (
             <span className="text-[10px] font-semibold text-danger bg-danger/10 px-1.5 py-0.5 rounded-full shrink-0">
               Excedido
@@ -49,21 +57,40 @@ export function BudgetCard({ budget, onDelete }: BudgetCardProps) {
             </span>
           )}
         </div>
-        {onDelete && (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors shrink-0"
-            aria-label="Eliminar presupuesto"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Editar presupuesto"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
+              aria-label="Eliminar presupuesto"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Barra de progreso */}
       <div className="space-y-1.5">
-        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          role="progressbar"
+          aria-valuenow={Math.round(percent)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${budget.categoryName ?? "Presupuesto"}: ${Math.round(percent)}% gastado`}
+          className="h-2 w-full rounded-full bg-muted overflow-hidden"
+        >
           <div
             className={cn(
               "h-full rounded-full transition-all",

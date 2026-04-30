@@ -3,48 +3,85 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MoneyInput } from "@/components/ui/money-input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, currentMonth } from "@/lib/money";
+import { toCents, fromCents, currentMonth } from "@/lib/money";
+
+interface EditBudget {
+  _id: string;
+  categoryId: string;
+  categoryName?: string;
+  amount: number;
+  alertThreshold?: number;
+  notes?: string;
+  recurring?: boolean;
+}
 
 interface BudgetFormProps {
   defaultMonth?: string;
+  editBudget?: EditBudget;
   onSuccess?: () => void;
 }
 
-export function BudgetForm({ defaultMonth, onSuccess }: BudgetFormProps) {
-  const createBudget = useMutation(api.budgets.create);
-  const categories = useQuery(api.categories.list, { type: "gasto" });
+export function BudgetForm({ defaultMonth, editBudget, onSuccess }: BudgetFormProps) {
+  const isEdit = !!editBudget;
 
-  const [categoryId, setCategoryId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [month, setMonth] = useState(defaultMonth ?? currentMonth());
-  const [alertThreshold, setAlertThreshold] = useState("80");
+  const createBudget = useMutation(api.budgets.create);
+  const updateBudget = useMutation(api.budgets.update);
+  const categories = useQuery(api.categories.list, isEdit ? "skip" : { type: "gasto" });
+
+  const [categoryId, setCategoryId] = useState(editBudget?.categoryId ?? "");
+  const [amount, setAmount] = useState(
+    isEdit ? String(fromCents(editBudget!.amount)) : ""
+  );
+  const [alertThreshold, setAlertThreshold] = useState(
+    String(editBudget?.alertThreshold ?? 80)
+  );
+  const [recurring, setRecurring] = useState(editBudget?.recurring ?? false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const amountNum = parseFloat(amount) || 0;
-    if (!categoryId || amountNum <= 0) {
-      toast.error("Selecciona una categoría y un monto mayor que cero");
+    if (amountNum <= 0) {
+      toast.error("El monto debe ser mayor que cero");
       return;
     }
+
     setLoading(true);
     try {
-      await createBudget({
-        categoryId: categoryId as Parameters<typeof createBudget>[0]["categoryId"],
-        amount: toCents(amountNum),
-        currency: "COP",
-        month,
-        alertThreshold: parseInt(alertThreshold) || 80,
-      });
-      toast.success("Presupuesto creado");
+      if (isEdit) {
+        await updateBudget({
+          budgetId: editBudget!._id as Id<"budgets">,
+          amount: toCents(amountNum),
+          alertThreshold: parseInt(alertThreshold) || 80,
+          recurring,
+        });
+        toast.success("Presupuesto actualizado");
+      } else {
+        if (!categoryId) {
+          toast.error("Selecciona una categoría");
+          setLoading(false);
+          return;
+        }
+        await createBudget({
+          categoryId: categoryId as Id<"categories">,
+          amount: toCents(amountNum),
+          currency: "COP",
+          month: defaultMonth ?? currentMonth(),
+          alertThreshold: parseInt(alertThreshold) || 80,
+          recurring,
+        });
+        toast.success("Presupuesto creado");
+      }
       onSuccess?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
@@ -57,33 +94,32 @@ export function BudgetForm({ defaultMonth, onSuccess }: BudgetFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1.5">
         <Label>Categoría</Label>
-        <Select value={categoryId} onValueChange={(v) => { if (v) setCategoryId(v); }}>
-          <SelectTrigger>
-            <span className="flex-1 text-left text-sm truncate">
-              {categoryId
-                ? (categories ?? []).find(c => c._id === categoryId)?.name ?? "Categoría"
-                : <span className="text-muted-foreground">Seleccionar categoría</span>}
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            {(categories ?? []).map((c) => (
-              <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {isEdit ? (
+          <p className="text-sm font-medium px-3 py-2 rounded-md bg-muted text-foreground">
+            {editBudget!.categoryName ?? "Sin categoría"}
+          </p>
+        ) : (
+          <Select value={categoryId} onValueChange={(v) => { if (v) setCategoryId(v); }}>
+            <SelectTrigger>
+              <span className="flex-1 text-left text-sm truncate">
+                {categoryId
+                  ? (categories ?? []).find(c => c._id === categoryId)?.name ?? "Categoría"
+                  : <span className="text-muted-foreground">Seleccionar categoría</span>}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {(categories ?? []).map((c) => (
+                <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="budget-amount">Monto (COP)</Label>
-          <MoneyInput id="budget-amount" placeholder="0"
-            value={amount} onChange={setAmount} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="budget-month">Mes</Label>
-          <Input id="budget-month" type="month" value={month}
-            onChange={(e) => setMonth(e.target.value)} required />
-        </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="budget-amount">Monto mensual (COP) <span aria-hidden="true" className="text-danger">*</span></Label>
+        <MoneyInput id="budget-amount" placeholder="0"
+          value={amount} onChange={setAmount} required />
       </div>
 
       <div className="space-y-1.5">
@@ -95,8 +131,24 @@ export function BudgetForm({ defaultMonth, onSuccess }: BudgetFormProps) {
         </p>
       </div>
 
+      <div className="flex items-center justify-between rounded-lg border border-border px-3 py-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="budget-recurring" className="text-sm font-medium cursor-pointer">
+            Repetir cada mes
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Se renovará automáticamente el 1° de cada mes.
+          </p>
+        </div>
+        <Switch
+          id="budget-recurring"
+          checked={recurring}
+          onCheckedChange={setRecurring}
+        />
+      </div>
+
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Guardando…" : "Crear presupuesto"}
+        {loading ? "Guardando…" : isEdit ? "Guardar cambios" : "Crear presupuesto"}
       </Button>
     </form>
   );

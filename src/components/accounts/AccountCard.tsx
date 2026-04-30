@@ -4,6 +4,7 @@ import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { GRADIENT_MAP, ACCOUNT_GRADIENTS } from "@/lib/constants";
 import type { Doc } from "../../../convex/_generated/dataModel";
+import { Wallet } from "lucide-react";
 
 interface AccountCardProps {
   account: Doc<"accounts">;
@@ -59,12 +60,18 @@ export function AccountCard({ account, isShared, onClick }: AccountCardProps) {
 
       {/* Fila superior: chip + tipo */}
       <div className="flex justify-between items-start">
-        {/* Chip EMV */}
-        <span aria-hidden style={{
-          width: 32, height: 22, borderRadius: 5,
-          background: "linear-gradient(135deg, oklch(0.85 0.05 90), oklch(0.65 0.08 60))",
-          flexShrink: 0, position: "relative",
-        }} />
+        {/* Chip EMV / ícono billetera */}
+        {account.type === "billetera" ? (
+          <span aria-hidden style={{ flexShrink: 0, opacity: 0.85 }}>
+            <Wallet style={{ width: 26, height: 26 }} strokeWidth={1.8} />
+          </span>
+        ) : (
+          <span aria-hidden style={{
+            width: 32, height: 22, borderRadius: 5,
+            background: "linear-gradient(135deg, oklch(0.85 0.05 90), oklch(0.65 0.08 60))",
+            flexShrink: 0, position: "relative",
+          }} />
+        )}
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", opacity: 0.85 }}>
           {account.bankName ?? TYPE_LABELS[account.type]}
           {isShared && " · Compartida"}

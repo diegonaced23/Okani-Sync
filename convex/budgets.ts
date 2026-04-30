@@ -39,11 +39,12 @@ export const listByMonthWithCategory = query({
 export const create = mutation({
   args: {
     categoryId: v.id("categories"),
-    amount: v.number(), // en centavos
+    amount: v.number(),
     currency: v.string(),
     month: v.string(),
     alertThreshold: v.optional(v.number()),
     notes: v.optional(v.string()),
+    recurring: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -57,6 +58,7 @@ export const create = mutation({
       month: args.month,
       alertThreshold: args.alertThreshold ?? 80,
       notes: args.notes,
+      recurring: args.recurring ?? false,
       createdAt: now,
       updatedAt: now,
     });
@@ -69,6 +71,7 @@ export const update = mutation({
     amount: v.optional(v.number()),
     alertThreshold: v.optional(v.number()),
     notes: v.optional(v.string()),
+    recurring: v.optional(v.boolean()),
   },
   handler: async (ctx, { budgetId, ...fields }) => {
     const user = await getCurrentUser(ctx);
@@ -92,6 +95,53 @@ export const remove = mutation({
   },
 });
 
+/** Interna: copia presupuestos recurrentes del mes anterior al mes actual. */
+export const rolloverRecurring = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const currentMonthStr = `${curYear}-${String(curMonth).padStart(2, "0")}`;
+
+    const prevDate = new Date(curYear, curMonth - 2, 1);
+    const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+
+    const recurringBudgets = await ctx.db
+      .query("budgets")
+      .filter((q) => q.eq(q.field("recurring"), true))
+      .collect();
+
+    const prevMonthBudgets = recurringBudgets.filter((b) => b.month === prevMonthStr);
+
+    for (const budget of prevMonthBudgets) {
+      const existing = await ctx.db
+        .query("budgets")
+        .withIndex("by_user_category_month", (q) =>
+          q.eq("userId", budget.userId).eq("categoryId", budget.categoryId).eq("month", currentMonthStr)
+        )
+        .first();
+
+      if (!existing) {
+        const ts = Date.now();
+        await ctx.db.insert("budgets", {
+          userId: budget.userId,
+          categoryId: budget.categoryId,
+          amount: budget.amount,
+          spent: 0,
+          currency: budget.currency,
+          month: currentMonthStr,
+          alertThreshold: budget.alertThreshold,
+          notes: budget.notes,
+          recurring: true,
+          createdAt: ts,
+          updatedAt: ts,
+        });
+      }
+    }
+  },
+});
+
 /** Interna: presupuestos que superan su umbral y no han sido notificados hoy. */
 export const listExceedingThreshold = internalQuery({
   args: {},
@@ -107,7 +157,6 @@ export const listExceedingThreshold = internalQuery({
           const pct = b.spent / b.amount;
           const threshold = (b.alertThreshold ?? 80) / 100;
           if (pct < threshold) return false;
-          // No re-notificar si ya se notificó hoy
           if (b.notifiedAt && b.notifiedAt >= todayStart.getTime()) return false;
           return true;
         })

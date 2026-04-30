@@ -83,21 +83,6 @@ export const archive = mutation({
     if (!cat || cat.userId !== user.clerkId) {
       throw new Error("Categoría no encontrada");
     }
-    if (cat.isDefault) {
-      throw new Error("No se pueden archivar categorías del sistema");
-    }
-    // Verificar que no tenga transacciones activas
-    const txWithCat = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_category_month", (q) =>
-        q.eq("userId", user.clerkId).eq("categoryId", categoryId)
-      )
-      .first();
-    if (txWithCat) {
-      throw new Error(
-        "No se puede archivar una categoría con transacciones registradas"
-      );
-    }
     await ctx.db.patch(categoryId, { archived: true, updatedAt: Date.now() });
   },
 });

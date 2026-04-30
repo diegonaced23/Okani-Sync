@@ -21,7 +21,7 @@ const BrandLogo = () => (
       flexShrink: 0,
     }}
   >
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4 14c0-5 4-9 8-9s8 4 8 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
       <circle cx="12" cy="17" r="2.5" fill="currentColor" />
     </svg>
@@ -33,7 +33,7 @@ export function Header({ title }: HeaderProps) {
     <header className="sticky top-0 z-40 flex h-[58px] items-center gap-3 px-4 lg:hidden"
       style={{ background: "color-mix(in oklch, var(--background) 85%, transparent)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)" }}
     >
-      <Link href="/dashboard" className="flex items-center gap-2 mr-auto">
+      <Link href="/dashboard" aria-label="Okany Sync — Inicio" className="flex items-center gap-2 mr-auto">
         <BrandLogo />
         <span style={{ fontWeight: 800, fontSize: 17, letterSpacing: "-0.025em", lineHeight: 1 }}>
           Okany<span style={{ opacity: 0.45, fontWeight: 500 }}>·sync</span>

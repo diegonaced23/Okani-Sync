@@ -31,6 +31,27 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
         Tendencia — últimos 6 meses
       </p>
+      {/* Tabla de datos accesible para lectores de pantalla */}
+      <table className="sr-only">
+        <caption>Resumen mensual — últimos 6 meses</caption>
+        <thead>
+          <tr>
+            <th scope="col">Mes</th>
+            <th scope="col">Ingresos</th>
+            <th scope="col">Gastos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {chartData.map((d) => (
+            <tr key={d.month}>
+              <td>{d.name}</td>
+              <td>{formatCents(d.ingresos, currency)}</td>
+              <td>{formatCents(d.gastos, currency)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div role="img" aria-label="Gráfico de líneas: tendencia de ingresos y gastos de los últimos 6 meses">
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -85,6 +106,7 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
           />
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }

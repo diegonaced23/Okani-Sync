@@ -27,40 +27,60 @@ export function SpendingChart({ data, currency }: SpendingChartProps) {
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
         Gastos por categoría
       </p>
-      <ResponsiveContainer width="100%" height={200}>
-        <PieChart>
-          <Pie
-            data={filtered}
-            dataKey="amount"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            innerRadius={55}
-            outerRadius={80}
-            paddingAngle={2}
-          >
-            {filtered.map((entry, index) => (
-              <Cell key={index} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip
-            formatter={(value) => [formatCents(Number(value ?? 0), currency), ""]}
-            contentStyle={{
-              backgroundColor: "var(--card)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              fontSize: "12px",
-            }}
-          />
-          <Legend
-            formatter={(value) => (
-              <span style={{ fontSize: "11px", color: "var(--muted-foreground)" }}>
-                {value}
-              </span>
-            )}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+      <div role="img" aria-label="Gráfico circular de gastos por categoría este mes">
+        <ResponsiveContainer width="100%" height={200}>
+          <PieChart>
+            <Pie
+              data={filtered}
+              dataKey="amount"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={55}
+              outerRadius={80}
+              paddingAngle={2}
+            >
+              {filtered.map((entry, index) => (
+                <Cell key={index} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={(value) => [formatCents(Number(value ?? 0), currency), ""]}
+              contentStyle={{
+                backgroundColor: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                fontSize: "12px",
+              }}
+            />
+            <Legend
+              formatter={(value) => (
+                <span style={{ fontSize: "11px", color: "var(--muted-foreground)" }}>
+                  {value}
+                </span>
+              )}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      {/* Tabla de datos accesible para lectores de pantalla */}
+      <table className="sr-only">
+        <caption>Gastos por categoría este mes</caption>
+        <thead>
+          <tr>
+            <th scope="col">Categoría</th>
+            <th scope="col">Monto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((d) => (
+            <tr key={d.name}>
+              <td>{d.name}</td>
+              <td>{formatCents(d.amount, currency)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

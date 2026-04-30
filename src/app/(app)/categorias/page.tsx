@@ -3,7 +3,7 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useState } from "react";
-import { Plus, Archive } from "lucide-react";
+import { Plus, Archive, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,11 +21,50 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { ACCOUNT_COLORS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import type { Doc } from "../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 type CategoryType = "ingreso" | "gasto" | "ambos";
 
-function CategoryRow({ cat, onArchive }: { cat: Doc<"categories">; onArchive: () => void }) {
+function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  return (
+    <div role="group" aria-label="Seleccionar color" className="flex flex-wrap gap-2">
+      {ACCOUNT_COLORS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          onClick={() => onChange(c)}
+          aria-label={`Color ${c}`}
+          aria-pressed={value === c}
+          className={cn(
+            "h-7 w-7 rounded-full border-2 transition-transform",
+            value === c ? "border-foreground scale-110" : "border-transparent"
+          )}
+          style={{ backgroundColor: c }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CategoryRow({
+  cat,
+  onEdit,
+  onArchive,
+}: {
+  cat: Doc<"categories">;
+  onEdit: () => void;
+  onArchive: () => void;
+}) {
   return (
     <div className="flex items-center gap-3 py-2.5 px-4">
       <span
@@ -34,11 +73,19 @@ function CategoryRow({ cat, onArchive }: { cat: Doc<"categories">; onArchive: ()
       >
         {cat.name.charAt(0).toUpperCase()}
       </span>
-      <span className="flex-1 text-sm font-medium text-foreground">{cat.name}</span>
+      <span className="flex-1 text-sm font-medium text-foreground truncate">{cat.name}</span>
       {cat.isDefault && (
-        <Badge variant="secondary" className="text-[10px]">Sistema</Badge>
+        <Badge variant="secondary" className="text-[10px] shrink-0">Sistema</Badge>
       )}
-      {!cat.isDefault && (
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          aria-label="Editar categoría"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
         <button
           type="button"
           onClick={onArchive}
@@ -47,7 +94,7 @@ function CategoryRow({ cat, onArchive }: { cat: Doc<"categories">; onArchive: ()
         >
           <Archive className="h-3.5 w-3.5" />
         </button>
-      )}
+      </div>
     </div>
   );
 }
@@ -55,36 +102,79 @@ function CategoryRow({ cat, onArchive }: { cat: Doc<"categories">; onArchive: ()
 export default function CategoriasPage() {
   const categories = useQuery(api.categories.list, {});
   const createCategory = useMutation(api.categories.create);
+  const updateCategory = useMutation(api.categories.update);
   const archiveCategory = useMutation(api.categories.archive);
 
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<CategoryType>("gasto");
-  const [color, setColor] = useState(ACCOUNT_COLORS[3]);
-  const [loading, setLoading] = useState(false);
+  // Estado formulario creación
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<CategoryType>("gasto");
+  const [newColor, setNewColor] = useState(ACCOUNT_COLORS[3]);
+  const [createLoading, setCreateLoading] = useState(false);
+
+  // Estado confirmación archivo
+  const [archivingCat, setArchivingCat] = useState<Doc<"categories"> | null>(null);
+
+  // Estado formulario edición
+  const [editingCat, setEditingCat] = useState<Doc<"categories"> | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState(ACCOUNT_COLORS[0]);
+  const [editLoading, setEditLoading] = useState(false);
 
   const gastos = (categories ?? []).filter((c) => c.type === "gasto" || c.type === "ambos");
   const ingresos = (categories ?? []).filter((c) => c.type === "ingreso" || c.type === "ambos");
 
+  function openEdit(cat: Doc<"categories">) {
+    setEditingCat(cat);
+    setEditName(cat.name);
+    setEditColor(cat.color);
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
-    setLoading(true);
+    if (!newName.trim()) return;
+    setCreateLoading(true);
     try {
-      await createCategory({ name: name.trim(), type, color, icon: "circle" });
+      await createCategory({ name: newName.trim(), type: newType, color: newColor, icon: "circle" });
       toast.success("Categoría creada");
-      setName(""); setOpen(false);
+      setNewName("");
+      setCreateOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     } finally {
-      setLoading(false);
+      setCreateLoading(false);
     }
   }
 
-  async function handleArchive(id: Doc<"categories">["_id"]) {
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingCat || !editName.trim()) return;
+    setEditLoading(true);
     try {
-      await archiveCategory({ categoryId: id });
+      await updateCategory({
+        categoryId: editingCat._id as Id<"categories">,
+        name: editName.trim(),
+        color: editColor,
+      });
+      toast.success("Categoría actualizada");
+      setEditingCat(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error");
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  function handleArchive(cat: Doc<"categories">) {
+    setArchivingCat(cat);
+  }
+
+  async function executeArchive() {
+    if (!archivingCat) return;
+    try {
+      await archiveCategory({ categoryId: archivingCat._id });
       toast.success("Categoría archivada");
+      setArchivingCat(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     }
@@ -97,8 +187,8 @@ export default function CategoriasPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Categorías</h1>
         <AppSheet
-          open={open}
-          onOpenChange={setOpen}
+          open={createOpen}
+          onOpenChange={setCreateOpen}
           title="Nueva categoría"
           trigger={
             <Button
@@ -115,14 +205,14 @@ export default function CategoriasPage() {
               <Input
                 id="cat-name"
                 placeholder="Ej: Mascotas"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
                 required
               />
             </div>
             <div className="space-y-1.5">
               <Label>Tipo</Label>
-              <Select value={type} onValueChange={(v) => { if (v) setType(v as CategoryType); }}>
+              <Select value={newType} onValueChange={(v) => { if (v) setNewType(v as CategoryType); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="gasto">Gasto</SelectItem>
@@ -133,27 +223,49 @@ export default function CategoriasPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Color</Label>
-              <div className="flex flex-wrap gap-2">
-                {ACCOUNT_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setColor(c)}
-                    className={cn(
-                      "h-7 w-7 rounded-full border-2 transition-transform",
-                      color === c ? "border-foreground scale-110" : "border-transparent"
-                    )}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
+              <ColorPicker value={newColor} onChange={setNewColor} />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Guardando…" : "Crear categoría"}
+            <Button type="submit" className="w-full" disabled={createLoading}>
+              {createLoading ? "Guardando…" : "Crear categoría"}
             </Button>
           </form>
         </AppSheet>
       </div>
+
+      {/* Sheet de edición */}
+      <AppSheet
+        open={!!editingCat}
+        onOpenChange={(open) => { if (!open) setEditingCat(null); }}
+        title="Editar categoría"
+      >
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-cat-name">Nombre</Label>
+            <Input
+              id="edit-cat-name"
+              placeholder="Nombre de la categoría"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              required
+            />
+          </div>
+          {editingCat && (
+            <div className="space-y-1.5">
+              <Label>Tipo</Label>
+              <p className="text-sm px-3 py-2 rounded-md bg-muted text-foreground capitalize">
+                {editingCat.type === "ambos" ? "Ingresos y gastos" : editingCat.type === "ingreso" ? "Ingreso" : "Gasto"}
+              </p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label>Color</Label>
+            <ColorPicker value={editColor} onChange={setEditColor} />
+          </div>
+          <Button type="submit" className="w-full" disabled={editLoading}>
+            {editLoading ? "Guardando…" : "Guardar cambios"}
+          </Button>
+        </form>
+      </AppSheet>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -171,7 +283,11 @@ export default function CategoriasPage() {
             <ul className="divide-y divide-border">
               {gastos.map((cat) => (
                 <li key={cat._id}>
-                  <CategoryRow cat={cat} onArchive={() => handleArchive(cat._id)} />
+                  <CategoryRow
+                    cat={cat}
+                    onEdit={() => openEdit(cat)}
+                    onArchive={() => handleArchive(cat)}
+                  />
                 </li>
               ))}
             </ul>
@@ -189,13 +305,36 @@ export default function CategoriasPage() {
             <ul className="divide-y divide-border">
               {ingresos.map((cat) => (
                 <li key={cat._id}>
-                  <CategoryRow cat={cat} onArchive={() => handleArchive(cat._id)} />
+                  <CategoryRow
+                    cat={cat}
+                    onEdit={() => openEdit(cat)}
+                    onArchive={() => handleArchive(cat)}
+                  />
                 </li>
               ))}
             </ul>
           </section>
         </>
       )}
+
+      <AlertDialog open={archivingCat !== null} onOpenChange={(open) => { if (!open) setArchivingCat(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archivar categoría</AlertDialogTitle>
+            <AlertDialogDescription>
+              {archivingCat?.isDefault
+                ? "Esta categoría del sistema dejará de aparecer en tus selects."
+                : `¿Archivar "${archivingCat?.name}"?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={executeArchive}>
+              Archivar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -187,6 +187,12 @@ export const update = mutation({
   args: {
     accountId: v.id("accounts"),
     name: v.optional(v.string()),
+    type: v.optional(v.union(
+      v.literal("billetera"),
+      v.literal("bancaria"),
+      v.literal("ahorros"),
+      v.literal("inversion")
+    )),
     bankName: v.optional(v.string()),
     accountNumber: v.optional(v.string()),
     color: v.optional(v.string()),
@@ -204,6 +210,52 @@ export const update = mutation({
       if (v !== undefined) patch[k] = v;
     }
     await ctx.db.patch(accountId, patch);
+  },
+});
+
+/** Elimina la cuenta y todos sus registros asociados (cascade). */
+export const remove = mutation({
+  args: { accountId: v.id("accounts") },
+  handler: async (ctx, { accountId }) => {
+    const user = await getCurrentUser(ctx);
+    const account = await ctx.db.get(accountId);
+    if (!account || account.ownerId !== user.clerkId) {
+      throw new Error("Cuenta no encontrada o sin permisos");
+    }
+
+    // 1. Compartidos
+    const shares = await ctx.db
+      .query("accountShares")
+      .withIndex("by_account", (q) => q.eq("accountId", accountId))
+      .collect();
+    for (const share of shares) {
+      await ctx.db.delete(share._id);
+    }
+
+    // 2. Transacciones donde la cuenta es origen O destino de transferencia
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .collect();
+    for (const tx of transactions) {
+      if (tx.accountId === accountId || tx.toAccountId === accountId) {
+        await ctx.db.delete(tx._id);
+      }
+    }
+
+    // 3. Transacciones recurrentes que referencien esta cuenta
+    const recurring = await ctx.db
+      .query("recurringTransactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .collect();
+    for (const rt of recurring) {
+      if (rt.accountId === accountId) {
+        await ctx.db.delete(rt._id);
+      }
+    }
+
+    // 4. La cuenta
+    await ctx.db.delete(accountId);
   },
 });
 

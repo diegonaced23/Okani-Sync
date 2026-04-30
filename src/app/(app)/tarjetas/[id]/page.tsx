@@ -5,12 +5,23 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppSheet } from "@/components/ui/app-sheet";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { CardSummary } from "@/components/cards/CardSummary";
+import { CardForm } from "@/components/cards/CardForm";
 import { PurchaseForm } from "@/components/cards/PurchaseForm";
 import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
 import { formatCents, currentMonth } from "@/lib/money";
@@ -41,6 +52,8 @@ function PurchaseRow({
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-controls={`purchase-detail-${purchase._id}`}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
       >
         <div className="flex-1 min-w-0">
@@ -77,7 +90,7 @@ function PurchaseRow({
       </button>
 
       {expanded && (
-        <div className="px-4 pb-4">
+        <div id={`purchase-detail-${purchase._id}`} className="px-4 pb-4">
           {installments === undefined ? (
             <Skeleton className="h-32" />
           ) : (
@@ -103,8 +116,11 @@ export default function CardDetailPage({
   const cardId = id as Id<"cards">;
   const router = useRouter();
 
-  const [open, setOpen] = useState(false);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [paying, setPaying] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const card = useQuery(api.cards.getById, { cardId });
   const purchases = useQuery(api.cardPurchases.listByCard, {
@@ -117,6 +133,7 @@ export default function CardDetailPage({
   });
 
   const payInstallment = useMutation(api.cardPurchases.payInstallment);
+  const removeCard = useMutation(api.cards.remove);
 
   async function handlePay(installmentId: Id<"cardInstallments">) {
     setPaying(installmentId);
@@ -127,6 +144,23 @@ export default function CardDetailPage({
       toast.error(err instanceof Error ? err.message : "Error al pagar");
     } finally {
       setPaying("");
+    }
+  }
+
+  function handleDelete() {
+    setDeleteOpen(true);
+  }
+
+  async function executeDelete() {
+    setDeleteOpen(false);
+    setDeleting(true);
+    try {
+      await removeCard({ cardId });
+      toast.success("Tarjeta eliminada");
+      router.push("/tarjetas");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+      setDeleting(false);
     }
   }
 
@@ -155,14 +189,47 @@ export default function CardDetailPage({
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      {/* Navegación */}
-      <button
-        type="button"
-        onClick={() => router.push("/tarjetas")}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      {/* Navegación + acciones */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => router.push("/tarjetas")}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" /> Tarjetas
+        </button>
+
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={() => setEditOpen(true)}
+            aria-label="Editar tarjeta"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-danger"
+            onClick={handleDelete}
+            disabled={deleting}
+            aria-label="Eliminar tarjeta"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Sheet de edición */}
+      <AppSheet
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title="Editar tarjeta"
       >
-        <ArrowLeft className="h-4 w-4" /> Tarjetas
-      </button>
+        <CardForm card={card} onSuccess={() => setEditOpen(false)} />
+      </AppSheet>
 
       {/* Resumen tarjeta */}
       <CardSummary card={card} />
@@ -187,8 +254,8 @@ export default function CardDetailPage({
             Compras activas ({(purchases ?? []).length})
           </h2>
           <AppSheet
-            open={open}
-            onOpenChange={setOpen}
+            open={purchaseOpen}
+            onOpenChange={setPurchaseOpen}
             title={`Nueva compra — ${card.name}`}
             trigger={<Button size="sm" variant="outline" className="gap-1.5 h-8"><Plus className="h-3.5 w-3.5" /> Nueva compra</Button>}
           >
@@ -196,7 +263,7 @@ export default function CardDetailPage({
               cardId={cardId}
               defaultInterestRate={card.interestRate}
               currency={card.currency}
-              onSuccess={() => setOpen(false)}
+              onSuccess={() => setPurchaseOpen(false)}
             />
           </AppSheet>
         </div>
@@ -223,6 +290,26 @@ export default function CardDetailPage({
           </div>
         )}
       </section>
+
+      {/* Diálogo de confirmación eliminar */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar tarjeta</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(purchases ?? []).length > 0
+                ? "Se eliminarán también todas sus compras, cuotas y transacciones registradas. Esta acción no se puede deshacer."
+                : "Esta acción no se puede deshacer."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={executeDelete} disabled={deleting}>
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

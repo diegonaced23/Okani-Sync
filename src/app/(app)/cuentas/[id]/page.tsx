@@ -8,12 +8,25 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
   ArrowLeft, Share2, UserMinus, Archive, Plus, ChevronLeft, ChevronRight,
+  Pencil, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { AppSheet } from "@/components/ui/app-sheet";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { ShareAccountDialog } from "@/components/accounts/ShareAccountDialog";
+import { AccountForm } from "@/components/accounts/AccountForm";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { formatCents, currentMonth, formatMonth } from "@/lib/money";
 import { toast } from "sonner";
@@ -36,6 +49,9 @@ export default function AccountDetailPage({
 
   const [month, setMonth] = useState(() => currentMonth());
   const [shareOpen, setShareOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"archive" | "delete" | null>(null);
 
   const account = useQuery(api.accounts.getById, { accountId });
   const shares = useQuery(api.accountShares.listForAccount, { accountId });
@@ -47,6 +63,7 @@ export default function AccountDetailPage({
 
   const revokeShare = useMutation(api.accountShares.revoke);
   const archiveAccount = useMutation(api.accounts.archive);
+  const removeAccount = useMutation(api.accounts.remove);
 
   const catMap = Object.fromEntries(
     (categories ?? []).map((c) => [c._id, c.name])
@@ -75,14 +92,34 @@ export default function AccountDetailPage({
     }
   }
 
-  async function handleArchive() {
-    if (!confirm("¿Archivar esta cuenta? Podrás recuperarla más adelante.")) return;
-    try {
-      await archiveAccount({ accountId });
-      toast.success("Cuenta archivada");
-      router.push("/cuentas");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+  function handleArchive() {
+    setPendingAction("archive");
+  }
+
+  function handleDelete() {
+    setPendingAction("delete");
+  }
+
+  async function executeAction() {
+    setPendingAction(null);
+    if (pendingAction === "archive") {
+      try {
+        await archiveAccount({ accountId });
+        toast.success("Cuenta archivada");
+        router.push("/cuentas");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error");
+      }
+    } else if (pendingAction === "delete") {
+      setDeleting(true);
+      try {
+        await removeAccount({ accountId });
+        toast.success("Cuenta eliminada");
+        router.push("/cuentas");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error al eliminar");
+        setDeleting(false);
+      }
     }
   }
 
@@ -126,7 +163,7 @@ export default function AccountDetailPage({
           </div>
 
           {isOwner && (
-            <div className="flex gap-2 mt-4 pt-4 border-t border-border">
+            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
               <Button
                 size="sm"
                 variant="outline"
@@ -136,20 +173,52 @@ export default function AccountDetailPage({
                 <Share2 className="h-3.5 w-3.5" />
                 Compartir
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Editar
+              </Button>
               {!account!.isDefault && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 text-muted-foreground"
-                  onClick={handleArchive}
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  Archivar
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-muted-foreground"
+                    onClick={handleArchive}
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                    Archivar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-danger hover:text-danger"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Eliminar
+                  </Button>
+                </>
               )}
             </div>
           )}
         </div>
+      )}
+
+      {/* Sheet de edición */}
+      {!isLoading && account && (
+        <AppSheet
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          title="Editar cuenta"
+        >
+          <AccountForm account={account} onSuccess={() => setEditOpen(false)} />
+        </AppSheet>
       )}
 
       {/* Sección "Compartida con" */}
@@ -254,6 +323,33 @@ export default function AccountDetailPage({
           onOpenChange={setShareOpen}
         />
       )}
+
+      {/* Diálogo de confirmación archivar/eliminar */}
+      <AlertDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => { if (!open) setPendingAction(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction === "archive" ? "Archivar cuenta" : "Eliminar cuenta"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction === "archive"
+                ? "El historial se conserva y podrás recuperarla más adelante."
+                : (transactions ?? []).length > 0
+                  ? "Se eliminarán también todas sus transacciones y registros asociados. Esta acción no se puede deshacer."
+                  : "Esta acción no se puede deshacer."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={executeAction} disabled={deleting}>
+              {pendingAction === "archive" ? "Archivar" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -21,21 +21,21 @@ const QUICK_ACTIONS = [
   {
     label: "Ingreso",
     icon: ArrowDownLeft,
-    href: "/transacciones",
+    href: "/transacciones?nuevo=true&tab=ingreso",
     gradient: "linear-gradient(135deg, var(--os-lime), var(--os-lime-2))",
     textColor: "var(--primary-foreground)",
   },
   {
     label: "Gasto",
     icon: ArrowUpRight,
-    href: "/transacciones",
+    href: "/transacciones?nuevo=true&tab=gasto",
     gradient: "linear-gradient(135deg, var(--os-magenta), var(--os-magenta-2))",
     textColor: "white",
   },
   {
     label: "Transferir",
     icon: ArrowLeftRight,
-    href: "/transacciones",
+    href: "/transacciones?nuevo=true&tab=transferencia",
     gradient: "linear-gradient(135deg, var(--os-cyan), var(--os-cyan-2))",
     textColor: "oklch(0.18 0.02 260)",
   },
@@ -174,7 +174,15 @@ export default function DashboardPage() {
               </div>
 
               <div className="mt-auto space-y-1.5">
-                <div className="h-2 w-full rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
+                <div
+                  role="progressbar"
+                  aria-valuenow={Math.min(100, spentPct)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Has gastado el ${spentPct}% de tus ingresos este mes`}
+                  className="h-2 w-full rounded-full overflow-hidden"
+                  style={{ background: "var(--muted)" }}
+                >
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
@@ -349,7 +357,15 @@ export default function DashboardPage() {
                           <p className="text-xs text-muted-foreground">de {formatCents(budget.amount, budget.currency)}</p>
                         </div>
                       </div>
-                      <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "var(--muted)" }}>
+                      <div
+                        role="progressbar"
+                        aria-valuenow={Math.round(pct)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`${budget.categoryName ?? "Presupuesto"}: ${Math.round(pct)}% gastado`}
+                        className="h-1.5 w-full rounded-full overflow-hidden"
+                        style={{ background: "var(--muted)" }}
+                      >
                         <div
                           className="h-full rounded-full transition-all"
                           style={{

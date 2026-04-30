@@ -16,6 +16,16 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen bg-background overflow-x-hidden">
+      {/* Skip link — accesibilidad teclado */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-xl focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg focus:ring-2 focus:ring-ring"
+      >
+        Ir al contenido principal
+      </a>
+      {/* Región live para anuncios de AT */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" />
+
       {/* Aurora de fondo — efecto sutil de profundidad */}
       <div aria-hidden className="os-aurora" />
       <Sidebar />
@@ -24,7 +34,7 @@ export default async function AppLayout({
       <div className="flex flex-1 flex-col min-w-0 lg:pl-64 overflow-x-hidden">
         <Header />
         <PushSubscriptionBanner />
-        <main className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
+        <main id="main-content" className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
           <AuthGuard>{children}</AuthGuard>
         </main>
       </div>

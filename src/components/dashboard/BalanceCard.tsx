@@ -78,6 +78,7 @@ export function BalanceCard({
 
         <p
           className="font-mono-num tracking-display"
+          aria-label={hidden ? "Saldo oculto" : undefined}
           style={{
             fontSize: 40, fontWeight: 800, lineHeight: 1,
             color: isNegative ? "oklch(0.35 0.15 27)" : "oklch(0.18 0.04 190)",
@@ -86,22 +87,9 @@ export function BalanceCard({
             overflow: "hidden",
           }}
         >
-          {hidden ? "$ ••••••" : formatCents(total ?? 0, currency)}
+          {hidden ? <span aria-hidden="true">$ ••••••</span> : formatCents(total ?? 0, currency)}
         </p>
 
-        <div
-          className="inline-flex items-center gap-1.5"
-          style={{
-            padding: "5px 10px", borderRadius: 9999,
-            fontSize: 12, fontWeight: 700,
-            background: "oklch(0.18 0.02 260 / 0.12)", marginTop: 4,
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m5 12 7-7 7 7" /><path d="M12 19V5" />
-          </svg>
-          <span>+ 4.2% este mes</span>
-        </div>
 
         {missingRates.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2" style={{ fontSize: 11, opacity: 0.8 }}>

@@ -35,8 +35,6 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({
@@ -48,8 +46,8 @@ export default function RootLayout({
       appearance={{
         variables: {
           colorPrimary: "#4ADE80",
-          colorBackground: "#1F262A",
-          colorInputBackground: "#343434",
+          colorBackground: "#060e18",
+          colorInputBackground: "#182535",
           colorText: "#F5F5F5",
         },
       }}

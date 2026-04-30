@@ -24,6 +24,7 @@ export function BottomNav() {
 
   return (
     <nav
+      aria-label="Navegación inferior"
       className="fixed bottom-0 left-0 right-0 z-50 lg:hidden pb-safe"
       style={{ padding: "8px 14px 14px", background: "linear-gradient(to bottom, transparent 0%, var(--background) 35%)", pointerEvents: "none" }}
     >
@@ -73,6 +74,7 @@ export function BottomNav() {
             <li key={item.href} style={{ flex: 1 }}>
               <Link
                 href={item.href}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex flex-col items-center gap-0.5 py-1.5 text-[10px] font-semibold transition-colors",
                   isActive ? "text-foreground" : "text-muted-foreground"

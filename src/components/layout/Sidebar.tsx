@@ -43,7 +43,7 @@ const BrandLogo = () => (
       flexShrink: 0,
     }}
   >
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4 14c0-5 4-9 8-9s8 4 8 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
       <circle cx="12" cy="17" r="2.5" fill="currentColor" />
     </svg>
@@ -73,7 +73,7 @@ export function Sidebar() {
       </div>
 
       {/* Navegación */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+      <nav aria-label="Navegación principal" className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
         {NAV_SECTIONS.map((section) => (
           <div key={section.label}>
             <p
@@ -90,6 +90,7 @@ export function Sidebar() {
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      aria-current={isActive ? "page" : undefined}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors",
                         isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
@@ -118,6 +119,7 @@ export function Sidebar() {
         {isAdmin && (
           <Link
             href="/admin"
+            aria-current={pathname.startsWith("/admin") ? "page" : undefined}
             className={cn(
               "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
               pathname.startsWith("/admin") ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
@@ -129,6 +131,7 @@ export function Sidebar() {
         )}
         <Link
           href="/perfil"
+          aria-current={pathname === "/perfil" ? "page" : undefined}
           className={cn(
             "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
             pathname === "/perfil" ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"

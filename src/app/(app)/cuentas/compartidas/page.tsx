@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -11,6 +12,16 @@ import { Separator } from "@/components/ui/separator";
 import { formatCents } from "@/lib/money";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 const PERMISSION_LABELS: Record<string, string> = {
   viewer: "Visualizador",
@@ -20,6 +31,8 @@ const PERMISSION_LABELS: Record<string, string> = {
 
 export default function CompartidasPage() {
   const router = useRouter();
+  const [leavingShare, setLeavingShare] = useState<{ id: Id<"accountShares">; accountName: string } | null>(null);
+
   const pending = useQuery(api.accountShares.listMyPendingInvitations);
   const active = useQuery(api.accountShares.listMyActiveShares);
 
@@ -35,11 +48,16 @@ export default function CompartidasPage() {
     }
   }
 
-  async function handleLeave(shareId: Id<"accountShares">, accountName: string) {
-    if (!confirm(`¿Salir de la cuenta "${accountName}"?`)) return;
+  function handleLeave(shareId: Id<"accountShares">, accountName: string) {
+    setLeavingShare({ id: shareId, accountName });
+  }
+
+  async function executeLeave() {
+    if (!leavingShare) return;
     try {
-      await leave({ shareId });
+      await leave({ shareId: leavingShare.id });
       toast.success("Saliste de la cuenta compartida");
+      setLeavingShare(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     }
@@ -54,7 +72,7 @@ export default function CompartidasPage() {
           type="button"
           onClick={() => router.push("/cuentas")}
           className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
-          aria-label="Volver"
+          aria-label="Volver a cuentas"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -168,6 +186,23 @@ export default function CompartidasPage() {
           </div>
         )}
       </section>
+
+      <AlertDialog open={leavingShare !== null} onOpenChange={(open) => { if (!open) setLeavingShare(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Salir de la cuenta</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Salir de &quot;{leavingShare?.accountName}&quot;? Perderás el acceso a esta cuenta compartida.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={executeLeave}>
+              Salir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -164,7 +164,7 @@ export default function PerfilPage() {
       {/* Tema */}
       <div className="rounded-xl bg-card border border-border p-4 space-y-3">
         <h2 className="text-sm font-semibold text-foreground">Tema de la aplicación</h2>
-        <div className="grid grid-cols-3 gap-2">
+        <div role="group" aria-label="Tema de la aplicación" className="grid grid-cols-3 gap-2">
           {[
             { value: "light", label: "Claro", icon: Sun },
             { value: "dark",  label: "Oscuro", icon: Moon },
@@ -173,6 +173,7 @@ export default function PerfilPage() {
             <button
               key={value}
               type="button"
+              aria-pressed={theme === value}
               onClick={() => handleThemeChange(value)}
               className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-sm font-medium transition-colors ${
                 theme === value
@@ -180,7 +181,7 @@ export default function PerfilPage() {
                   : "border-border text-muted-foreground hover:bg-muted"
               }`}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-4 w-4" aria-hidden="true" />
               {label}
             </button>
           ))}
@@ -209,6 +210,8 @@ export default function PerfilPage() {
           </div>
           {pushStatus !== "unsupported" && pushStatus !== "denied" && pushStatus !== "loading" && (
             <Switch
+              id="push-notifications-switch"
+              aria-label="Notificaciones push"
               checked={pushStatus === "subscribed"}
               onCheckedChange={(checked) => checked ? enablePush() : disablePush()}
             />

@@ -328,6 +328,7 @@ export default defineSchema({
     notes: v.optional(v.string()),
     alertThreshold: v.optional(v.number()), // % para notificar (default 80)
     notifiedAt: v.optional(v.number()),
+    recurring: v.optional(v.boolean()),     // se copia al mes siguiente automáticamente
     createdAt: v.number(),
     updatedAt: v.number(),
   })

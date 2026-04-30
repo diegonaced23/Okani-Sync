@@ -76,7 +76,7 @@ export function TransactionItem({ transaction: tx, categoryName, onPress }: Tran
           color: config.iconColor,
         }}
       >
-        <Icon className="h-[18px] w-[18px]" />
+        <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
       </span>
 
       <div className="flex-1 min-w-0">

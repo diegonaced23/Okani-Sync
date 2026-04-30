@@ -43,6 +43,7 @@ export function DatePicker({ value, onChange, id, required, className }: DatePic
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         id={id}
+        aria-required={required}
         className={cn(
           buttonVariants({ variant: "outline" }),
           "w-full justify-start text-left font-normal",
