@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Okany Sync
 
-## Getting Started
+PWA de gestión de finanzas personales con soporte multi-moneda. Diseñada para funcionar como app nativa en móvil y escritorio.
 
-First, run the development server:
+## Características
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Cuentas y saldos** — múltiples cuentas con distinta moneda, saldo consolidado en tiempo real
+- **Transacciones** — ingresos, gastos, transferencias entre cuentas (doble entrada), pagos de tarjeta y deuda
+- **Tarjetas de crédito** — compras a cuotas con cálculo de interés compuesto (capital + interés por cuota)
+- **Deudas** — seguimiento de préstamos con historial de abonos
+- **Presupuestos** — por categoría y mes, con alertas cuando se acerca el límite
+- **Cuentas compartidas** — comparte una cuenta con otros usuarios (roles: viewer, editor, admin)
+- **Reportes** — exportación CSV y PDF por rango de fechas
+- **Notificaciones push** — alertas de presupuesto, cuotas próximas y deudas vencidas (Web Push)
+- **Transacciones recurrentes** — generadas automáticamente vía cron diario
+- **Multi-moneda** — tasas de cambio actualizadas diariamente, conversión en el dashboard
+
+## Stack
+
+| Capa | Tecnología |
+|------|-----------|
+| Frontend | Next.js 16 (App Router), React 19 |
+| Backend | Convex (BD reactiva + serverless + crons) |
+| Auth | Clerk |
+| Estilos | Tailwind CSS v4 + Shadcn/ui |
+| PWA | Serwist (Service Worker) |
+| Email | Resend |
+| Errores | Sentry (solo producción) |
+| Tests | Vitest |
+
+## Requisitos
+
+- Node.js 20+
+- Cuenta en [Convex](https://convex.dev)
+- Cuenta en [Clerk](https://clerk.com)
+
+## Configuración
+
+Crea un archivo `.env.local` con las siguientes variables:
+
+```env
+# Convex
+CONVEX_DEPLOYMENT=
+NEXT_PUBLIC_CONVEX_URL=
+
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+CLERK_WEBHOOK_SECRET=
+CLERK_JWT_ISSUER_DOMAIN=
+
+# Resend (emails de bienvenida)
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+
+# Web Push (VAPID)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=
+
+# Sentry (opcional, solo producción)
+SENTRY_DSN=
+SENTRY_ORG=
+SENTRY_PROJECT=
+SENTRY_AUTH_TOKEN=
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Para generar las claves VAPID:
+```bash
+npx web-push generate-vapid-keys
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Desarrollo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
 
-## Learn More
+# Requiere dos terminales en paralelo:
+npm run dev          # Next.js → http://localhost:3000
+npm run dev:convex   # Convex en modo watch
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Comandos disponibles
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run build          # Build de producción
+npm run typecheck      # TypeScript
+npm run lint           # ESLint
+npm test               # Vitest (una pasada)
+npm run test:watch     # Vitest en modo watch
+npm run test:coverage  # Cobertura (solo src/lib/**)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Notas de implementación
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Los montos en la BD son **enteros × 100** (centavos). Usar `toCents` / `fromCents` / `formatCents` de `src/lib/money.ts`.
+- El Service Worker solo está activo en producción (Serwist lo deshabilita en desarrollo).
