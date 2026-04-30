@@ -1,0 +1,150 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Okany Sync — .gitignore
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Variables de entorno (NUNCA subir) ───────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+.env.staging.local
+.env.*.local
+*.env
+
+# ── Claves, certificados y secretos ──────────────────────────────────────────
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.asc
+*.gpg
+id_rsa
+id_ed25519
+serviceAccountKey.json
+google-credentials.json
+firebase-adminsdk*.json
+secrets/
+.secrets/
+
+# ── Dependencias ──────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ── Next.js ───────────────────────────────────────────────────────────────────
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+# ── Convex ────────────────────────────────────────────────────────────────────
+# _generated/ se commitea (tipos TypeScript que afectan el typecheck del equipo)
+.convex/
+
+# ── Serwist / PWA ─────────────────────────────────────────────────────────────
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/workbox-*.js.map
+public/fallback-*.js
+public/fallback-*.js.map
+
+# ── Tests y cobertura ─────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+
+# ── TypeScript ────────────────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# ── Caché de herramientas ─────────────────────────────────────────────────────
+.cache/
+.parcel-cache/
+.turbo/
+.eslintcache
+.stylelintcache
+.prettiercache
+
+# ── Vercel ────────────────────────────────────────────────────────────────────
+.vercel/
+
+# ── Sentry ────────────────────────────────────────────────────────────────────
+.sentryclirc
+
+# ── Sistema operativo ─────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+# Linux
+*~
+
+# ── IDEs y editores ───────────────────────────────────────────────────────────
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+# JetBrains (WebStorm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+# Vim/Neovim
+*.swp
+*.swo
+.vim/
+# Emacs
+*#
+.#*
+
+# ── Claude y agentes ───────────────────────────────────────────────────────
+.claude/
+.agents/
+.skills/
+.projects/
+.memory/
+.history/
+.notes/
+.tasks/
+.docs/
+AGENTS.md
+CLAUDE.md
+
+# ── Archivos temporales ───────────────────────────────────────────────────────
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
