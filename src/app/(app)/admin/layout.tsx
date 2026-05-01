@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 export default async function AdminLayout({
@@ -6,9 +6,9 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { sessionClaims } = await auth();
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role;
-  if (role !== "admin") redirect("/dashboard");
+  // currentUser() retorna el objeto completo con publicMetadata — no depende del JWT.
+  const user = await currentUser();
+  if (user?.publicMetadata?.role !== "admin") redirect("/dashboard");
 
   return <>{children}</>;
 }
