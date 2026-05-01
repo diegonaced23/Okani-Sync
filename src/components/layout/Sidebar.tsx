@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, ArrowLeftRight, Landmark, CreditCard,
-  HandCoins, Tags, PieChart, BarChart3, User, ShieldCheck,
+  HandCoins, Tags, PieChart, BarChart3, User, Users,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
-const NAV_SECTIONS = [
+const USER_NAV_SECTIONS = [
   {
     label: "Principal",
     items: [
@@ -24,9 +24,19 @@ const NAV_SECTIONS = [
   {
     label: "Organización",
     items: [
-      { href: "/categorias",  icon: Tags,     label: "Categorías" },
+      { href: "/categorias",   icon: Tags,     label: "Categorías" },
       { href: "/presupuestos", icon: PieChart, label: "Presupuestos" },
-      { href: "/reportes",    icon: BarChart3, label: "Reportes" },
+      { href: "/reportes",     icon: BarChart3, label: "Reportes" },
+    ],
+  },
+];
+
+const ADMIN_NAV_SECTIONS = [
+  {
+    label: "Administración",
+    items: [
+      { href: "/admin",       icon: LayoutDashboard, label: "Dashboard" },
+      { href: "/admin/users", icon: Users,           label: "Usuarios" },
     ],
   },
 ];
@@ -74,7 +84,7 @@ export function Sidebar() {
 
       {/* Navegación */}
       <nav aria-label="Navegación principal" className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-        {NAV_SECTIONS.map((section) => (
+        {(isAdmin ? ADMIN_NAV_SECTIONS : USER_NAV_SECTIONS).map((section) => (
           <div key={section.label}>
             <p
               className="px-3 mb-1 mt-3"
@@ -116,19 +126,6 @@ export function Sidebar() {
 
       {/* Footer */}
       <div style={{ borderTop: "1px solid var(--border)", padding: "10px 12px" }} className="space-y-0.5">
-        {isAdmin && (
-          <Link
-            href="/admin"
-            aria-current={pathname.startsWith("/admin") ? "page" : undefined}
-            className={cn(
-              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
-              pathname.startsWith("/admin") ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-            )}
-          >
-            <ShieldCheck className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-            Administración
-          </Link>
-        )}
         <Link
           href="/perfil"
           aria-current={pathname === "/perfil" ? "page" : undefined}

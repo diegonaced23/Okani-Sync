@@ -70,6 +70,30 @@ export async function clerkFindUserByEmail(args: {
   return list[0] ?? null;
 }
 
+/** Crea un sign-in token (link mágico de un solo uso) para el usuario. */
+export async function clerkCreateSignInToken(args: {
+  clerkId: string;
+  secretKey: string;
+}): Promise<string> {
+  const res = await fetch(`${CLERK_API}/sign_in_tokens`, {
+    method: "POST",
+    headers: authHeaders(args.secretKey),
+    body: JSON.stringify({ user_id: args.clerkId }),
+  });
+
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      errors?: Array<{ message: string }>;
+    };
+    throw new Error(
+      err.errors?.[0]?.message ?? `Clerk sign_in_tokens error ${res.status}`
+    );
+  }
+
+  const data = (await res.json()) as { url: string };
+  return data.url;
+}
+
 /** Elimina un usuario en Clerk. */
 export async function clerkDeleteUser(args: {
   clerkId: string;

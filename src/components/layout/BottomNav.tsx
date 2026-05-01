@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -8,10 +9,20 @@ import {
   Plus,
   Landmark,
   MoreHorizontal,
+  Users,
+  User,
 } from "lucide-react";
+import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+interface NavItem {
+  href: string;
+  icon: React.ElementType;
+  label: string;
+  isFab?: boolean;
+}
+
+const USER_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",     icon: LayoutDashboard, label: "Inicio" },
   { href: "/transacciones", icon: ArrowLeftRight,  label: "Movimientos" },
   { href: "/transacciones?nuevo=true", icon: Plus, label: "Nuevo", isFab: true },
@@ -19,8 +30,17 @@ const NAV_ITEMS = [
   { href: "/mas",           icon: MoreHorizontal,  label: "Más" },
 ];
 
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  { href: "/admin",       icon: LayoutDashboard, label: "Panel" },
+  { href: "/admin/users", icon: Users,           label: "Usuarios" },
+  { href: "/perfil",      icon: User,            label: "Perfil" },
+];
+
 export function BottomNav() {
   const pathname = usePathname();
+  const { user } = useUser();
+  const isAdmin = user?.publicMetadata?.role === "admin";
+  const navItems = isAdmin ? ADMIN_NAV_ITEMS : USER_NAV_ITEMS;
 
   return (
     <nav
@@ -40,7 +60,7 @@ export function BottomNav() {
           position: "relative",
         }}
       >
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive =
             !item.isFab && (pathname === item.href || pathname.startsWith(item.href.split("?")[0] + "/"));
           const Icon = item.icon;

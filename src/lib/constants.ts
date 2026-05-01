@@ -157,6 +157,7 @@ export const AUDIT_ACTIONS = {
   CARD_DELETED: "card.deleted",
   // Admin
   ADMIN_EXPORT: "admin.export",
+  USER_PASSWORD_RESET: "user.password_reset",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

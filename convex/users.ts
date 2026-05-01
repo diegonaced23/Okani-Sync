@@ -238,6 +238,29 @@ export const listAll = query({
   },
 });
 
+/** Estadísticas globales de la app para el dashboard admin. */
+export const adminStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const caller = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!caller || caller.role !== "admin") return null;
+
+    const allUsers = await ctx.db.query("users").collect();
+    const totalUsers = allUsers.length;
+    const activeUsers = allUsers.filter((u) => u.active).length;
+    const adminCount = allUsers.filter((u) => u.role === "admin").length;
+
+    const totalTransactions = (await ctx.db.query("transactions").take(100000)).length;
+
+    return { totalUsers, activeUsers, adminCount, totalTransactions };
+  },
+});
+
 // ─── Mutations admin ─────────────────────────────────────────────────────────
 
 /** Edita nombre, rol o estado activo de un usuario (solo admin). */
