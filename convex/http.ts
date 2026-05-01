@@ -35,6 +35,7 @@ http.route({
         first_name: string;
         last_name: string;
         image_url: string;
+        public_metadata?: { role?: "user" | "admin" };
       };
     };
 
@@ -53,6 +54,7 @@ http.route({
     const email = data.email_addresses?.[0]?.email_address ?? "";
     const name = `${data.first_name ?? ""} ${data.last_name ?? ""}`.trim();
     const imageUrl = data.image_url;
+    const role = data.public_metadata?.role;
 
     if (type === "user.created" || type === "user.updated") {
       await ctx.runMutation(internal.users.upsertFromClerk, {
@@ -60,6 +62,7 @@ http.route({
         email,
         name,
         imageUrl,
+        role,
       });
     }
 

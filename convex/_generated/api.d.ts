@@ -29,6 +29,7 @@ import type * as debtPayments from "../debtPayments.js";
 import type * as debts from "../debts.js";
 import type * as exchangeRates from "../exchangeRates.js";
 import type * as http from "../http.js";
+import type * as invitations from "../invitations.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_clerkApi from "../lib/clerkApi.js";
 import type * as lib_emailTemplates from "../lib/emailTemplates.js";
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   debts: typeof debts;
   exchangeRates: typeof exchangeRates;
   http: typeof http;
+  invitations: typeof invitations;
   "lib/auth": typeof lib_auth;
   "lib/clerkApi": typeof lib_clerkApi;
   "lib/emailTemplates": typeof lib_emailTemplates;

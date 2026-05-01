@@ -141,6 +141,7 @@ export const GRADIENT_MAP = Object.fromEntries(
 export const AUDIT_ACTIONS = {
   // Usuarios
   USER_CREATED: "user.created",
+  USER_INVITED: "user.invited",
   USER_UPDATED: "user.updated",
   USER_DELETED: "user.deleted",
   USER_DEACTIVATED: "user.deactivated",

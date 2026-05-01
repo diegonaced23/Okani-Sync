@@ -464,6 +464,21 @@ export default defineSchema({
     .index("by_clerk_session", ["clerkSessionId"]),
 
   // ============================================================
+  // INVITACIONES — Control de acceso: solo usuarios invitados por un admin
+  // El webhook user.created verifica esta tabla antes de crear el usuario en Convex.
+  // ============================================================
+  invitations: defineTable({
+    email: v.string(),
+    role: v.union(v.literal("user"), v.literal("admin")),
+    status: v.union(v.literal("pending"), v.literal("accepted")),
+    invitedBy: v.string(),          // clerkId del admin que invitó
+    createdAt: v.number(),
+    acceptedAt: v.optional(v.number()),
+  })
+    .index("by_email", ["email"])
+    .index("by_status", ["status"]),
+
+  // ============================================================
   // LOG DE AUDITORÍA — Acciones administrativas y cambios sensibles
   // Usar constante AUDIT_ACTIONS de lib/constants.ts para los valores de action.
   // ============================================================

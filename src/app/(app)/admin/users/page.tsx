@@ -39,7 +39,7 @@ export default function AdminUsersPage() {
           )}
         </div>
         <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" /> Nuevo usuario
+          <Plus className="h-4 w-4" /> Invitar usuario
         </Button>
       </div>
 

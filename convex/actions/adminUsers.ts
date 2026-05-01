@@ -2,18 +2,16 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import { clerkCreateUser, clerkCreateSignInToken } from "../lib/clerkApi";
+import { clerkCreateInvitation, clerkCreateSignInToken } from "../lib/clerkApi";
 import { AUDIT_ACTIONS } from "../../src/lib/constants";
 
-/** El administrador crea un nuevo usuario. */
+/** El administrador invita a un nuevo usuario. Clerk envía el email de invitación. */
 export const createByAdmin = action({
   args: {
-    name: v.string(),
     email: v.string(),
     role: v.union(v.literal("user"), v.literal("admin")),
   },
   handler: async (ctx, args) => {
-    // Verificar que el invocador es admin
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("No autenticado");
 
@@ -27,41 +25,25 @@ export const createByAdmin = action({
     const secretKey = process.env.CLERK_SECRET_KEY;
     if (!secretKey) throw new Error("CLERK_SECRET_KEY no configurada");
 
-    const nameParts = args.name.trim().split(" ");
-    const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(" ");
-
-    // 1. Crear en Clerk
-    const clerkUser = await clerkCreateUser({
+    // 1. Registrar invitación en Convex — es la fuente de verdad para el control de acceso
+    await ctx.runMutation(internal.invitations.createFromAdmin, {
       email: args.email,
-      firstName,
-      lastName,
+      role: args.role,
+      invitedBy: identity.subject,
+    });
+
+    // 2. Clerk envía el email de invitación automáticamente
+    await clerkCreateInvitation({
+      email: args.email,
+      role: args.role,
       secretKey,
     });
 
-    // 2. Crear en Convex (sin esperar al webhook — idempotente)
-    await ctx.runMutation(internal.users.createFromAdmin, {
-      clerkId: clerkUser.id,
-      email: args.email,
-      name: args.name.trim(),
-      role: args.role,
-      createdBy: identity.subject,
-    });
-
-    // 3. Audit log
     await ctx.runMutation(internal.users.logAuditAction, {
       userId: identity.subject,
-      targetUserId: clerkUser.id,
-      action: AUDIT_ACTIONS.USER_CREATED,
-      metadata: { email: args.email, name: args.name, role: args.role },
+      action: AUDIT_ACTIONS.USER_INVITED,
+      metadata: { email: args.email, role: args.role },
     });
-
-    // 4. Email de bienvenida (no bloquea)
-    await ctx.runAction(internal.actions.sendWelcomeEmail.run, {
-      clerkId: clerkUser.id,
-    });
-
-    return clerkUser.id;
   },
 });
 

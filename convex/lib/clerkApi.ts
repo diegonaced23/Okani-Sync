@@ -56,6 +56,42 @@ export async function clerkCreateUser(args: {
   return res.json() as Promise<ClerkUserCreated>;
 }
 
+export interface ClerkInvitation {
+  id: string;
+  email_address: string;
+  status: string;
+}
+
+/** Crea una invitación en Clerk. Clerk envía el email automáticamente. */
+export async function clerkCreateInvitation(args: {
+  email: string;
+  role?: "user" | "admin";
+  secretKey: string;
+}): Promise<ClerkInvitation> {
+  const body: Record<string, unknown> = {
+    email_address: args.email,
+  };
+  if (args.role) {
+    body.public_metadata = { role: args.role };
+  }
+
+  const res = await fetch(`${CLERK_API}/invitations`, {
+    method: "POST",
+    headers: authHeaders(args.secretKey),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      errors?: Array<{ message: string }>;
+    };
+    throw new Error(
+      err.errors?.[0]?.message ?? `Clerk API error ${res.status}`
+    );
+  }
+  return res.json() as Promise<ClerkInvitation>;
+}
+
 /** Busca un usuario en Clerk por email. Devuelve null si no existe. */
 export async function clerkFindUserByEmail(args: {
   email: string;

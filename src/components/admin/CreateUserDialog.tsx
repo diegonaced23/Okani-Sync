@@ -20,25 +20,24 @@ interface CreateUserDialogProps {
 }
 
 export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) {
-  const createUser = useAction(api.actions.adminUsers.createByAdmin);
+  const inviteUser = useAction(api.actions.adminUsers.createByAdmin);
 
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"user" | "admin">("user");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
+    if (!email.trim()) return;
 
     setLoading(true);
     try {
-      await createUser({ name: name.trim(), email: email.trim(), role });
-      toast.success(`Usuario ${name} creado. Se envió email de bienvenida.`);
-      setName(""); setEmail(""); setRole("user");
+      await inviteUser({ email: email.trim(), role });
+      toast.success(`Invitación enviada a ${email.trim()}`);
+      setEmail(""); setRole("user");
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al crear usuario");
+      toast.error(err instanceof Error ? err.message : "Error al enviar la invitación");
     } finally {
       setLoading(false);
     }
@@ -48,17 +47,12 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Crear nuevo usuario</DialogTitle>
+          <DialogTitle>Invitar usuario</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <Label htmlFor="cu-name">Nombre completo</Label>
-            <Input id="cu-name" placeholder="María García" value={name}
-              onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div className="space-y-1.5">
             <Label htmlFor="cu-email">Correo electrónico</Label>
-            <Input id="cu-email" type="email" placeholder="maria@empresa.com"
+            <Input id="cu-email" type="email" placeholder="maria@ejemplo.com"
               value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="space-y-1.5">
@@ -72,7 +66,7 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
             </Select>
           </div>
           <p className="text-xs text-muted-foreground">
-            El usuario recibirá un correo de bienvenida y podrá iniciar sesión con Google.
+            Clerk enviará un email con el enlace de acceso. El usuario podrá registrarse con Google u otro método habilitado.
           </p>
           <div className="flex gap-2 pt-1">
             <Button type="button" variant="outline" className="flex-1"
@@ -80,7 +74,7 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
               Cancelar
             </Button>
             <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? "Creando…" : "Crear usuario"}
+              {loading ? "Enviando…" : "Enviar invitación"}
             </Button>
           </div>
         </form>

@@ -33,17 +33,25 @@ export const ensureExists = mutation({
 
     if (existing) return existing._id;
 
-    // El webhook aún no llegó — crear usuario mínimo con seed
-    const now = Date.now();
-    const name = identity.name ?? identity.email ?? "Usuario";
+    // El webhook aún no llegó — verificar invitación antes de crear
     const email = identity.email ?? "";
+    const invitation = await ctx.db
+      .query("invitations")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .first();
+
+    if (!invitation) throw new Error("No autorizado: usuario no invitado");
+
+    const now = Date.now();
+    const name = identity.name ?? (email || "Usuario");
 
     const userId = await ctx.db.insert("users", {
       clerkId: identity.subject,
       email,
       name,
       imageUrl: identity.pictureUrl,
-      role: "user",
+      role: invitation.role,
       active: true,
       locale: "es-CO",
       currency: "COP",
@@ -51,6 +59,8 @@ export const ensureExists = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    await ctx.db.patch(invitation._id, { status: "accepted", acceptedAt: now });
 
     await ctx.db.insert("accounts", {
       ownerId: identity.subject,
@@ -150,6 +160,7 @@ export const upsertFromClerk = internalMutation({
     email: v.string(),
     name: v.string(),
     imageUrl: v.optional(v.string()),
+    role: v.optional(v.union(v.literal("user"), v.literal("admin"))),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -167,13 +178,21 @@ export const upsertFromClerk = internalMutation({
       return existing._id;
     }
 
-    // Crear usuario nuevo
+    // Usuario nuevo: verificar que tiene una invitación pendiente
+    const invitation = await ctx.db
+      .query("invitations")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .first();
+
+    if (!invitation) return; // No invitado — no crear en Convex
+
     const userId = await ctx.db.insert("users", {
       clerkId: args.clerkId,
       email: args.email,
       name: args.name,
       imageUrl: args.imageUrl,
-      role: "user",
+      role: invitation.role,
       active: true,
       locale: "es-CO",
       currency: "COP",
@@ -181,6 +200,8 @@ export const upsertFromClerk = internalMutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+
+    await ctx.db.patch(invitation._id, { status: "accepted", acceptedAt: Date.now() });
 
     // Seed: cuenta Billetera por defecto
     await ctx.db.insert("accounts", {
