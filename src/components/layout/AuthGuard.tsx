@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { useMutation } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,14 +13,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { signOut } = useClerk();
   const ensureExists = useMutation(api.users.ensureExists);
+  const syncRole = useAction(api.actions.adminUsers.syncRoleToClerk);
   const [status, setStatus] = useState<Status>("loading");
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     ensureExists()
-      .then(() => setStatus("granted"))
+      .then(async () => {
+        await syncRole().catch(() => {}); // best-effort: no bloquea si Clerk falla
+        setStatus("granted");
+      })
       .catch(() => setStatus("denied"));
-  }, [isLoaded, isSignedIn, ensureExists]);
+  }, [isLoaded, isSignedIn, ensureExists, syncRole]);
 
   if (status === "loading") return null;
 

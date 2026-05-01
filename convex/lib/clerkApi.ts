@@ -130,6 +130,28 @@ export async function clerkCreateSignInToken(args: {
   return data.url;
 }
 
+/** Actualiza el publicMetadata de un usuario en Clerk. Los campos se fusionan (no reemplazan). */
+export async function clerkUpdateUserMetadata(args: {
+  clerkId: string;
+  publicMetadata: Record<string, unknown>;
+  secretKey: string;
+}): Promise<void> {
+  const res = await fetch(`${CLERK_API}/users/${args.clerkId}`, {
+    method: "PATCH",
+    headers: authHeaders(args.secretKey),
+    body: JSON.stringify({ public_metadata: args.publicMetadata }),
+  });
+
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as {
+      errors?: Array<{ message: string }>;
+    };
+    throw new Error(
+      err.errors?.[0]?.message ?? `Clerk update error ${res.status}`
+    );
+  }
+}
+
 /** Elimina un usuario en Clerk. */
 export async function clerkDeleteUser(args: {
   clerkId: string;

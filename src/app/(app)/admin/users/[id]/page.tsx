@@ -50,6 +50,7 @@ export default function AdminUserDetailPage({
   const users = useQuery(api.users.listAll);
   const auditLogs = useQuery(api.auditLogs.listForUser, { targetClerkId: clerkId });
   const updateUser = useMutation(api.users.updateByAdmin);
+  const updateRole = useAction(api.actions.adminUsers.updateRoleByAdmin);
   const generateResetLink = useAction(api.actions.adminUsers.generateResetLink);
 
   const user = (users ?? []).find((u) => u.clerkId === clerkId);
@@ -76,8 +77,8 @@ export default function AdminUserDetailPage({
 
   async function handleRoleChange(newRole: "admin" | "user") {
     try {
-      await updateUser({ targetClerkId: clerkId, role: newRole });
-      toast.success("Rol actualizado");
+      await updateRole({ targetClerkId: clerkId, role: newRole });
+      toast.success("Rol actualizado. El usuario debe cerrar sesión y volver a entrar para que tome efecto.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     }
