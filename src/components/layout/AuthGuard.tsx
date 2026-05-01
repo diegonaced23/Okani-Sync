@@ -2,48 +2,82 @@
 
 import { useEffect, useState } from "react";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { useMutation, useAction } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type Status = "loading" | "granted" | "denied";
+type Setup = "loading" | "done" | "denied";
+
+function AccessDeniedScreen({ message, onSignOut }: { message: string; onSignOut: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-5 text-center px-4">
+      <div className="rounded-full bg-destructive/10 p-4">
+        <Ban className="h-8 w-8 text-destructive" />
+      </div>
+      <div className="space-y-1.5">
+        <h1 className="text-lg font-semibold">Sin acceso</h1>
+        <p className="text-sm text-muted-foreground max-w-xs">{message}</p>
+      </div>
+      <Button variant="outline" size="sm" onClick={onSignOut}>
+        Cerrar sesión
+      </Button>
+    </div>
+  );
+}
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { signOut } = useClerk();
   const ensureExists = useMutation(api.users.ensureExists);
   const syncRole = useAction(api.actions.adminUsers.syncRoleToClerk);
-  const [status, setStatus] = useState<Status>("loading");
+  // Suscripción reactiva: si active cambia en Convex, este componente se actualiza sin recargar
+  const me = useQuery(api.users.getMe);
+  const [setup, setSetup] = useState<Setup>("loading");
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     ensureExists()
       .then(async () => {
         await syncRole().catch(() => {}); // best-effort: no bloquea si Clerk falla
-        setStatus("granted");
+        setSetup("done");
       })
-      .catch(() => setStatus("denied"));
+      .catch(() => setSetup("denied"));
   }, [isLoaded, isSignedIn, ensureExists, syncRole]);
 
-  if (status === "loading") return null;
+  // Comprobación inicial de invitación aún en progreso
+  if (setup === "loading") return null;
 
-  if (status === "denied") {
+  // Sin invitación válida
+  if (setup === "denied") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-5 text-center px-4">
-        <div className="rounded-full bg-destructive/10 p-4">
-          <Ban className="h-8 w-8 text-destructive" />
-        </div>
-        <div className="space-y-1.5">
-          <h1 className="text-lg font-semibold">Sin acceso</h1>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            Tu cuenta no está autorizada. Contacta al administrador para recibir una invitación.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => signOut()}>
-          Cerrar sesión
-        </Button>
-      </div>
+      <AccessDeniedScreen
+        message="Tu cuenta no está autorizada. Contacta al administrador para recibir una invitación."
+        onSignOut={signOut}
+      />
+    );
+  }
+
+  // setup === "done" — esperar a que Convex cargue el usuario
+  if (me === undefined) return null;
+
+  // Cuenta eliminada de Convex
+  if (me === null) {
+    return (
+      <AccessDeniedScreen
+        message="No se encontró tu cuenta. Contacta al administrador."
+        onSignOut={signOut}
+      />
+    );
+  }
+
+  // Cuenta desactivada — reactivo: si un admin la desactiva, esto se aplica de inmediato
+  if (!me.active) {
+    return (
+      <AccessDeniedScreen
+        message="Tu cuenta ha sido desactivada. Contacta al administrador."
+        onSignOut={signOut}
+      />
     );
   }
 

@@ -3,16 +3,15 @@ import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 // Dominio personalizado de Clerk (ej. "clerk.danchest.cloud").
-// Configurar en Vercel: NEXT_PUBLIC_CLERK_DOMAIN=clerk.danchest.cloud
-const clerkCustomDomain = process.env.NEXT_PUBLIC_CLERK_DOMAIN;
+// Configurar en Vercel: CLERK_CSP_DOMAIN=clerk.danchest.cloud
+// No usar NEXT_PUBLIC_CLERK_DOMAIN — Clerk lo interpreta y altera la carga de scripts.
+const clerkCustomDomain = process.env.CLERK_CSP_DOMAIN;
 const clerkSrc = [
   "https://*.clerk.accounts.dev",
   "https://clerk.accounts.dev",
   ...(clerkCustomDomain ? [`https://${clerkCustomDomain}`] : []),
 ].join(" ");
 
-// CSP en modo Report-Only: registra violaciones sin bloquear.
-// Una vez verificado en prod (24-48h sin falsos positivos), cambiar a Content-Security-Policy.
 const csp = [
   "default-src 'self'",
   // Clerk inyecta scripts inline; Cloudflare Turnstile es requerido por Clerk para bot detection
@@ -36,7 +35,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-  { key: "Content-Security-Policy-Report-Only", value: csp },
+  { key: "Content-Security-Policy", value: csp },
 ];
 
 const baseConfig: NextConfig = {

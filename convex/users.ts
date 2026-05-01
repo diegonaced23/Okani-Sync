@@ -31,7 +31,10 @@ export const ensureExists = mutation({
       .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
       .unique();
 
-    if (existing) return existing._id;
+    if (existing) {
+      if (!existing.active) throw new Error("No autorizado: usuario desactivado");
+      return existing._id;
+    }
 
     // El webhook aún no llegó — verificar invitación antes de crear
     const email = identity.email ?? "";
