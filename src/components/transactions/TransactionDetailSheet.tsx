@@ -1,0 +1,455 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import type { Doc } from "../../../convex/_generated/dataModel";
+import { AppSheet } from "@/components/ui/app-sheet";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { formatCents } from "@/lib/money";
+import { formatDate } from "@/lib/utils";
+import { Check, Pencil, Trash2, X } from "lucide-react";
+import {
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight,
+  BookOpen, Briefcase, Car, CircleDollarSign, Coffee,
+  CreditCard, Gift, HandCoins, Heart, HeartPulse,
+  Home, Laptop, MoreHorizontal, Music, Shirt,
+  ShoppingCart, Tv, TrendingUp, UtensilsCrossed, Wallet, Zap,
+} from "lucide-react";
+import type { LucideProps } from "lucide-react";
+
+// ── Icon map para categorías ───────────────────────────────────────────────────
+
+type LucideIcon = React.ComponentType<LucideProps>;
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  "utensils":        UtensilsCrossed,
+  "car":             Car,
+  "home":            Home,
+  "zap":             Zap,
+  "heart-pulse":     HeartPulse,
+  "music":           Music,
+  "book-open":       BookOpen,
+  "shirt":           Shirt,
+  "circle-ellipsis": MoreHorizontal,
+  "briefcase":       Briefcase,
+  "laptop":          Laptop,
+  "trending-up":     TrendingUp,
+  "gift":            Gift,
+  "cart":            ShoppingCart,
+  "credit-card":     CreditCard,
+  "heart":           Heart,
+  "tv":              Tv,
+  "coffee":          Coffee,
+  "wallet":          Wallet,
+  "home2":           Home,
+};
+
+function CategoryIcon({ name, ...props }: { name: string } & LucideProps) {
+  const Icon = ICON_MAP[name] ?? CircleDollarSign;
+  return <Icon {...props} />;
+}
+
+// ── Config visual por tipo ─────────────────────────────────────────────────────
+
+const TYPE_CONFIG: Record<string, {
+  icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+  amountColor: string;
+  sign: string;
+  label: string;
+}> = {
+  ingreso: {
+    icon: ArrowDownLeft,
+    iconColor: "var(--os-lime)",
+    iconBg: "color-mix(in oklch, var(--os-lime) 18%, transparent)",
+    amountColor: "var(--os-lime)",
+    sign: "+",
+    label: "Ingreso",
+  },
+  gasto: {
+    icon: ArrowUpRight,
+    iconColor: "var(--os-magenta)",
+    iconBg: "color-mix(in oklch, var(--os-magenta) 16%, transparent)",
+    amountColor: "var(--foreground)",
+    sign: "−",
+    label: "Gasto",
+  },
+  transferencia: {
+    icon: ArrowLeftRight,
+    iconColor: "var(--os-cyan)",
+    iconBg: "color-mix(in oklch, var(--os-cyan) 16%, transparent)",
+    amountColor: "var(--muted-foreground)",
+    sign: "",
+    label: "Transferencia",
+  },
+  pago_tarjeta: {
+    icon: CreditCard,
+    iconColor: "var(--os-orange)",
+    iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
+    amountColor: "var(--foreground)",
+    sign: "−",
+    label: "Pago de tarjeta",
+  },
+  pago_deuda: {
+    icon: HandCoins,
+    iconColor: "var(--os-orange)",
+    iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
+    amountColor: "var(--foreground)",
+    sign: "−",
+    label: "Pago de deuda",
+  },
+};
+
+const EDITABLE_TYPES = new Set(["ingreso", "gasto"]);
+
+// ── Componente ────────────────────────────────────────────────────────────────
+
+interface TransactionDetailSheetProps {
+  transaction: Doc<"transactions"> | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  categoryName?: string;
+  categories: Doc<"categories">[];
+}
+
+export function TransactionDetailSheet({
+  transaction: tx,
+  open,
+  onOpenChange,
+  categoryName,
+  categories,
+}: TransactionDetailSheetProps) {
+  const updateTx = useMutation(api.transactions.update);
+  const removeTx = useMutation(api.transactions.remove);
+
+  const [editing, setEditing]       = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [loading, setLoading]       = useState(false);
+
+  // Estado del formulario de edición
+  const [desc, setDesc]           = useState("");
+  const [date, setDate]           = useState("");
+  const [categoryId, setCategoryId] = useState("");
+
+  // Reiniciar cuando cambia la transacción seleccionada o se cierra el sheet
+  useEffect(() => {
+    if (tx) {
+      setDesc(tx.description);
+      setDate(new Date(tx.date).toISOString().substring(0, 10));
+      setCategoryId(tx.categoryId ?? "");
+    }
+    setEditing(false);
+  }, [tx]);
+
+  useEffect(() => {
+    if (!open) setEditing(false);
+  }, [open]);
+
+  if (!tx) return null;
+
+  // Capturar en variable no-nullable para que los closures async mantengan el narrowing
+  const currentTx = tx;
+
+  const config = TYPE_CONFIG[currentTx.type] ?? TYPE_CONFIG.gasto;
+  const Icon = config.icon;
+  const canEdit = EDITABLE_TYPES.has(currentTx.type);
+
+  // Solo mostrar categorías que correspondan al tipo de la transacción
+  const filteredCategories = categories.filter(
+    (c) => c.type === currentTx.type || c.type === "ambos"
+  );
+
+  async function handleSave() {
+    if (!desc.trim()) {
+      toast.error("La descripción es obligatoria");
+      return;
+    }
+    setLoading(true);
+    try {
+      await updateTx({
+        transactionId: currentTx._id,
+        description: desc.trim(),
+        date: new Date(date).getTime(),
+        categoryId: categoryId
+          ? (categoryId as Parameters<typeof updateTx>[0]["categoryId"])
+          : undefined,
+      });
+      toast.success("Movimiento actualizado");
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al actualizar");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDelete() {
+    setLoading(true);
+    try {
+      await removeTx({ transactionId: currentTx._id });
+      toast.success("Movimiento eliminado");
+      setDeleteOpen(false);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <AppSheet
+        open={open}
+        onOpenChange={(o) => {
+          if (!o) setEditing(false);
+          onOpenChange(o);
+        }}
+        title={editing ? "Editar movimiento" : "Detalle del movimiento"}
+      >
+        <div className="space-y-5">
+
+          {/* ── Cabecera: icono + monto ─────────────────────────────────────── */}
+          {!editing && (
+            <div className="flex items-center gap-4 pb-1">
+              <span
+                className="flex shrink-0 items-center justify-center"
+                style={{
+                  width: 52, height: 52,
+                  borderRadius: 16,
+                  background: config.iconBg,
+                  color: config.iconColor,
+                }}
+              >
+                <Icon className="h-[22px] w-[22px]" aria-hidden="true" />
+              </span>
+              <div>
+                <p
+                  className="font-mono-num"
+                  style={{
+                    fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em",
+                    color: config.amountColor, lineHeight: 1,
+                  }}
+                >
+                  {config.sign}{formatCents(currentTx.amount, currentTx.currency)}
+                </p>
+                <p className="text-xs font-semibold text-muted-foreground mt-1">
+                  {config.label}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Modo edición ────────────────────────────────────────────────── */}
+          {editing ? (
+            <div className="space-y-4">
+              <div>
+                <Label
+                  htmlFor="edit-desc"
+                  className="text-[12px] font-semibold text-foreground mb-2 block"
+                >
+                  Descripción <span aria-hidden="true" className="text-danger">*</span>
+                </Label>
+                <Input
+                  id="edit-desc"
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  required
+                  aria-required="true"
+                  style={{ background: "var(--surface-2)" }}
+                />
+              </div>
+
+              <div>
+                <Label
+                  htmlFor="edit-date"
+                  className="text-[12px] font-semibold text-foreground mb-2 block"
+                >
+                  Fecha
+                </Label>
+                <DatePicker id="edit-date" value={date} onChange={setDate} required />
+              </div>
+
+              {filteredCategories.length > 0 && (
+                <div>
+                  <p
+                    id="edit-cat-label"
+                    className="text-[12px] font-semibold text-foreground mb-2"
+                  >
+                    Categoría
+                  </p>
+                  <div
+                    role="group"
+                    aria-labelledby="edit-cat-label"
+                    className="grid grid-cols-4 gap-2"
+                  >
+                    {filteredCategories.slice(0, 8).map((cat) => {
+                      const isActive = categoryId === cat._id;
+                      return (
+                        <button
+                          key={cat._id}
+                          type="button"
+                          aria-pressed={isActive}
+                          aria-label={cat.name}
+                          onClick={() => setCategoryId(isActive ? "" : cat._id)}
+                          className="flex flex-col items-center gap-1.5 py-3 px-1 transition-all active:scale-95"
+                          style={{
+                            borderRadius: 14,
+                            background: isActive
+                              ? "color-mix(in oklch, var(--os-lime) 14%, var(--surface))"
+                              : "var(--surface-2)",
+                            border: isActive
+                              ? "1.5px solid var(--os-lime)"
+                              : "1.5px solid transparent",
+                            transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+                          }}
+                        >
+                          <CategoryIcon
+                            name={cat.icon}
+                            aria-hidden="true"
+                            className="h-[20px] w-[20px]"
+                            style={{ color: isActive ? "var(--os-lime)" : cat.color }}
+                            strokeWidth={1.8}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="text-[10px] font-semibold leading-tight text-center"
+                            style={{
+                              color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
+                            }}
+                          >
+                            {cat.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          ) : (
+            /* ── Modo vista: lista de campos ────────────────────────────────── */
+            <dl
+              className="rounded-xl divide-y"
+              style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                overflow: "hidden",
+              }}
+            >
+              <DetailRow label="Descripción" value={currentTx.description} />
+              <DetailRow label="Fecha" value={formatDate(currentTx.date)} />
+              {categoryName && <DetailRow label="Categoría" value={categoryName} />}
+              {currentTx.notes && <DetailRow label="Notas" value={currentTx.notes} />}
+              {currentTx.currency && (
+                <DetailRow label="Moneda" value={currentTx.currency} />
+              )}
+            </dl>
+          )}
+
+          {/* ── Acciones ─────────────────────────────────────────────────────── */}
+          {editing ? (
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={loading}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60"
+                style={{
+                  padding: "13px 16px",
+                  fontSize: 14,
+                  background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
+                  color: "var(--primary-foreground)",
+                  border: "none",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  boxShadow:
+                    "0 6px 16px -4px color-mix(in oklch, var(--os-lime) 55%, transparent)",
+                }}
+              >
+                <Check className="h-4 w-4" strokeWidth={2.5} />
+                {loading ? "Guardando…" : "Guardar cambios"}
+              </button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditing(false)}
+                disabled={loading}
+                className="gap-1.5"
+              >
+                <X className="h-4 w-4" />
+                Cancelar
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2 pt-1">
+              {canEdit && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 gap-2 font-semibold"
+                  onClick={() => setEditing(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Editar
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="destructive"
+                className={`gap-2 font-semibold ${canEdit ? "" : "flex-1"}`}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar
+              </Button>
+            </div>
+          )}
+
+        </div>
+      </AppSheet>
+
+      {/* ── Confirmación de eliminación ───────────────────────────────────────── */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este movimiento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {currentTx.type === "transferencia"
+                ? "Se eliminarán ambas partes de la transferencia y se revertirán los saldos de las dos cuentas."
+                : "Esta acción es irreversible. Se revertirá el saldo de la cuenta o tarjeta correspondiente."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loading} />
+            <AlertDialogAction onClick={handleDelete} disabled={loading}>
+              {loading ? "Eliminando…" : "Sí, eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// ── Sub-componente de fila de detalle ──────────────────────────────────────────
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-4 py-3">
+      <dt className="text-xs font-semibold text-muted-foreground shrink-0 pt-px">{label}</dt>
+      <dd className="text-sm text-right text-foreground">{value}</dd>
+    </div>
+  );
+}

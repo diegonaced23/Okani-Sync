@@ -12,6 +12,7 @@ import type { Doc } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransferForm } from "@/components/transactions/TransferForm";
+import { TransactionDetailSheet } from "@/components/transactions/TransactionDetailSheet";
 import { currentMonth, formatCents } from "@/lib/money";
 
 // ─── Tipos de filtro ───────────────────────────────────────────────────────────
@@ -60,10 +61,12 @@ export default function TransaccionesPage() {
   const nuevoParam = searchParams.get("nuevo");
   const tabParam   = searchParams.get("tab");
 
-  const [month, setMonth]   = useState(() => today);
-  const [filter, setFilter] = useState<TxFilter>("all");
-  const [open, setOpen]     = useState(nuevoParam === "true");
-  const [txTab, setTxTab]   = useState<"ingreso" | "gasto" | "transferencia">(() => {
+  const [month, setMonth]      = useState(() => today);
+  const [filter, setFilter]    = useState<TxFilter>("all");
+  const [open, setOpen]        = useState(nuevoParam === "true");
+  const [selectedTx, setSelectedTx] = useState<Doc<"transactions"> | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [txTab, setTxTab]      = useState<"ingreso" | "gasto" | "transferencia">(() => {
     if (tabParam === "ingreso" || tabParam === "gasto" || tabParam === "transferencia") {
       return tabParam;
     }
@@ -351,12 +354,28 @@ export default function TransaccionesPage() {
               <TransactionItem
                 transaction={tx}
                 categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+                onPress={() => {
+                  setSelectedTx(tx);
+                  setDetailOpen(true);
+                }}
               />
               {i < filtered.length - 1 && <TxSeparator />}
             </div>
           ))}
         </div>
       )}
+
+      {/* ── Sheet de detalle / edición / eliminación ────────────────────────── */}
+      <TransactionDetailSheet
+        transaction={selectedTx}
+        open={detailOpen}
+        onOpenChange={(o) => {
+          setDetailOpen(o);
+          if (!o) setSelectedTx(null);
+        }}
+        categoryName={selectedTx?.categoryId ? catMap[selectedTx.categoryId] : undefined}
+        categories={categories ?? []}
+      />
 
     </div>
   );

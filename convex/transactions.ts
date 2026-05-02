@@ -311,6 +311,23 @@ export const update = mutation({
       patch.month = toMonthString(fields.date);
     }
 
+    // Recalcular budget.spent cuando cambia categoría o mes en un gasto
+    if (tx.type === "gasto") {
+      const newMonth = fields.date ? toMonthString(fields.date) : tx.month;
+      const categoryChanged = fields.categoryId !== undefined && fields.categoryId !== tx.categoryId;
+      const monthChanged = fields.date !== undefined && newMonth !== tx.month;
+
+      if (categoryChanged || monthChanged) {
+        if (tx.categoryId) {
+          await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount);
+        }
+        const newCategoryId = fields.categoryId ?? tx.categoryId;
+        if (newCategoryId) {
+          await applyBudgetDelta(ctx, tx.userId, newCategoryId, newMonth, tx.amount);
+        }
+      }
+    }
+
     await ctx.db.patch(transactionId, patch);
   },
 });
@@ -322,6 +339,21 @@ export const remove = mutation({
     const tx = await ctx.db.get(transactionId);
     if (!tx || tx.userId !== user.clerkId) {
       throw new Error("Transacción no encontrada");
+    }
+
+    // Transferencias: eliminar ambas piernas y revertir ambos saldos
+    if (tx.transferGroupId) {
+      const legs = await ctx.db
+        .query("transactions")
+        .withIndex("by_transfer_group", (q) => q.eq("transferGroupId", tx.transferGroupId!))
+        .collect();
+
+      // outLeg fue insertada antes que inLeg en createTransfer; su cuenta fue debitada
+      const [outLeg, inLeg] = [...legs].sort((a, b) => a._creationTime - b._creationTime);
+      if (outLeg?.accountId) await applyAccountDelta(ctx, outLeg.accountId, outLeg.amount);
+      if (inLeg?.accountId)  await applyAccountDelta(ctx, inLeg.accountId, -inLeg.amount);
+      for (const leg of legs) await ctx.db.delete(leg._id);
+      return;
     }
 
     // Revertir saldo de la cuenta
