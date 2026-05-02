@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel,
+  SelectSeparator, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents } from "@/lib/money";
@@ -64,21 +65,26 @@ interface TransactionFormProps {
 export function TransactionForm({ defaultType = "gasto", onSuccess }: TransactionFormProps) {
   const createTransaction = useMutation(api.transactions.create);
   const accounts   = useQuery(api.accounts.list);
+  const cards      = useQuery(api.cards.list);
   const categories = useQuery(api.categories.list, {});
 
   const [type]        = useState<TxType>(defaultType);
   const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
-  const [accountId, setAccountId]     = useState<string>("");
+  // Valor codificado: "account:ID" | "card:ID" | ""
+  const [sourceId, setSourceId]       = useState<string>("");
   const [categoryId, setCategoryId]   = useState<string>("");
   const [date, setDate]               = useState(() => new Date().toISOString().substring(0, 10));
   const [loading, setLoading]         = useState(false);
 
-  // Las cuentas que muestra el select
   const accountList = accounts ?? [];
-  // La moneda de la cuenta seleccionada (default COP)
-  const selectedAccount = accountList.find((a) => a._id === accountId);
-  const currency = selectedAccount?.currency ?? "COP";
+  const cardList    = cards ?? [];
+
+  // Derivar la moneda y el label del trigger desde la fuente seleccionada
+  const [sourceKind, sourceRawId] = sourceId.includes(":") ? sourceId.split(":") : ["", ""];
+  const selectedAccount = sourceKind === "account" ? accountList.find((a) => a._id === sourceRawId) : undefined;
+  const selectedCard    = sourceKind === "card"    ? cardList.find((c) => c._id === sourceRawId)    : undefined;
+  const currency = selectedAccount?.currency ?? selectedCard?.currency ?? "COP";
 
   const filteredCategories = (categories ?? []).filter(
     (c) => c.type === type || c.type === "ambos"
@@ -104,8 +110,11 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         description: description.trim(),
         date: new Date(date).getTime(),
         currency,
-        accountId: accountId
-          ? (accountId as Parameters<typeof createTransaction>[0]["accountId"])
+        accountId: sourceKind === "account" && sourceRawId
+          ? (sourceRawId as Parameters<typeof createTransaction>[0]["accountId"])
+          : undefined,
+        cardId: sourceKind === "card" && sourceRawId
+          ? (sourceRawId as Parameters<typeof createTransaction>[0]["cardId"])
           : undefined,
         categoryId: categoryId
           ? (categoryId as Parameters<typeof createTransaction>[0]["categoryId"])
@@ -161,26 +170,48 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         />
       </div>
 
-      {/* ── Cuenta ─────────────────────────────────────────────────────────── */}
+      {/* ── Origen del pago ────────────────────────────────────────────────── */}
       <div>
-        <Label htmlFor="tx-account" className="text-[12px] font-semibold text-foreground mb-2 block">
-          Cuenta
+        <Label htmlFor="tx-source" className="text-[12px] font-semibold text-foreground mb-2 block">
+          {type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
         </Label>
-        <Select value={accountId} onValueChange={(v) => setAccountId(v ?? "")}>
-          <SelectTrigger id="tx-account" className="w-full" style={{ background: "var(--surface-2)" }}>
+        <Select value={sourceId} onValueChange={(v) => setSourceId(v ?? "")}>
+          <SelectTrigger id="tx-source" className="w-full" style={{ background: "var(--surface-2)" }}>
             <span className="flex-1 text-left text-sm truncate">
-              {selectedAccount
-                ? `${selectedAccount.name} · ${formatCents(selectedAccount.balance, selectedAccount.currency)}`
-                : <span className="text-muted-foreground">Sin cuenta</span>}
+              {selectedAccount ? (
+                `${selectedAccount.name} · ${formatCents(selectedAccount.balance, selectedAccount.currency)}`
+              ) : selectedCard ? (
+                `${selectedCard.name} ····${selectedCard.lastFourDigits} · ${formatCents(selectedCard.availableCredit, selectedCard.currency)} disp.`
+              ) : (
+                <span className="text-muted-foreground">Sin origen</span>
+              )}
             </span>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Sin cuenta</SelectItem>
-            {accountList.map((a) => (
-              <SelectItem key={a._id} value={a._id}>
-                {a.name} · {formatCents(a.balance, a.currency)}
-              </SelectItem>
-            ))}
+            <SelectItem value="">Sin origen</SelectItem>
+            {accountList.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>Cuentas</SelectLabel>
+                {accountList.map((a) => (
+                  <SelectItem key={a._id} value={`account:${a._id}`}>
+                    {a.name} · {formatCents(a.balance, a.currency)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            {type === "gasto" && cardList.length > 0 && (
+              <>
+                {accountList.length > 0 && <SelectSeparator />}
+                <SelectGroup>
+                  <SelectLabel>Tarjetas de crédito</SelectLabel>
+                  {cardList.map((c) => (
+                    <SelectItem key={c._id} value={`card:${c._id}`}>
+                      {c.name} ····{c.lastFourDigits} · {formatCents(c.availableCredit, c.currency)} disp.
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </>
+            )}
           </SelectContent>
         </Select>
       </div>

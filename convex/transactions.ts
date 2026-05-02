@@ -21,6 +21,21 @@ async function applyAccountDelta(
   });
 }
 
+async function applyCardDelta(
+  ctx: MutationCtx,
+  cardId: Id<"cards">,
+  delta: number  // positivo = más gasto, negativo = reversión
+) {
+  const card = await ctx.db.get(cardId);
+  if (!card) throw new Error("Tarjeta no encontrada");
+  const newBalance = card.currentBalance + delta;
+  await ctx.db.patch(cardId, {
+    currentBalance: newBalance,
+    availableCredit: card.creditLimit - newBalance,
+    updatedAt: Date.now(),
+  });
+}
+
 async function applyBudgetDelta(
   ctx: MutationCtx,
   userId: string,
@@ -177,6 +192,7 @@ export const create = mutation({
     date: v.number(),
     currency: v.string(),
     accountId: v.optional(v.id("accounts")),
+    cardId: v.optional(v.id("cards")),
     categoryId: v.optional(v.id("categories")),
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
@@ -188,6 +204,7 @@ export const create = mutation({
     if (args.description.length === 0 || args.description.length > 200) throw new Error("La descripción debe tener entre 1 y 200 caracteres");
     if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
     if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+    if (args.accountId && args.cardId) throw new Error("Una transacción no puede asociarse a cuenta y tarjeta al mismo tiempo");
 
     // Validación nominal de MIME type del comprobante (el contentType es declarado por el cliente,
     // no verificado por magic bytes — defensa-en-profundidad, no garantía de contenido)
@@ -215,6 +232,10 @@ export const create = mutation({
     if (args.accountId) {
       await assertCanWrite(ctx, args.accountId);
     }
+    if (args.cardId) {
+      const card = await ctx.db.get(args.cardId);
+      if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+    }
 
     const month = toMonthString(args.date);
     const now = Date.now();
@@ -228,6 +249,7 @@ export const create = mutation({
       month,
       currency: args.currency,
       accountId: args.accountId,
+      cardId: args.cardId,
       categoryId: args.categoryId,
       notes: args.notes,
       tags: args.tags,
@@ -242,6 +264,11 @@ export const create = mutation({
     if (args.accountId) {
       const delta = args.type === "ingreso" ? args.amount : -args.amount;
       await applyAccountDelta(ctx, args.accountId, delta);
+    }
+
+    // Actualizar balance de la tarjeta (solo gastos)
+    if (args.cardId && args.type === "gasto") {
+      await applyCardDelta(ctx, args.cardId, args.amount);
     }
 
     // Recalcular budget.spent si es gasto con categoría
@@ -301,6 +328,11 @@ export const remove = mutation({
     if (tx.accountId) {
       const delta = tx.type === "ingreso" ? -tx.amount : tx.amount;
       await applyAccountDelta(ctx, tx.accountId, delta);
+    }
+
+    // Revertir balance de la tarjeta
+    if (tx.cardId && tx.type === "gasto") {
+      await applyCardDelta(ctx, tx.cardId, -tx.amount);
     }
 
     // Revertir budget.spent
