@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
   ArrowLeft, Share2, UserMinus, Archive, ChevronLeft, ChevronRight,
-  Pencil, Trash2,
+  Pencil, Trash2, Scale,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ShareAccountDialog } from "@/components/accounts/ShareAccountDialog";
 import { AccountForm } from "@/components/accounts/AccountForm";
+import { BalanceReassignForm } from "@/components/accounts/BalanceReassignForm";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { formatCents, currentMonth, formatMonth } from "@/lib/money";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ export default function AccountDetailPage({
   const [month, setMonth] = useState(() => currentMonth());
   const [shareOpen, setShareOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [pendingAction, setPendingAction] = useState<"archive" | "delete" | null>(null);
 
@@ -184,6 +186,15 @@ export default function AccountDetailPage({
                 <Pencil className="h-3.5 w-3.5" />
                 Editar
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setReassignOpen(true)}
+              >
+                <Scale className="h-3.5 w-3.5" />
+                Ajustar saldo
+              </Button>
               {!account!.isDefault && (
                 <>
                   <Button
@@ -220,6 +231,21 @@ export default function AccountDetailPage({
           title="Editar cuenta"
         >
           <AccountForm account={account} onSuccess={() => setEditOpen(false)} />
+        </AppSheet>
+      )}
+
+      {/* Sheet de reasignación de saldo */}
+      {!isLoading && account && isOwner && (
+        <AppSheet
+          open={reassignOpen}
+          onOpenChange={setReassignOpen}
+          title="Ajustar saldo"
+          description="La diferencia se registrará como reasignación bancaria en el historial."
+        >
+          <BalanceReassignForm
+            account={account}
+            onSuccess={() => setReassignOpen(false)}
+          />
         </AppSheet>
       )}
 

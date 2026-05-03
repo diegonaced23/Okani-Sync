@@ -153,6 +153,7 @@ export const AUDIT_ACTIONS = {
   ACCOUNT_SHARE_REVOKED: "account.share.revoked",
   ACCOUNT_SHARE_ACCEPTED: "account.share.accepted",
   ACCOUNT_SHARE_REJECTED: "account.share.rejected",
+  ACCOUNT_BALANCE_REASSIGNED: "account.balance.reassigned",
   // Tarjetas
   CARD_CREATED: "card.created",
   CARD_DELETED: "card.deleted",

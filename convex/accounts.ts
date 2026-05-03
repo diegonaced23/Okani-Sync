@@ -1,6 +1,8 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
+import { assertIsOwner } from "./lib/permissions";
+import { toMonthString } from "./lib/utils";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -285,6 +287,75 @@ export const archive = mutation({
       throw new Error("No se puede archivar la cuenta por defecto");
     }
     await ctx.db.patch(accountId, { archived: true, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Reasigna el saldo actual de una cuenta. La diferencia entre el saldo nuevo y
+ * el actual se registra como una transacción de tipo "ajuste" con descripción
+ * "Reasignación bancaria" — visible en el historial pero excluida de los
+ * resúmenes de ingresos/gastos.
+ *
+ * Solo el propietario puede ajustar el saldo (no editores ni admins de cuentas
+ * compartidas). Convex serializa la mutación → no hay race entre lectura y
+ * escritura del balance.
+ */
+export const reassignBalance = mutation({
+  args: {
+    accountId: v.id("accounts"),
+    newBalance: v.number(), // en centavos, entero ≥ 0
+  },
+  handler: async (ctx, { accountId, newBalance }) => {
+    if (!Number.isInteger(newBalance) || newBalance < 0) {
+      throw new Error("El saldo debe ser un entero mayor o igual a cero");
+    }
+    if (newBalance > 9_999_999_999) {
+      throw new Error("Saldo fuera de rango permitido");
+    }
+
+    await assertIsOwner(ctx, accountId);
+
+    const user = await getCurrentUser(ctx);
+    const account = await ctx.db.get(accountId);
+    if (!account) throw new Error("Cuenta no encontrada");
+    if (account.archived) throw new Error("No se puede ajustar una cuenta archivada");
+
+    const previousBalance = account.balance;
+    const delta = newBalance - previousBalance;
+
+    if (delta === 0) {
+      return { adjusted: false as const };
+    }
+
+    const now = Date.now();
+
+    const txId = await ctx.db.insert("transactions", {
+      userId: user.clerkId,
+      type: "ajuste",
+      amount: Math.abs(delta),
+      description: "Reasignación bancaria",
+      date: now,
+      month: toMonthString(now),
+      currency: account.currency,
+      accountId,
+      status: "completada",
+      isRecurring: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(accountId, { balance: newBalance, updatedAt: now });
+
+    await ctx.db.insert("auditLogs", {
+      userId: user.clerkId,
+      action: "account.balance.reassigned",
+      entity: "account",
+      entityId: accountId,
+      metadata: { previousBalance, newBalance, delta, txId },
+      createdAt: now,
+    });
+
+    return { adjusted: true as const, delta, txId };
   },
 });
 

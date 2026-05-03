@@ -401,6 +401,13 @@ export const remove = mutation({
       throw new Error("Transacción no encontrada");
     }
 
+    // Los ajustes de saldo son inmutables: si el usuario quiere "deshacer" un
+    // ajuste, debe hacer otra reasignación. El monto absoluto no preserva el
+    // signo del delta original, por lo que no es posible revertir con seguridad.
+    if (tx.type === "ajuste") {
+      throw new Error("No se puede eliminar una reasignación. Crea una nueva reasignación si necesitas corregir el saldo.");
+    }
+
     // Transferencias: eliminar ambas piernas y revertir ambos saldos
     if (tx.transferGroupId) {
       const legs = await ctx.db

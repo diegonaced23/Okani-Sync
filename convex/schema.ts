@@ -354,7 +354,8 @@ export default defineSchema({
       v.literal("gasto"),
       v.literal("transferencia"),   // mantener para backward compat / display
       v.literal("pago_tarjeta"),
-      v.literal("pago_deuda")
+      v.literal("pago_deuda"),
+      v.literal("ajuste")            // reasignación manual de saldo
     ),
     amount: v.number(),             // en centavos
     description: v.string(),

@@ -2,7 +2,7 @@
 
 import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins, Scale } from "lucide-react";
 import type { Doc } from "../../../convex/_generated/dataModel";
 
 interface TransactionItemProps {
@@ -47,11 +47,19 @@ const TYPE_CONFIG = {
     amountColor: "var(--foreground)",
     sign: "-",
   },
+  ajuste: {
+    icon: Scale,
+    iconColor: "var(--muted-foreground)",
+    iconBg: "color-mix(in oklch, var(--muted-foreground) 12%, transparent)",
+    amountColor: "var(--muted-foreground)",
+    sign: "",
+  },
 };
 
 const TYPE_LABELS: Record<string, string> = {
   ingreso: "Ingreso", gasto: "Gasto", transferencia: "Transferencia",
   pago_tarjeta: "Pago tarjeta", pago_deuda: "Pago deuda",
+  ajuste: "Ajuste",
 };
 
 export function TransactionItem({ transaction: tx, categoryName, onPress }: TransactionItemProps) {

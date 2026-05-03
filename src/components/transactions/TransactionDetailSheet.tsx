@@ -22,7 +22,7 @@ import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight,
   BookOpen, Briefcase, Car, CircleDollarSign, Coffee,
   CreditCard, Gift, HandCoins, Heart, HeartPulse,
-  Home, Laptop, MoreHorizontal, Music, Shirt,
+  Home, Laptop, MoreHorizontal, Music, Scale, Shirt,
   ShoppingCart, Tv, TrendingUp, UtensilsCrossed, Wallet, Zap,
 } from "lucide-react";
 import type { LucideProps } from "lucide-react";
@@ -108,6 +108,14 @@ const TYPE_CONFIG: Record<string, {
     amountColor: "var(--foreground)",
     sign: "−",
     label: "Pago de deuda",
+  },
+  ajuste: {
+    icon: Scale,
+    iconColor: "var(--muted-foreground)",
+    iconBg: "color-mix(in oklch, var(--muted-foreground) 12%, transparent)",
+    amountColor: "var(--muted-foreground)",
+    sign: "",
+    label: "Reasignación bancaria",
   },
 };
 
