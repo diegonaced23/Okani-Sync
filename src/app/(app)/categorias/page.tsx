@@ -19,7 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { ACCOUNT_COLORS } from "@/lib/constants";
+import { ACCOUNT_COLORS, CATEGORY_ICONS } from "@/lib/constants";
+import { CategoryIcon } from "@/lib/category-icons";
 import { cn } from "@/lib/utils";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import {
@@ -56,6 +57,45 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
   );
 }
 
+function IconPicker({
+  value,
+  onChange,
+  color,
+}: {
+  value: string;
+  onChange: (name: string) => void;
+  color: string;
+}) {
+  return (
+    <div role="group" aria-label="Seleccionar ícono" className="grid grid-cols-7 gap-1.5">
+      {CATEGORY_ICONS.map((name) => {
+        const selected = value === name;
+        return (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onChange(name)}
+            aria-label={name}
+            aria-pressed={selected}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-lg border-2 transition-colors",
+              selected
+                ? "border-foreground bg-muted"
+                : "border-transparent hover:bg-muted"
+            )}
+          >
+            <CategoryIcon
+              name={name}
+              className="h-4 w-4"
+              style={{ color: selected ? color : undefined }}
+            />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function CategoryRow({
   cat,
   onEdit,
@@ -68,10 +108,10 @@ function CategoryRow({
   return (
     <div className="flex items-center gap-3 py-2.5 px-4">
       <span
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
         style={{ backgroundColor: cat.color + "33", color: cat.color }}
       >
-        {cat.name.charAt(0).toUpperCase()}
+        <CategoryIcon name={cat.icon} className="h-4 w-4" />
       </span>
       <span className="flex-1 text-sm font-medium text-foreground truncate">{cat.name}</span>
       {cat.isDefault && (
@@ -110,6 +150,7 @@ export default function CategoriasPage() {
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<CategoryType>("gasto");
   const [newColor, setNewColor] = useState(ACCOUNT_COLORS[3]);
+  const [newIcon, setNewIcon] = useState<string>(CATEGORY_ICONS[0]);
   const [createLoading, setCreateLoading] = useState(false);
 
   // Estado confirmación archivo
@@ -119,6 +160,7 @@ export default function CategoriasPage() {
   const [editingCat, setEditingCat] = useState<Doc<"categories"> | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState(ACCOUNT_COLORS[0]);
+  const [editIcon, setEditIcon] = useState<string>(CATEGORY_ICONS[0]);
   const [editLoading, setEditLoading] = useState(false);
 
   const gastos = (categories ?? []).filter((c) => c.type === "gasto" || c.type === "ambos");
@@ -128,6 +170,7 @@ export default function CategoriasPage() {
     setEditingCat(cat);
     setEditName(cat.name);
     setEditColor(cat.color);
+    setEditIcon(cat.icon);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -135,9 +178,10 @@ export default function CategoriasPage() {
     if (!newName.trim()) return;
     setCreateLoading(true);
     try {
-      await createCategory({ name: newName.trim(), type: newType, color: newColor, icon: "circle" });
+      await createCategory({ name: newName.trim(), type: newType, color: newColor, icon: newIcon });
       toast.success("Categoría creada");
       setNewName("");
+      setNewIcon(CATEGORY_ICONS[0]);
       setCreateOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
@@ -155,6 +199,7 @@ export default function CategoriasPage() {
         categoryId: editingCat._id as Id<"categories">,
         name: editName.trim(),
         color: editColor,
+        icon: editIcon,
       });
       toast.success("Categoría actualizada");
       setEditingCat(null);
@@ -225,6 +270,10 @@ export default function CategoriasPage() {
               <Label>Color</Label>
               <ColorPicker value={newColor} onChange={setNewColor} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Ícono</Label>
+              <IconPicker value={newIcon} onChange={setNewIcon} color={newColor} />
+            </div>
             <Button type="submit" className="w-full" disabled={createLoading}>
               {createLoading ? "Guardando…" : "Crear categoría"}
             </Button>
@@ -260,6 +309,10 @@ export default function CategoriasPage() {
           <div className="space-y-1.5">
             <Label>Color</Label>
             <ColorPicker value={editColor} onChange={setEditColor} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Ícono</Label>
+            <IconPicker value={editIcon} onChange={setEditIcon} color={editColor} />
           </div>
           <Button type="submit" className="w-full" disabled={editLoading}>
             {editLoading ? "Guardando…" : "Guardar cambios"}

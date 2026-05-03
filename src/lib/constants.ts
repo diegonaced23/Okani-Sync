@@ -211,3 +211,16 @@ export const DEBT_ICONS = [
   "hand-coins", "building-2", "car", "home",
   "graduation-cap", "credit-card", "circle-ellipsis",
 ] as const;
+
+// ─── Íconos disponibles para categorías ──────────────────────────────────────
+
+export const CATEGORY_ICONS = [
+  "utensils", "shopping-cart", "car", "plane", "home", "zap",
+  "heart-pulse", "music", "book-open", "shirt", "coffee", "dumbbell",
+  "paw-print", "baby", "scissors", "phone",
+  "briefcase", "laptop", "trending-up", "gift", "building-2",
+  "piggy-bank", "banknote", "coins", "star",
+  "circle-ellipsis", "tag", "folder",
+] as const;
+
+export type CategoryIconName = (typeof CATEGORY_ICONS)[number];
