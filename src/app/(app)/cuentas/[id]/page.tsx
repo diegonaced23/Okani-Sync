@@ -3,7 +3,7 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -72,15 +72,17 @@ export default function AccountDetailPage({
   const isOwner = account?.ownerId === clerkUser?.id;
   const isLoading = account === undefined;
 
-  if (!isLoading && !account) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20">
-        <p className="text-muted-foreground">Cuenta no encontrada o sin acceso.</p>
-        <Button variant="outline" onClick={() => router.push("/cuentas")}>
-          Volver a cuentas
-        </Button>
-      </div>
-    );
+  // Cuando la cuenta deja de existir (eliminada reactivamente por Convex),
+  // navegamos en un efecto — nunca durante una renderización en curso —
+  // para evitar el crash de PWA "This page couldn't load".
+  useEffect(() => {
+    if (!isLoading && account === null) {
+      router.replace("/cuentas");
+    }
+  }, [isLoading, account, router]);
+
+  if (!isLoading && account === null) {
+    return null;
   }
 
   async function handleRevoke(shareId: Id<"accountShares">) {
@@ -106,7 +108,7 @@ export default function AccountDetailPage({
       try {
         await archiveAccount({ accountId });
         toast.success("Cuenta archivada");
-        router.push("/cuentas");
+        router.replace("/cuentas");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error");
       }
@@ -115,7 +117,7 @@ export default function AccountDetailPage({
       try {
         await removeAccount({ accountId });
         toast.success("Cuenta eliminada");
-        router.push("/cuentas");
+        // La navegación la maneja el useEffect cuando account pasa a null
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error al eliminar");
         setDeleting(false);
