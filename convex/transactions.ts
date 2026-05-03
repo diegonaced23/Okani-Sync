@@ -148,6 +148,66 @@ export const spendingByCategory = query({
   },
 });
 
+/** Gastos del mes agrupados por cuenta o tarjeta — para el gráfico de barras del dashboard. */
+export const spendingBySource = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", clerkId).eq("type", "gasto").eq("month", month)
+      )
+      .collect();
+
+    // Agrupa por accountId o cardId
+    const grouped = new Map<string, {
+      amount: number;
+      sourceId: string | null;
+      sourceType: "account" | "card" | "none";
+    }>();
+
+    for (const tx of txs) {
+      const key = tx.accountId ?? tx.cardId ?? "__none__";
+      const sourceType = tx.accountId ? "account" : tx.cardId ? "card" : "none";
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.amount += tx.amount;
+      } else {
+        grouped.set(key, {
+          amount: tx.amount,
+          sourceId: (tx.accountId ?? tx.cardId) ?? null,
+          sourceType,
+        });
+      }
+    }
+
+    const results = await Promise.all(
+      [...grouped.entries()].map(async ([key, data]) => {
+        if (key === "__none__") {
+          return { name: "Sin fuente", amount: data.amount, color: "#6B7280" };
+        }
+        if (data.sourceType === "account") {
+          const acc = await ctx.db.get(data.sourceId as Id<"accounts">);
+          return {
+            name: acc?.name ?? "Cuenta eliminada",
+            amount: data.amount,
+            color: acc?.color ?? "#6B7280",
+          };
+        }
+        const card = await ctx.db.get(data.sourceId as Id<"cards">);
+        return {
+          name: card ? `${card.name} ····${card.lastFourDigits}` : "Tarjeta eliminada",
+          amount: data.amount,
+          color: card?.color ?? "#6B7280",
+        };
+      })
+    );
+
+    return results.sort((a, b) => b.amount - a.amount);
+  },
+});
+
 /** Totales de ingresos y gastos por mes — para el LineChart de 6 meses. */
 export const monthlySummary = query({
   args: { months: v.array(v.string()) },

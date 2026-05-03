@@ -1,12 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { BalanceCard } from "@/components/dashboard/BalanceCard";
+import { BalanceAccountsSheet } from "@/components/dashboard/BalanceAccountsSheet";
 import { SpendingChart } from "@/components/dashboard/SpendingChart";
 import { MonthlyChart } from "@/components/dashboard/MonthlyChart";
+import { SpendingBySourceChart } from "@/components/dashboard/SpendingBySourceChart";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,13 +60,16 @@ export default function DashboardPage() {
   const { user } = useUser();
   const router = useRouter();
   const { openModal } = useNewTransactionModal();
+  const [balanceSheetOpen, setBalanceSheetOpen] = useState(false);
   const today = currentMonth();
   const last6 = lastNMonths(6);
 
-  const me         = useQuery(api.users.getMe);
-  const balance    = useQuery(api.accounts.consolidatedBalance);
-  const accounts   = useQuery(api.accounts.list);
-  const spending   = useQuery(api.transactions.spendingByCategory, { month: today });
+  const me             = useQuery(api.users.getMe);
+  const balance        = useQuery(api.accounts.consolidatedBalance);
+  const accounts       = useQuery(api.accounts.list);
+  const sharedAccounts = useQuery(api.accounts.listSharedWithMe);
+  const spending         = useQuery(api.transactions.spendingByCategory, { month: today });
+  const spendingBySource = useQuery(api.transactions.spendingBySource, { month: today });
   const trend      = useQuery(api.transactions.monthlySummary, { months: last6 });
   const recent     = useQuery(api.transactions.listRecent, { limit: 5 });
   const categories = useQuery(api.categories.list, {});
@@ -122,6 +128,13 @@ export default function DashboardPage() {
           missingRates={balance?.missingRates}
           accountCount={balance?.accountCount}
           loading={balance === undefined}
+          onManageAccounts={() => setBalanceSheetOpen(true)}
+        />
+        <BalanceAccountsSheet
+          open={balanceSheetOpen}
+          onOpenChange={setBalanceSheetOpen}
+          accounts={accounts ?? []}
+          sharedAccounts={sharedAccounts ?? []}
         />
       </div>
 
@@ -302,6 +315,11 @@ export default function DashboardPage() {
       {/* ── Tendencia 6 meses ── col 2 */}
       <div>
         <MonthlyChart data={trend} currency={currency} />
+      </div>
+
+      {/* ── Gastos por fuente ── full width */}
+      <div className="md:col-span-2">
+        <SpendingBySourceChart data={spendingBySource} currency={currency} />
       </div>
 
       {/* ── Últimos movimientos ── col 1 */}

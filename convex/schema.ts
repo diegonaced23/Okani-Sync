@@ -84,6 +84,7 @@ export default defineSchema({
     archived: v.boolean(),
     notes: v.optional(v.string()),
     displayOrder: v.optional(v.number()),
+    includeInBalance: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

@@ -60,7 +60,11 @@ export const consolidatedBalance = query({
     let total = 0;
     const missingRates: string[] = [];
 
-    for (const account of [...ownAccounts, ...sharedAccounts]) {
+    const includedAccounts = [...ownAccounts, ...sharedAccounts].filter(
+      (a) => a.includeInBalance !== false
+    );
+
+    for (const account of includedAccounts) {
       const { converted, hasRate } = convert(account.balance, account.currency);
       total += converted;
       if (!hasRate && account.currency !== preferredCurrency) {
@@ -72,7 +76,7 @@ export const consolidatedBalance = query({
       total,
       currency: preferredCurrency,
       missingRates: [...new Set(missingRates)],
-      accountCount: ownAccounts.length + sharedAccounts.length,
+      accountCount: includedAccounts.length,
     };
   },
 });
@@ -281,5 +285,25 @@ export const archive = mutation({
       throw new Error("No se puede archivar la cuenta por defecto");
     }
     await ctx.db.patch(accountId, { archived: true, updatedAt: Date.now() });
+  },
+});
+
+// Incluye o excluye una cuenta propia del cálculo de patrimonio total.
+// Las cuentas compartidas no son modificables por el que las recibe.
+export const toggleBalanceInclusion = mutation({
+  args: {
+    accountId: v.id("accounts"),
+    include: v.boolean(),
+  },
+  handler: async (ctx, { accountId, include }) => {
+    const user = await getCurrentUser(ctx);
+    const account = await ctx.db.get(accountId);
+    if (!account || account.ownerId !== user.clerkId) {
+      throw new Error("Cuenta no encontrada o sin permisos");
+    }
+    await ctx.db.patch(accountId, {
+      includeInBalance: include,
+      updatedAt: Date.now(),
+    });
   },
 });

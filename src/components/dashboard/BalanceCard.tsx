@@ -2,7 +2,7 @@
 
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 interface BalanceCardProps {
@@ -11,6 +11,7 @@ interface BalanceCardProps {
   missingRates?: string[];
   accountCount?: number;
   loading?: boolean;
+  onManageAccounts?: () => void;
 }
 
 export function BalanceCard({
@@ -19,6 +20,7 @@ export function BalanceCard({
   missingRates = [],
   accountCount = 0,
   loading,
+  onManageAccounts,
 }: BalanceCardProps) {
   const [hidden, setHidden] = useState(false);
 
@@ -66,6 +68,16 @@ export function BalanceCard({
         <div className="flex items-center gap-2" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>
           <span>Patrimonio total · {accountCount} cuenta{accountCount !== 1 ? "s" : ""}</span>
           <span style={{ flex: 1 }} />
+          {onManageAccounts && (
+            <button
+              type="button"
+              aria-label="Configurar cuentas del patrimonio"
+              onClick={onManageAccounts}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", opacity: 0.8, padding: 2 }}
+            >
+              <SlidersHorizontal size={14} />
+            </button>
+          )}
           <button
             type="button"
             aria-label={hidden ? "Mostrar saldo" : "Ocultar saldo"}

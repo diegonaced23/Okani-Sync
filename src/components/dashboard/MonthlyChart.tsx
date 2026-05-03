@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from "recharts";
-import { formatCents, formatMonth } from "@/lib/money";
+import { fromCents, formatCurrency, formatMonth } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface MonthlySummary {
@@ -24,6 +24,8 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
   const chartData = (data ?? []).map((d) => ({
     ...d,
     name: formatMonth(d.month).split(" ")[0].slice(0, 3), // "Abr"
+    ingresos: fromCents(d.ingresos),
+    gastos: fromCents(d.gastos),
   }));
 
   return (
@@ -45,8 +47,8 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
           {chartData.map((d) => (
             <tr key={d.month}>
               <td>{d.name}</td>
-              <td>{formatCents(d.ingresos, currency)}</td>
-              <td>{formatCents(d.gastos, currency)}</td>
+              <td>{formatCurrency(d.ingresos, currency)}</td>
+              <td>{formatCurrency(d.gastos, currency)}</td>
             </tr>
           ))}
         </tbody>
@@ -71,7 +73,7 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
           />
           <Tooltip
             formatter={(value, name) => [
-              formatCents(Number(value ?? 0), currency),
+              formatCurrency(Number(value ?? 0), currency),
               name === "ingresos" ? "Ingresos" : "Gastos",
             ]}
             contentStyle={{
