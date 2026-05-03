@@ -38,6 +38,7 @@ import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_utils from "../lib/utils.js";
 import type * as notifications from "../notifications.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
+import type * as recurringTransactions from "../recurringTransactions.js";
 import type * as transactions from "../transactions.js";
 import type * as users from "../users.js";
 
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   "lib/utils": typeof lib_utils;
   notifications: typeof notifications;
   pushSubscriptions: typeof pushSubscriptions;
+  recurringTransactions: typeof recurringTransactions;
   transactions: typeof transactions;
   users: typeof users;
 }>;

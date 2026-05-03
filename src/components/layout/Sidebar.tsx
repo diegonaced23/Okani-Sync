@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, ArrowLeftRight, Landmark, CreditCard,
-  HandCoins, Tags, PieChart, BarChart3, User, Users,
+  HandCoins, Tags, PieChart, BarChart3, User, Users, Repeat,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ const USER_NAV_SECTIONS = [
       { href: "/cuentas",       icon: Landmark,        label: "Cuentas" },
       { href: "/tarjetas",      icon: CreditCard,      label: "Tarjetas" },
       { href: "/deudas",        icon: HandCoins,       label: "Deudas" },
+      { href: "/recurrentes",   icon: Repeat,          label: "Recurrentes" },
     ],
   },
   {

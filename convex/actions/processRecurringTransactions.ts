@@ -54,6 +54,7 @@ export const run = internalAction({
           date: now,
           currency: rec.currency,
           accountId: rec.accountId,
+          cardId: rec.cardId,
           categoryId: rec.categoryId,
           recurringId: rec._id,
         });
