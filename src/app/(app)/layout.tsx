@@ -5,6 +5,8 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Header } from "@/components/layout/Header";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { PushSubscriptionBanner } from "@/components/notifications/PushSubscriptionBanner";
+import { NewTransactionModalProvider } from "@/contexts/new-transaction-modal";
+import { NewTransactionModal } from "@/components/transactions/NewTransactionModal";
 
 export default async function AppLayout({
   children,
@@ -15,31 +17,34 @@ export default async function AppLayout({
   if (!userId) redirect("/sign-in");
 
   return (
-    <div className="flex min-h-screen bg-background overflow-x-hidden">
-      {/* Skip link — accesibilidad teclado */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-xl focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg focus:ring-2 focus:ring-ring"
-      >
-        Ir al contenido principal
-      </a>
-      {/* Región live para anuncios de AT */}
-      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" />
+    <NewTransactionModalProvider>
+      <div className="flex min-h-screen bg-background overflow-x-hidden">
+        {/* Skip link — accesibilidad teclado */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-xl focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg focus:ring-2 focus:ring-ring"
+        >
+          Ir al contenido principal
+        </a>
+        {/* Región live para anuncios de AT */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" />
 
-      {/* Aurora de fondo — efecto sutil de profundidad */}
-      <div aria-hidden className="os-aurora" />
-      <Sidebar />
+        {/* Aurora de fondo — efecto sutil de profundidad */}
+        <div aria-hidden className="os-aurora" />
+        <Sidebar />
 
-      {/* Área principal — min-w-0 evita que el flex item se expanda más allá del viewport */}
-      <div className="flex flex-1 flex-col min-w-0 lg:pl-64 overflow-x-hidden">
-        <Header />
-        <PushSubscriptionBanner />
-        <main id="main-content" className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
-          <AuthGuard>{children}</AuthGuard>
-        </main>
+        {/* Área principal — min-w-0 evita que el flex item se expanda más allá del viewport */}
+        <div className="flex flex-1 flex-col min-w-0 lg:pl-64 overflow-x-hidden">
+          <Header />
+          <PushSubscriptionBanner />
+          <main id="main-content" className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
+            <AuthGuard>{children}</AuthGuard>
+          </main>
+        </div>
+
+        <BottomNav />
       </div>
-
-      <BottomNav />
-    </div>
+      <NewTransactionModal />
+    </NewTransactionModalProvider>
   );
 }

@@ -14,44 +14,7 @@ import {
 import { toast } from "sonner";
 import { toCents, formatCents } from "@/lib/money";
 import { Check } from "lucide-react";
-import {
-  UtensilsCrossed, Car, Home, Zap, HeartPulse, Music, BookOpen, Shirt,
-  MoreHorizontal, Briefcase, Laptop, TrendingUp, Gift, ShoppingCart,
-  CreditCard, Heart, Tv, Coffee, Wallet, CircleDollarSign,
-} from "lucide-react";
-import type { LucideProps } from "lucide-react";
-
-// ─── Mapa de iconos para categorías ───────────────────────────────────────────
-
-type LucideIcon = React.ComponentType<LucideProps>;
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  "utensils":        UtensilsCrossed,
-  "car":             Car,
-  "home":            Home,
-  "zap":             Zap,
-  "heart-pulse":     HeartPulse,
-  "music":           Music,
-  "book-open":       BookOpen,
-  "shirt":           Shirt,
-  "circle-ellipsis": MoreHorizontal,
-  "briefcase":       Briefcase,
-  "laptop":          Laptop,
-  "trending-up":     TrendingUp,
-  "gift":            Gift,
-  "cart":            ShoppingCart,
-  "credit-card":     CreditCard,
-  "heart":           Heart,
-  "tv":              Tv,
-  "coffee":          Coffee,
-  "wallet":          Wallet,
-  "home2":           Home,
-};
-
-function CategoryIcon({ name, ...props }: { name: string } & LucideProps) {
-  const Icon = ICON_MAP[name] ?? CircleDollarSign;
-  return <Icon {...props} />;
-}
+import { CategoryIcon } from "@/lib/category-icons";
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
@@ -139,7 +102,11 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         </Label>
         <div
           className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
-          style={{ background: "var(--surface-2)", padding: "18px 16px" }}
+          style={{
+            background: "var(--surface-2)",
+            padding: "18px 16px",
+            "--ring": type === "ingreso" ? "var(--os-lime)" : "var(--os-magenta)",
+          } as React.CSSProperties}
         >
           <MoneyInput
             id="tx-amount"
@@ -224,23 +191,29 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         <DatePicker id="tx-date" value={date} onChange={setDate} required />
       </div>
 
-      {/* ── Categoría — grid de íconos ─────────────────────────────────────── */}
+      {/* ── Categoría — fila scrollable horizontal ────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
           <p id="tx-category-label" className="text-[12px] font-semibold text-foreground mb-2">Categoría</p>
-          <div role="group" aria-labelledby="tx-category-label" className="grid grid-cols-4 gap-2">
-            {filteredCategories.slice(0, 8).map((cat) => {
+          <div
+            role="group"
+            aria-labelledby="tx-category-label"
+            className="flex gap-2 overflow-x-auto py-1"
+            style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain" } as React.CSSProperties}
+          >
+            {filteredCategories.map((cat) => {
               const isActive = categoryId === cat._id;
               return (
                 <button
                   key={cat._id}
                   type="button"
                   aria-pressed={isActive}
-                  aria-label={cat.name}
                   onClick={() => setCategoryId(isActive ? "" : cat._id)}
-                  className="flex flex-col items-center gap-1.5 py-3 px-1 transition-all active:scale-95"
+                  className="flex-none flex items-center gap-1.5 transition-all active:scale-95"
                   style={{
-                    borderRadius: 14,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    whiteSpace: "nowrap",
                     background: isActive
                       ? "color-mix(in oklch, var(--os-lime) 14%, var(--surface))"
                       : "var(--surface-2)",
@@ -252,14 +225,13 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
                 >
                   <CategoryIcon
                     name={cat.icon}
-                    aria-hidden="true"
-                    className="h-[20px] w-[20px]"
+                    aria-hidden
+                    className="h-[16px] w-[16px] shrink-0"
                     style={{ color: isActive ? "var(--os-lime)" : cat.color }}
                     strokeWidth={1.8}
                   />
                   <span
-                    aria-hidden="true"
-                    className="text-[10px] font-semibold leading-tight text-center"
+                    className="text-[12px] font-semibold"
                     style={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
                   >
                     {cat.name}

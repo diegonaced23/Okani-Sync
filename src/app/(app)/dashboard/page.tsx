@@ -16,26 +16,31 @@ import Link from "next/link";
 import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, Plus,
 } from "lucide-react";
+import { useNewTransactionModal, type TxTab } from "@/contexts/new-transaction-modal";
 
-const QUICK_ACTIONS = [
+type QuickAction =
+  | { label: string; icon: React.ElementType; gradient: string; textColor: string; tab: TxTab }
+  | { label: string; icon: React.ElementType; gradient: string; textColor: string; href: string };
+
+const QUICK_ACTIONS: QuickAction[] = [
   {
     label: "Ingreso",
     icon: ArrowDownLeft,
-    href: "/transacciones?nuevo=true&tab=ingreso",
+    tab: "ingreso",
     gradient: "linear-gradient(135deg, var(--os-lime), var(--os-lime-2))",
     textColor: "var(--primary-foreground)",
   },
   {
     label: "Gasto",
     icon: ArrowUpRight,
-    href: "/transacciones?nuevo=true&tab=gasto",
+    tab: "gasto",
     gradient: "linear-gradient(135deg, var(--os-magenta), var(--os-magenta-2))",
     textColor: "white",
   },
   {
     label: "Transferir",
     icon: ArrowLeftRight,
-    href: "/transacciones?nuevo=true&tab=transferencia",
+    tab: "transferencia",
     gradient: "linear-gradient(135deg, var(--os-cyan), var(--os-cyan-2))",
     textColor: "oklch(0.18 0.02 260)",
   },
@@ -46,11 +51,12 @@ const QUICK_ACTIONS = [
     gradient: "linear-gradient(135deg, var(--os-orange), var(--os-orange-2))",
     textColor: "oklch(0.18 0.02 260)",
   },
-] as const;
+];
 
 export default function DashboardPage() {
   const { user } = useUser();
   const router = useRouter();
+  const { openModal } = useNewTransactionModal();
   const today = currentMonth();
   const last6 = lastNMonths(6);
 
@@ -97,14 +103,15 @@ export default function DashboardPage() {
             })}
           </p>
         </div>
-        <Link
-          href="/transacciones"
+        <button
+          type="button"
+          onClick={() => openModal()}
           className="hidden md:inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90 active:scale-95"
           style={{ background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))", boxShadow: "0 4px 14px -2px color-mix(in oklch, var(--os-lime) 45%, transparent)" }}
         >
           <Plus className="h-4 w-4" strokeWidth={2.5} />
           Nuevo movimiento
-        </Link>
+        </button>
       </div>
 
       {/* ── Balance hero ── col 1 */}
@@ -120,21 +127,40 @@ export default function DashboardPage() {
 
       {/* ── Quick actions ── mobile only */}
       <div className="md:hidden grid grid-cols-4 gap-2.5">
-        {QUICK_ACTIONS.map(({ label, icon: Icon, href, gradient, textColor }) => (
-          <Link
-            key={label}
-            href={href}
-            className="flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-xl border border-border bg-card transition-all active:scale-95 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span
-              className="flex items-center justify-center"
-              style={{ width: 40, height: 40, borderRadius: 12, background: gradient, color: textColor }}
-            >
-              <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
-            </span>
-            <span className="text-[11px] font-semibold text-muted-foreground">{label}</span>
-          </Link>
-        ))}
+        {QUICK_ACTIONS.map((action) => {
+          const { label, icon: Icon, gradient, textColor } = action;
+          const sharedClass = "flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-xl border border-border bg-card transition-all active:scale-95 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+          const inner = (
+            <>
+              <span
+                className="flex items-center justify-center"
+                style={{ width: 40, height: 40, borderRadius: 12, background: gradient, color: textColor }}
+              >
+                <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
+              </span>
+              <span className="text-[11px] font-semibold text-muted-foreground">{label}</span>
+            </>
+          );
+
+          if ("tab" in action) {
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => openModal(action.tab)}
+                className={sharedClass}
+              >
+                {inner}
+              </button>
+            );
+          }
+
+          return (
+            <Link key={label} href={action.href} className={sharedClass}>
+              {inner}
+            </Link>
+          );
+        })}
       </div>
 
       {/* ── Mes en curso ── col 2 on desktop / inline on mobile */}

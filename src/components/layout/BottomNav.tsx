@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
+import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
 interface NavItem {
   href: string;
@@ -25,7 +26,7 @@ interface NavItem {
 const USER_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",     icon: LayoutDashboard, label: "Inicio" },
   { href: "/transacciones", icon: ArrowLeftRight,  label: "Movimientos" },
-  { href: "/transacciones?nuevo=true", icon: Plus, label: "Nuevo", isFab: true },
+  { href: "#",              icon: Plus,            label: "Nuevo", isFab: true },
   { href: "/cuentas",       icon: Landmark,        label: "Cuentas" },
   { href: "/mas",           icon: MoreHorizontal,  label: "Más" },
 ];
@@ -41,6 +42,7 @@ export function BottomNav() {
   const { user } = useUser();
   const isAdmin = user?.publicMetadata?.role === "admin";
   const navItems = isAdmin ? ADMIN_NAV_ITEMS : USER_NAV_ITEMS;
+  const { openModal } = useNewTransactionModal();
 
   return (
     <nav
@@ -67,10 +69,11 @@ export function BottomNav() {
 
           if (item.isFab) {
             return (
-              <li key={item.href} className="flex items-center justify-center" style={{ flex: "0 0 auto" }}>
-                <Link
-                  href={item.href}
+              <li key={item.label} className="flex items-center justify-center" style={{ flex: "0 0 auto" }}>
+                <button
+                  type="button"
                   aria-label={item.label}
+                  onClick={() => openModal()}
                   className="pulse-ring flex items-center justify-center"
                   style={{
                     width: 54, height: 54,
@@ -80,12 +83,13 @@ export function BottomNav() {
                     transform: "translateY(-16px)",
                     border: "4px solid var(--background)",
                     transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    cursor: "pointer",
                   }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-20px) rotate(8deg)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-16px)"; }}
                 >
                   <Icon className="h-6 w-6" strokeWidth={2.5} />
-                </Link>
+                </button>
               </li>
             );
           }

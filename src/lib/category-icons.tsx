@@ -44,9 +44,11 @@ type CategoryIconProps = {
   name: string;
   className?: string;
   style?: React.CSSProperties;
+  strokeWidth?: number;
+  "aria-hidden"?: boolean | "true" | "false";
 };
 
-export function CategoryIcon({ name, className, style }: CategoryIconProps) {
+export function CategoryIcon({ name, className, style, strokeWidth, "aria-hidden": ariaHidden }: CategoryIconProps) {
   const Icon = ICON_MAP[name] ?? Circle;
-  return <Icon className={className} style={style} />;
+  return <Icon className={className} style={style} strokeWidth={strokeWidth} aria-hidden={ariaHidden} />;
 }

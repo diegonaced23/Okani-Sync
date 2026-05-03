@@ -2,18 +2,15 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useState, useMemo, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Doc } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
-import { TransactionForm } from "@/components/transactions/TransactionForm";
-import { TransferForm } from "@/components/transactions/TransferForm";
 import { TransactionDetailSheet } from "@/components/transactions/TransactionDetailSheet";
 import { currentMonth, formatCents } from "@/lib/money";
+import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
 // ─── Tipos de filtro ───────────────────────────────────────────────────────────
 
@@ -53,32 +50,13 @@ function TxSeparator() {
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function TransaccionesPage() {
-  const today        = currentMonth();
-  const searchParams = useSearchParams();
-  const router       = useRouter();
+  const today = currentMonth();
+  const { openModal } = useNewTransactionModal();
 
-  // Leer params antes de los useState para poder inicializar desde la URL
-  const nuevoParam = searchParams.get("nuevo");
-  const tabParam   = searchParams.get("tab");
-
-  const [month, setMonth]      = useState(() => today);
-  const [filter, setFilter]    = useState<TxFilter>("all");
-  const [open, setOpen]        = useState(nuevoParam === "true");
+  const [month, setMonth]           = useState(() => today);
+  const [filter, setFilter]         = useState<TxFilter>("all");
   const [selectedTx, setSelectedTx] = useState<Doc<"transactions"> | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [txTab, setTxTab]      = useState<"ingreso" | "gasto" | "transferencia">(() => {
-    if (tabParam === "ingreso" || tabParam === "gasto" || tabParam === "transferencia") {
-      return tabParam;
-    }
-    return "gasto";
-  });
-
-  // Limpiar URL tras leer los params (sin setState — solo side-effect de navegación)
-  useEffect(() => {
-    if (nuevoParam === "true") {
-      router.replace("/transacciones", { scroll: false });
-    }
-  }, [nuevoParam, router]);
 
   const transactions = useQuery(api.transactions.listByMonth, { month });
   const categories   = useQuery(api.categories.list, {});
@@ -159,67 +137,13 @@ export default function TransaccionesPage() {
         </div>
 
         {/* Botón nueva transacción — solo visible en desktop; en mobile usa el FAB del bottom nav */}
-        <AppSheet
-          open={open}
-          onOpenChange={setOpen}
-          title="Nuevo movimiento"
-          description="Registra un ingreso, gasto o transferencia."
-          trigger={
-            <Button
-              size="sm"
-              className="gap-1.5 mt-1 hidden lg:inline-flex bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
-            >
-              <Plus className="h-4 w-4" /> Nueva
-            </Button>
-          }
+        <Button
+          size="sm"
+          onClick={() => openModal()}
+          className="gap-1.5 mt-1 hidden lg:inline-flex bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
         >
-          {/* Pill tabs — 3 opciones */}
-          <div
-            role="tablist"
-            aria-label="Tipo de movimiento"
-            className="flex rounded-[14px] p-1 mb-5"
-            style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-          >
-            {(["ingreso", "gasto", "transferencia"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                id={`tx-tab-${tab}`}
-                aria-selected={txTab === tab}
-                aria-controls={`tx-panel-${tab}`}
-                onClick={() => setTxTab(tab)}
-                className="flex-1 py-2 text-[13px] transition-all"
-                style={{
-                  borderRadius: 10,
-                  background: txTab === tab ? "var(--surface)" : "transparent",
-                  color: txTab === tab ? "var(--foreground)" : "var(--muted-foreground)",
-                  fontWeight: txTab === tab ? 700 : 600,
-                  boxShadow: txTab === tab ? "var(--shadow-sm)" : "none",
-                  transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-                }}
-              >
-                {tab === "ingreso" ? "Ingreso" : tab === "gasto" ? "Gasto" : "Transferir"}
-              </button>
-            ))}
-          </div>
-
-          <div
-            role="tabpanel"
-            id={`tx-panel-${txTab}`}
-            aria-labelledby={`tx-tab-${txTab}`}
-          >
-            {txTab === "transferencia" ? (
-              <TransferForm onSuccess={() => setOpen(false)} />
-            ) : (
-              <TransactionForm
-                key={txTab}
-                defaultType={txTab}
-                onSuccess={() => setOpen(false)}
-              />
-            )}
-          </div>
-        </AppSheet>
+          <Plus className="h-4 w-4" /> Nueva
+        </Button>
       </div>
 
       {/* ── Stats del mes ───────────────────────────────────────────────────── */}

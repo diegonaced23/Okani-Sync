@@ -164,8 +164,12 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
           Monto{fromAccount ? ` (${fromAccount.currency})` : ""}
         </p>
         <div
-          className="flex items-center justify-center rounded-xl"
-          style={{ background: "var(--surface-2)", padding: "18px 16px" }}
+          className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
+          style={{
+            background: "var(--surface-2)",
+            padding: "18px 16px",
+            "--ring": "var(--os-cyan)",
+          } as React.CSSProperties}
         >
           <MoneyInput
             id="tf-amount"
