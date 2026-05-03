@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useMutation, useAction, useQuery } from "convex/react";
+import { usePathname, useRouter } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // Suscripción reactiva: si active cambia en Convex, este componente se actualiza sin recargar
   const me = useQuery(api.users.getMe);
   const [setup, setSetup] = useState<Setup>("loading");
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Guard de rol: admin solo puede acceder a /admin y /perfil
+  const isAdminOnRestrictedRoute =
+    me != null &&
+    me.active === true &&
+    me.role === "admin" &&
+    !pathname.startsWith("/admin") &&
+    !pathname.startsWith("/perfil");
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
@@ -58,6 +69,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       })
       .catch(() => setSetup("denied"));
   }, [isLoaded, isSignedIn, ensureExists, syncRole]);
+
+  useEffect(() => {
+    if (isAdminOnRestrictedRoute) router.replace("/admin");
+  }, [isAdminOnRestrictedRoute, router]);
 
   // Comprobación inicial de invitación aún en progreso
   if (setup === "loading") return <AppShellSkeleton />;
@@ -94,6 +109,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       />
     );
   }
+
+  if (isAdminOnRestrictedRoute) return <AppShellSkeleton />;
 
   return <>{children}</>;
 }

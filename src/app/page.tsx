@@ -1,8 +1,9 @@
-import { auth } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 export default async function RootPage() {
-  const { userId } = await auth();
-  if (userId) redirect("/dashboard");
-  redirect("/sign-in");
+  const user = await currentUser();
+  if (!user) redirect("/sign-in");
+  if (user.publicMetadata?.role === "admin") redirect("/admin");
+  redirect("/dashboard");
 }
