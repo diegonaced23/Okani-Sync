@@ -7,7 +7,6 @@ import { Plus, Pencil, Trash2, Repeat, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -246,7 +245,7 @@ export default function RecurrentesPage() {
             <AlertDialogDescription>
               {deleting && (
                 <>
-                  <strong>"{deleting.description}"</strong> dejará de generar gastos automáticos.
+                  <strong>&ldquo;{deleting.description}&rdquo;</strong> dejará de generar gastos automáticos.
                   Las transacciones ya registradas se mantendrán intactas.
                 </>
               )}

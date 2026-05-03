@@ -209,16 +209,21 @@ export default function CategoriasPage() {
   // Refs para leer el orden más reciente dentro de los event handlers de drag
   const gastosRef = useRef<Doc<"categories">[]>([]);
   const ingresosRef = useRef<Doc<"categories">[]>([]);
-  gastosRef.current = gastosItems;
-  ingresosRef.current = ingresosItems;
 
-  // Sincroniza el estado local cuando Convex retorna datos actualizados
-  useEffect(() => {
-    if (categories === undefined) return;
-    const sorted = [...categories].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
-    setGastosItems(sorted.filter((c) => c.type === "gasto" || c.type === "ambos"));
-    setIngresosItems(sorted.filter((c) => c.type === "ingreso" || c.type === "ambos"));
-  }, [categories]);
+  // Sincroniza el estado cuando Convex actualiza (patrón "update during rendering")
+  const [prevCategories, setPrevCategories] = useState(categories);
+  if (categories !== prevCategories) {
+    setPrevCategories(categories);
+    if (categories !== undefined) {
+      const sorted = [...categories].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+      setGastosItems(sorted.filter((c) => c.type === "gasto" || c.type === "ambos"));
+      setIngresosItems(sorted.filter((c) => c.type === "ingreso" || c.type === "ambos"));
+    }
+  }
+
+  // Mantiene refs sincronizados con el estado para los event handlers de drag
+  useEffect(() => { gastosRef.current = gastosItems; }, [gastosItems]);
+  useEffect(() => { ingresosRef.current = ingresosItems; }, [ingresosItems]);
 
   function openEdit(cat: Doc<"categories">) {
     setEditingCat(cat);

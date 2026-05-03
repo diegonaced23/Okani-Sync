@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
@@ -143,18 +143,22 @@ export function TransactionDetailSheet({
   const [categoryId, setCategoryId] = useState("");
 
   // Reiniciar cuando cambia la transacción seleccionada o se cierra el sheet
-  useEffect(() => {
+  const [prevTx, setPrevTx] = useState(tx);
+  if (tx !== prevTx) {
+    setPrevTx(tx);
     if (tx) {
       setDesc(tx.description);
       setDate(new Date(tx.date).toISOString().substring(0, 10));
       setCategoryId(tx.categoryId ?? "");
     }
     setEditing(false);
-  }, [tx]);
+  }
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) setEditing(false);
-  }, [open]);
+  }
 
   if (!tx) return null;
 
