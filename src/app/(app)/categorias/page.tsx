@@ -2,8 +2,9 @@
 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useState } from "react";
-import { Plus, Archive, Pencil } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Reorder, useDragControls } from "framer-motion";
+import { Plus, Archive, Pencil, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,8 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type CategoryType = "ingreso" | "gasto" | "ambos";
+
+// ─── Pickers ──────────────────────────────────────────────────────────────────
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
@@ -79,9 +82,7 @@ function IconPicker({
             aria-pressed={selected}
             className={cn(
               "flex h-9 w-9 items-center justify-center rounded-lg border-2 transition-colors",
-              selected
-                ? "border-foreground bg-muted"
-                : "border-transparent hover:bg-muted"
+              selected ? "border-foreground bg-muted" : "border-transparent hover:bg-muted"
             )}
           >
             <CategoryIcon
@@ -96,27 +97,62 @@ function IconPicker({
   );
 }
 
-function CategoryRow({
+// ─── Fila ordenable ───────────────────────────────────────────────────────────
+
+function SortableCategoryRow({
   cat,
   onEdit,
   onArchive,
+  onDragEnd,
 }: {
   cat: Doc<"categories">;
   onEdit: () => void;
   onArchive: () => void;
+  onDragEnd: () => void;
 }) {
+  const controls = useDragControls();
+
   return (
-    <div className="flex items-center gap-3 py-2.5 px-4">
+    <Reorder.Item
+      as="li"
+      value={cat}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDragEnd}
+      className="flex items-center gap-3 py-2.5 px-4 bg-card border-b border-border last:border-b-0"
+      style={{ listStyle: "none", position: "relative" }}
+      whileDrag={{
+        scale: 1.02,
+        boxShadow: "0 8px 28px -6px rgba(0,0,0,0.18)",
+        borderRadius: 12,
+        zIndex: 50,
+      }}
+    >
+      {/* Handle de arrastre */}
+      <button
+        type="button"
+        aria-label="Arrastrar para reordenar"
+        className="touch-none shrink-0 p-1 -ml-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-grab active:cursor-grabbing"
+        onPointerDown={(e) => controls.start(e)}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+
+      {/* Ícono con color */}
       <span
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
         style={{ backgroundColor: cat.color + "33", color: cat.color }}
       >
         <CategoryIcon name={cat.icon} className="h-4 w-4" />
       </span>
+
+      {/* Nombre */}
       <span className="flex-1 text-sm font-medium text-foreground truncate">{cat.name}</span>
+
       {cat.isDefault && (
         <Badge variant="secondary" className="text-[10px] shrink-0">Sistema</Badge>
       )}
+
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
@@ -135,17 +171,20 @@ function CategoryRow({
           <Archive className="h-3.5 w-3.5" />
         </button>
       </div>
-    </div>
+    </Reorder.Item>
   );
 }
+
+// ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function CategoriasPage() {
   const categories = useQuery(api.categories.list, {});
   const createCategory = useMutation(api.categories.create);
   const updateCategory = useMutation(api.categories.update);
   const archiveCategory = useMutation(api.categories.archive);
+  const reorderCategories = useMutation(api.categories.reorder);
 
-  // Estado formulario creación
+  // ── Estado formulario creación ────────────────────────────────────────────
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<CategoryType>("gasto");
@@ -153,18 +192,33 @@ export default function CategoriasPage() {
   const [newIcon, setNewIcon] = useState<string>(CATEGORY_ICONS[0]);
   const [createLoading, setCreateLoading] = useState(false);
 
-  // Estado confirmación archivo
-  const [archivingCat, setArchivingCat] = useState<Doc<"categories"> | null>(null);
-
-  // Estado formulario edición
+  // ── Estado formulario edición ─────────────────────────────────────────────
   const [editingCat, setEditingCat] = useState<Doc<"categories"> | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState(ACCOUNT_COLORS[0]);
   const [editIcon, setEditIcon] = useState<string>(CATEGORY_ICONS[0]);
   const [editLoading, setEditLoading] = useState(false);
 
-  const gastos = (categories ?? []).filter((c) => c.type === "gasto" || c.type === "ambos");
-  const ingresos = (categories ?? []).filter((c) => c.type === "ingreso" || c.type === "ambos");
+  // ── Estado confirmación archivo ───────────────────────────────────────────
+  const [archivingCat, setArchivingCat] = useState<Doc<"categories"> | null>(null);
+
+  // ── Estado local para reordenamiento optimista ────────────────────────────
+  const [gastosItems, setGastosItems] = useState<Doc<"categories">[]>([]);
+  const [ingresosItems, setIngresosItems] = useState<Doc<"categories">[]>([]);
+
+  // Refs para leer el orden más reciente dentro de los event handlers de drag
+  const gastosRef = useRef<Doc<"categories">[]>([]);
+  const ingresosRef = useRef<Doc<"categories">[]>([]);
+  gastosRef.current = gastosItems;
+  ingresosRef.current = ingresosItems;
+
+  // Sincroniza el estado local cuando Convex retorna datos actualizados
+  useEffect(() => {
+    if (categories === undefined) return;
+    const sorted = [...categories].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+    setGastosItems(sorted.filter((c) => c.type === "gasto" || c.type === "ambos"));
+    setIngresosItems(sorted.filter((c) => c.type === "ingreso" || c.type === "ambos"));
+  }, [categories]);
 
   function openEdit(cat: Doc<"categories">) {
     setEditingCat(cat);
@@ -210,10 +264,6 @@ export default function CategoriasPage() {
     }
   }
 
-  function handleArchive(cat: Doc<"categories">) {
-    setArchivingCat(cat);
-  }
-
   async function executeArchive() {
     if (!archivingCat) return;
     try {
@@ -223,6 +273,12 @@ export default function CategoriasPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     }
+  }
+
+  function handleSectionDragEnd(sectionRef: React.MutableRefObject<Doc<"categories">[]>) {
+    reorderCategories({
+      categoryIds: sectionRef.current.map((c) => c._id),
+    }).catch(() => toast.error("Error al guardar el orden"));
   }
 
   const isLoading = categories === undefined;
@@ -327,45 +383,65 @@ export default function CategoriasPage() {
       ) : (
         <>
           {/* Gastos */}
-          <section className="rounded-xl bg-card border border-border overflow-hidden">
-            <div className="px-4 py-2.5 bg-muted/50 border-b border-border">
+          <section className="rounded-xl bg-card border border-border">
+            <div className="px-4 py-2.5 bg-muted/50 border-b border-border rounded-t-xl">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Gastos ({gastos.length})
+                Gastos ({gastosItems.length})
               </h2>
             </div>
-            <ul className="divide-y divide-border">
-              {gastos.map((cat) => (
-                <li key={cat._id}>
-                  <CategoryRow
-                    cat={cat}
-                    onEdit={() => openEdit(cat)}
-                    onArchive={() => handleArchive(cat)}
-                  />
-                </li>
+            <Reorder.Group
+              as="ul"
+              axis="y"
+              values={gastosItems}
+              onReorder={(items) => {
+                setGastosItems(items);
+                gastosRef.current = items;
+              }}
+              className="rounded-b-xl overflow-hidden"
+              style={{ listStyle: "none", padding: 0, margin: 0 }}
+            >
+              {gastosItems.map((cat) => (
+                <SortableCategoryRow
+                  key={cat._id}
+                  cat={cat}
+                  onEdit={() => openEdit(cat)}
+                  onArchive={() => setArchivingCat(cat)}
+                  onDragEnd={() => handleSectionDragEnd(gastosRef)}
+                />
               ))}
-            </ul>
+            </Reorder.Group>
           </section>
 
           <Separator />
 
           {/* Ingresos */}
-          <section className="rounded-xl bg-card border border-border overflow-hidden">
-            <div className="px-4 py-2.5 bg-muted/50 border-b border-border">
+          <section className="rounded-xl bg-card border border-border">
+            <div className="px-4 py-2.5 bg-muted/50 border-b border-border rounded-t-xl">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Ingresos ({ingresos.length})
+                Ingresos ({ingresosItems.length})
               </h2>
             </div>
-            <ul className="divide-y divide-border">
-              {ingresos.map((cat) => (
-                <li key={cat._id}>
-                  <CategoryRow
-                    cat={cat}
-                    onEdit={() => openEdit(cat)}
-                    onArchive={() => handleArchive(cat)}
-                  />
-                </li>
+            <Reorder.Group
+              as="ul"
+              axis="y"
+              values={ingresosItems}
+              onReorder={(items) => {
+                setIngresosItems(items);
+                ingresosRef.current = items;
+              }}
+              className="rounded-b-xl overflow-hidden"
+              style={{ listStyle: "none", padding: 0, margin: 0 }}
+            >
+              {ingresosItems.map((cat) => (
+                <SortableCategoryRow
+                  key={cat._id}
+                  cat={cat}
+                  onEdit={() => openEdit(cat)}
+                  onArchive={() => setArchivingCat(cat)}
+                  onDragEnd={() => handleSectionDragEnd(ingresosRef)}
+                />
               ))}
-            </ul>
+            </Reorder.Group>
           </section>
         </>
       )}

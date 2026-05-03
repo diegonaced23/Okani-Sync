@@ -10,21 +10,24 @@ export const list = query({
   },
   handler: async (ctx, { type }) => {
     const clerkId = await getCurrentUserId(ctx);
+    let results;
     if (type) {
-      return await ctx.db
+      results = await ctx.db
         .query("categories")
         .withIndex("by_user_type", (q) =>
           q.eq("userId", clerkId).eq("type", type)
         )
         .filter((q) => q.eq(q.field("archived"), false))
         .collect();
+    } else {
+      results = await ctx.db
+        .query("categories")
+        .withIndex("by_user_archived", (q) =>
+          q.eq("userId", clerkId).eq("archived", false)
+        )
+        .collect();
     }
-    return await ctx.db
-      .query("categories")
-      .withIndex("by_user_archived", (q) =>
-        q.eq("userId", clerkId).eq("archived", false)
-      )
-      .collect();
+    return results.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
   },
 });
 
@@ -39,6 +42,13 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
     const now = Date.now();
+    const existing = await ctx.db
+      .query("categories")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", user.clerkId).eq("archived", false)
+      )
+      .collect();
+    const maxOrder = existing.reduce((max, c) => Math.max(max, c.order ?? -1), -1);
     return await ctx.db.insert("categories", {
       userId: user.clerkId,
       name: args.name,
@@ -48,6 +58,7 @@ export const create = mutation({
       parentId: args.parentId,
       isDefault: false,
       archived: false,
+      order: maxOrder + 1,
       createdAt: now,
       updatedAt: now,
     });
@@ -84,5 +95,22 @@ export const archive = mutation({
       throw new Error("Categoría no encontrada");
     }
     await ctx.db.patch(categoryId, { archived: true, updatedAt: Date.now() });
+  },
+});
+
+export const reorder = mutation({
+  args: {
+    categoryIds: v.array(v.id("categories")),
+  },
+  handler: async (ctx, { categoryIds }) => {
+    const user = await getCurrentUser(ctx);
+    const now = Date.now();
+    for (let i = 0; i < categoryIds.length; i++) {
+      const cat = await ctx.db.get(categoryIds[i]);
+      if (!cat || cat.userId !== user.clerkId) {
+        throw new Error("Categoría no encontrada");
+      }
+      await ctx.db.patch(categoryIds[i], { order: i, updatedAt: now });
+    }
   },
 });
