@@ -16,7 +16,6 @@ import type { ReportRow } from "@/lib/reports";
 import { currentMonth, formatMonth, formatCents } from "@/lib/money";
 import { FileDown, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { pdf } from "@react-pdf/renderer";
 
 type FilterType = "todos" | "ingreso" | "gasto";
 
@@ -62,7 +61,10 @@ export default function ReportesPage() {
     if (rows.length === 0) { toast.error("No hay transacciones para exportar"); return; }
     setGeneratingPdf(true);
     try {
-      const { default: ReportDoc } = await import("@/components/reports/ReportDocument");
+      const [{ pdf }, { default: ReportDoc }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/components/reports/ReportDocument"),
+      ]);
       const element = (
         <ReportDoc
           rows={rows}

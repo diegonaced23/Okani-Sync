@@ -6,6 +6,20 @@ import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function AppShellSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Cargando">
+      <Skeleton className="h-7 w-48" />
+      <div className="space-y-3">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-20 rounded-xl" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type Setup = "loading" | "done" | "denied";
 
@@ -46,7 +60,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [isLoaded, isSignedIn, ensureExists, syncRole]);
 
   // Comprobación inicial de invitación aún en progreso
-  if (setup === "loading") return null;
+  if (setup === "loading") return <AppShellSkeleton />;
 
   // Sin invitación válida
   if (setup === "denied") {
@@ -59,7 +73,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // setup === "done" — esperar a que Convex cargue el usuario
-  if (me === undefined) return null;
+  if (me === undefined) return <AppShellSkeleton />;
 
   // Cuenta eliminada de Convex
   if (me === null) {

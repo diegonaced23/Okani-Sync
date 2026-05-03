@@ -14,20 +14,20 @@ const USER_NAV_SECTIONS = [
   {
     label: "Principal",
     items: [
-      { href: "/dashboard",     icon: LayoutDashboard, label: "Dashboard" },
-      { href: "/transacciones", icon: ArrowLeftRight,  label: "Transacciones" },
-      { href: "/cuentas",       icon: Landmark,        label: "Cuentas" },
-      { href: "/tarjetas",      icon: CreditCard,      label: "Tarjetas" },
-      { href: "/deudas",        icon: HandCoins,       label: "Deudas" },
-      { href: "/recurrentes",   icon: Repeat,          label: "Recurrentes" },
+      { href: "/dashboard",     icon: LayoutDashboard, label: "Dashboard",      prefetch: true },
+      { href: "/transacciones", icon: ArrowLeftRight,  label: "Transacciones",  prefetch: true },
+      { href: "/cuentas",       icon: Landmark,        label: "Cuentas",        prefetch: true },
+      { href: "/tarjetas",      icon: CreditCard,      label: "Tarjetas",       prefetch: true },
+      { href: "/deudas",        icon: HandCoins,       label: "Deudas",         prefetch: true },
+      { href: "/recurrentes",   icon: Repeat,          label: "Recurrentes",    prefetch: true },
     ],
   },
   {
     label: "Organización",
     items: [
-      { href: "/categorias",   icon: Tags,     label: "Categorías" },
-      { href: "/presupuestos", icon: PieChart, label: "Presupuestos" },
-      { href: "/reportes",     icon: BarChart3, label: "Reportes" },
+      { href: "/categorias",   icon: Tags,      label: "Categorías"  },
+      { href: "/presupuestos", icon: PieChart,  label: "Presupuestos" },
+      { href: "/reportes",     icon: BarChart3, label: "Reportes"    },
     ],
   },
 ];
@@ -101,6 +101,7 @@ export function Sidebar() {
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      prefetch={"prefetch" in item ? item.prefetch : undefined}
                       aria-current={isActive ? "page" : undefined}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors",

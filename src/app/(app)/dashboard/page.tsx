@@ -5,14 +5,25 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { BalanceCard } from "@/components/dashboard/BalanceCard";
 import { BalanceAccountsSheet } from "@/components/dashboard/BalanceAccountsSheet";
-import { SpendingChart } from "@/components/dashboard/SpendingChart";
-import { MonthlyChart } from "@/components/dashboard/MonthlyChart";
-import { SpendingBySourceChart } from "@/components/dashboard/SpendingBySourceChart";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { Skeleton } from "@/components/ui/skeleton";
+
+const SpendingChart = dynamic(
+  () => import("@/components/dashboard/SpendingChart").then((m) => ({ default: m.SpendingChart })),
+  { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
+);
+const MonthlyChart = dynamic(
+  () => import("@/components/dashboard/MonthlyChart").then((m) => ({ default: m.MonthlyChart })),
+  { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
+);
+const SpendingBySourceChart = dynamic(
+  () => import("@/components/dashboard/SpendingBySourceChart").then((m) => ({ default: m.SpendingBySourceChart })),
+  { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
+);
 import { currentMonth, formatCents } from "@/lib/money";
 import { lastNMonths, cn } from "@/lib/utils";
 import Link from "next/link";
