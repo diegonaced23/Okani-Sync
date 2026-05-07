@@ -91,7 +91,7 @@ export function NotificationBell() {
             aria-label="Notificaciones"
             aria-modal="true"
             tabIndex={-1}
-            className="absolute right-0 top-10 z-50 w-80 rounded-xl border border-border bg-card shadow-xl overflow-hidden outline-none"
+            className="fixed left-2 right-2 top-[62px] z-50 rounded-xl border border-border bg-card shadow-xl overflow-hidden outline-none lg:absolute lg:left-auto lg:right-0 lg:top-10 lg:w-80"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">

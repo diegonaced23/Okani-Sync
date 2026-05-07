@@ -188,7 +188,7 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         <Label htmlFor="tx-date" className="text-[12px] font-semibold text-foreground mb-2 block">
           Fecha
         </Label>
-        <DatePicker id="tx-date" value={date} onChange={setDate} required />
+        <DatePicker id="tx-date" value={date} onChange={setDate} required style={{ background: "var(--surface-2)" }} />
       </div>
 
       {/* ── Categoría — dropdown ──────────────────────────────────────────── */}
@@ -199,7 +199,27 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
           </Label>
           <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
             <SelectTrigger id="tx-category" className="w-full" style={{ background: "var(--surface-2)" }}>
-              <SelectValue placeholder="Sin categoría" />
+              {categoryId ? (
+                (() => {
+                  const cat = filteredCategories.find((c) => c._id === categoryId);
+                  return cat ? (
+                    <span className="flex items-center gap-2 min-w-0">
+                      <CategoryIcon
+                        name={cat.icon}
+                        aria-hidden
+                        className="h-4 w-4 shrink-0"
+                        style={{ color: cat.color }}
+                        strokeWidth={1.8}
+                      />
+                      <span className="truncate">{cat.name}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Sin categoría</span>
+                  );
+                })()
+              ) : (
+                <span className="text-muted-foreground">Sin categoría</span>
+              )}
             </SelectTrigger>
             <SelectContent side="bottom">
               <SelectItem value="">Sin categoría</SelectItem>

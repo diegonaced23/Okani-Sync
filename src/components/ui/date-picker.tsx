@@ -17,9 +17,10 @@ interface DatePickerProps {
   id?: string
   required?: boolean
   className?: string
+  style?: React.CSSProperties
 }
 
-export function DatePicker({ value, onChange, id, required, className }: DatePickerProps) {
+export function DatePicker({ value, onChange, id, required, className, style }: DatePickerProps) {
   const isDesktop = useMediaQuery("(min-width: 768px)")
   const [open, setOpen] = React.useState(false)
 
@@ -34,7 +35,8 @@ export function DatePicker({ value, onChange, id, required, className }: DatePic
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
-        className={className}
+        className={cn("w-full appearance-none", className)}
+        style={style}
       />
     )
   }
