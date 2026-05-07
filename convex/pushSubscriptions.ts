@@ -80,6 +80,15 @@ export const remove = mutation({
   },
 });
 
+/** Interna: retorna todos los userId distintos que tienen al menos una suscripción push activa. */
+export const listDistinctUserIds = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const subs = await ctx.db.query("pushSubscriptions").take(1000);
+    return [...new Set(subs.map((s) => s.userId))];
+  },
+});
+
 /** Interna: limpia subs caducadas (410 Gone). */
 export const removeByEndpoint = internalMutation({
   args: { endpoint: v.string() },

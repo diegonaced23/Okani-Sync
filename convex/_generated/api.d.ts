@@ -16,7 +16,10 @@ import type * as actions_fetchExchangeRates from "../actions/fetchExchangeRates.
 import type * as actions_processRecurringTransactions from "../actions/processRecurringTransactions.js";
 import type * as actions_seedAdmin from "../actions/seedAdmin.js";
 import type * as actions_sendAlerts from "../actions/sendAlerts.js";
+import type * as actions_sendDailyReminder from "../actions/sendDailyReminder.js";
+import type * as actions_sendMonthlySummary from "../actions/sendMonthlySummary.js";
 import type * as actions_sendPushNotification from "../actions/sendPushNotification.js";
+import type * as actions_sendWeeklySummary from "../actions/sendWeeklySummary.js";
 import type * as actions_sendWelcomeEmail from "../actions/sendWelcomeEmail.js";
 import type * as auditLogs from "../auditLogs.js";
 import type * as budgets from "../budgets.js";
@@ -57,7 +60,10 @@ declare const fullApi: ApiFromModules<{
   "actions/processRecurringTransactions": typeof actions_processRecurringTransactions;
   "actions/seedAdmin": typeof actions_seedAdmin;
   "actions/sendAlerts": typeof actions_sendAlerts;
+  "actions/sendDailyReminder": typeof actions_sendDailyReminder;
+  "actions/sendMonthlySummary": typeof actions_sendMonthlySummary;
   "actions/sendPushNotification": typeof actions_sendPushNotification;
+  "actions/sendWeeklySummary": typeof actions_sendWeeklySummary;
   "actions/sendWelcomeEmail": typeof actions_sendWelcomeEmail;
   auditLogs: typeof auditLogs;
   budgets: typeof budgets;

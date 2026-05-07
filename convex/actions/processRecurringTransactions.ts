@@ -35,6 +35,8 @@ export const run = internalAction({
 
     console.log(`processRecurringTransactions: ${due.length} plantillas a procesar`);
 
+    const processed: Record<string, string[]> = {};
+
     for (const rec of due) {
       // Validar fecha de fin
       if (rec.endDate && rec.endDate < now) {
@@ -66,9 +68,33 @@ export const run = internalAction({
         });
 
         console.log(`processRecurringTransactions: generada tx para "${rec.description}"`);
+        processed[rec.userId] = processed[rec.userId] ?? [];
+        processed[rec.userId].push(rec.description);
       } catch (err) {
         console.error(`processRecurringTransactions: error en "${rec.description}"`, err);
       }
+    }
+
+    // Enviar push de resumen por usuario
+    for (const [userId, descriptions] of Object.entries(processed)) {
+      const count = descriptions.length;
+      const body =
+        count === 1
+          ? `Se registró automáticamente: ${descriptions[0]}.`
+          : `Se registraron ${count} transacciones recurrentes automáticamente.`;
+      await ctx.runMutation(internal.notifications.createInternal, {
+        userId,
+        type: "transaccion_recurrente",
+        title: "Transacciones recurrentes procesadas",
+        message: body,
+        actionUrl: "/transacciones",
+      });
+      await ctx.runAction(internal.actions.sendPushNotification.run, {
+        userId,
+        title: "🔄 Transacciones automáticas",
+        body,
+        url: "/transacciones",
+      });
     }
   },
 });

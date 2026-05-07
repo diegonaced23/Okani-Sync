@@ -10,13 +10,23 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 
 self.addEventListener('push', (event) => {
   if (!event.data) return;
-  const data = event.data.json();
+  let title = 'Okany Sync';
+  let body = '';
+  let url = '/';
+  try {
+    const data = event.data.json();
+    title = data.title ?? title;
+    body  = data.body  ?? body;
+    url   = data.url   ?? url;
+  } catch (_) {
+    body = event.data.text();
+  }
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
+    self.registration.showNotification(title, {
+      body,
       icon: '/icons/placeholder.svg',
       badge: '/icons/placeholder.svg',
-      data: { url: data.url ?? '/' },
+      data: { url },
     })
   );
 });

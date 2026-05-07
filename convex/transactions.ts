@@ -633,6 +633,32 @@ export const listDueRecurring = internalQuery({
   },
 });
 
+/** Interna: verifica si el usuario tiene al menos una transacción desde `sinceTs`. */
+export const hadTransactionsToday = internalQuery({
+  args: { userId: v.string(), sinceTs: v.number() },
+  handler: async (ctx, { userId, sinceTs }) => {
+    const tx = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId).gte("date", sinceTs))
+      .take(1);
+    return tx.length > 0;
+  },
+});
+
+/** Interna: cuenta ingresos y gastos de un usuario en un rango de fechas. */
+export const getSummaryForPeriod = internalQuery({
+  args: { userId: v.string(), sinceTs: v.number() },
+  handler: async (ctx, { userId, sinceTs }) => {
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId).gte("date", sinceTs))
+      .take(500);
+    const ingresos = txs.filter((t) => t.type === "ingreso").length;
+    const gastos   = txs.filter((t) => t.type === "gasto").length;
+    return { ingresos, gastos, total: txs.length };
+  },
+});
+
 /** Interna: actualiza nextOccurrence tras generar la transacción. */
 export const updateNextOccurrence = internalMutation({
   args: {

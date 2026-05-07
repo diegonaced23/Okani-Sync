@@ -31,4 +31,28 @@ crons.monthly(
   internal.budgets.rolloverRecurring
 );
 
+// Recordatorio de registro diario a las 7 PM Colombia (00:00 UTC)
+crons.cron(
+  "recordatorio de registro diario",
+  "0 0 * * *",
+  internal.actions.sendDailyReminder.run,
+  {}
+);
+
+// Resumen semanal los lunes a las 9 AM Colombia (14:00 UTC)
+crons.cron(
+  "resumen semanal",
+  "0 14 * * 1",
+  internal.actions.sendWeeklySummary.run,
+  {}
+);
+
+// Resumen mensual el día 1 a las 8 AM Colombia (13:00 UTC)
+crons.cron(
+  "resumen mensual",
+  "0 13 1 * *",
+  internal.actions.sendMonthlySummary.run,
+  {}
+);
+
 export default crons;

@@ -223,6 +223,20 @@ export const listOverdue = internalQuery({
   },
 });
 
+/** Interna: deudas activas cuya fecha de vencimiento es entre `now` y `beforeTs`. */
+export const listDueSoon = internalQuery({
+  args: { now: v.number(), beforeTs: v.number() },
+  handler: async (ctx, { now, beforeTs }) => {
+    const dueSoon = await ctx.db
+      .query("debts")
+      .withIndex("by_status_dueDate", (q) =>
+        q.eq("status", "activa").gte("dueDate", now)
+      )
+      .take(500);
+    return dueSoon.filter((d) => d.dueDate !== undefined && d.dueDate <= beforeTs);
+  },
+});
+
 /** Interna: marcar deuda como vencida (desde cron). */
 export const markOverdueInternal = internalMutation({
   args: { debtId: v.id("debts") },

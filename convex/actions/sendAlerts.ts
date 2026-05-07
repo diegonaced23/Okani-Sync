@@ -19,6 +19,9 @@ export const run = internalAction({
     // 3. Deudas vencidas (dueDate pasado y status=activa)
     await checkOverdueDebts(ctx, now);
 
+    // 4. Deudas próximas a vencer (en ≤ 7 días)
+    await checkUpcomingDebts7Days(ctx, now);
+
     console.log("sendAlerts: ciclo completado", new Date(now).toISOString());
   },
 });
@@ -129,6 +132,35 @@ async function checkOverdueDebts(
       userId: debt.userId,
       title: "🔴 Deuda vencida",
       body: `"${debt.name}" con ${debt.creditor} está vencida.`,
+      url: "/deudas",
+      notificationId: notifId,
+    });
+  }
+}
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function checkUpcomingDebts7Days(ctx: ActionCtx, now: number) {
+  const beforeTs = now + SEVEN_DAYS_MS;
+  const dueSoon = await ctx.runQuery(internal.debts.listDueSoon, { now, beforeTs });
+
+  for (const debt of dueSoon) {
+    if (!debt.dueDate) continue;
+    const daysLeft = Math.ceil((debt.dueDate - now) / (24 * 60 * 60 * 1000));
+
+    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+      userId: debt.userId,
+      type: "deuda_proxima",
+      title: "Deuda próxima a vencer",
+      message: `"${debt.name}" con ${debt.creditor} vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
+      actionUrl: "/deudas",
+      relatedEntityId: debt._id,
+    });
+
+    await ctx.runAction(internal.actions.sendPushNotification.run, {
+      userId: debt.userId,
+      title: "⚠️ Deuda próxima a vencer",
+      body: `"${debt.name}" vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
       url: "/deudas",
       notificationId: notifId,
     });

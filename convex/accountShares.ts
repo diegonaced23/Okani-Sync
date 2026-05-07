@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanManage, assertIsOwner } from "./lib/permissions";
 import { AUDIT_ACTIONS } from "../src/lib/constants";
+import { internal } from "./_generated/api";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -199,6 +200,14 @@ export const share = mutation({
       createdAt: Date.now(),
     });
 
+    // Push inmediato al usuario invitado
+    await ctx.scheduler.runAfter(0, internal.actions.sendPushNotification.run, {
+      userId: invitedUser.clerkId,
+      title: "📬 Invitación de cuenta compartida",
+      body: `${currentUser.name} te invitó a la cuenta "${account.name}".`,
+      url: "/cuentas/compartidas",
+    });
+
     return shareId;
   },
 });
@@ -247,6 +256,14 @@ export const respondToInvitation = mutation({
         actionUrl: `/cuentas/${share.accountId}`,
         relatedEntityId: shareId,
         createdAt: Date.now(),
+      });
+
+      // Push inmediato al dueño
+      await ctx.scheduler.runAfter(0, internal.actions.sendPushNotification.run, {
+        userId: share.ownerId,
+        title: "✅ Invitación aceptada",
+        body: `${me?.name ?? "Un usuario"} aceptó acceso a "${account?.name ?? "la cuenta"}".`,
+        url: `/cuentas/${share.accountId}`,
       });
 
       await ctx.db.insert("auditLogs", {

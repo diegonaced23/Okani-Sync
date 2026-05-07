@@ -273,7 +273,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_status", ["userId", "status"]),
+    .index("by_user_status", ["userId", "status"])
+    .index("by_status_dueDate", ["status", "dueDate"]),
 
   // ============================================================
   // PAGOS A DEUDAS — Histórico de abonos
@@ -508,6 +509,11 @@ export default defineSchema({
       v.literal("presupuesto_excedido"),
       v.literal("cuota_proxima"),
       v.literal("deuda_vencida"),
+      v.literal("deuda_proxima"),
+      v.literal("recordatorio_registro"),
+      v.literal("transaccion_recurrente"),
+      v.literal("resumen_semanal"),
+      v.literal("resumen_mensual"),
       v.literal("pago_tarjeta_proximo"),
       v.literal("cuenta_compartida"),
       v.literal("share_aceptado"),
