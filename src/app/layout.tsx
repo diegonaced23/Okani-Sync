@@ -18,7 +18,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: { default: "Okany Sync", template: "%s | Okany Sync" },
   description: "Gestión de finanzas personales multi-moneda",
-  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

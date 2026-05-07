@@ -36,6 +36,27 @@ export function getNotificationPermission(): NotificationPermission | "unsupport
   return Notification.permission;
 }
 
+/**
+ * Obtiene el service worker activo con timeout.
+ * Usa getRegistration() (resuelve a undefined si no hay SW) en lugar de serviceWorker.ready
+ * (que cuelga indefinidamente si el SW no está registrado).
+ */
+async function getActiveRegistration(): Promise<ServiceWorkerRegistration | null> {
+  try {
+    // Intenta obtener el registro existente primero (no bloquea)
+    const existing = await navigator.serviceWorker.getRegistration("/");
+    if (existing?.active) return existing;
+
+    // Si hay un SW instalándose, espera con timeout de 8 s
+    return await Promise.race<ServiceWorkerRegistration | null>([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
 /** Solicita permiso y suscribe al SW activo. Retorna null si falla o no soportado. */
 export async function subscribeToWebPush(): Promise<PushSubscriptionPayload | null> {
   if (!isPushSupported()) return null;
@@ -50,7 +71,12 @@ export async function subscribeToWebPush(): Promise<PushSubscriptionPayload | nu
   if (permission !== "granted") return null;
 
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await getActiveRegistration();
+    if (!registration) {
+      console.warn("subscribeToWebPush: no hay Service Worker activo");
+      return null;
+    }
+
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       // Cast necesario: TypeScript 5.7 distingue ArrayBuffer vs ArrayBufferLike
@@ -77,7 +103,8 @@ export async function subscribeToWebPush(): Promise<PushSubscriptionPayload | nu
 export async function unsubscribeFromWebPush(): Promise<string | null> {
   if (!isPushSupported()) return null;
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await getActiveRegistration();
+    if (!registration) return null;
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription) return null;
     const endpoint = subscription.endpoint;
@@ -92,7 +119,8 @@ export async function unsubscribeFromWebPush(): Promise<string | null> {
 export async function getCurrentSubscription(): Promise<PushSubscriptionPayload | null> {
   if (!isPushSupported()) return null;
   try {
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await getActiveRegistration();
+    if (!registration) return null;
     const sub = await registration.pushManager.getSubscription();
     if (!sub) return null;
     const json = sub.toJSON();
