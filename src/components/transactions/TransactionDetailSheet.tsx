@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { AppSheet } from "@/components/ui/app-sheet";
@@ -13,9 +13,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
+import { MoneyInput } from "@/components/ui/money-input";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { formatCents } from "@/lib/money";
+import { formatCents, fromCents, toCents } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import {
@@ -140,14 +144,17 @@ export function TransactionDetailSheet({
 }: TransactionDetailSheetProps) {
   const updateTx = useMutation(api.transactions.update);
   const removeTx = useMutation(api.transactions.remove);
+  const accounts = useQuery(api.accounts.list);
+  const cards    = useQuery(api.cards.list);
 
   const [editing, setEditing]       = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [loading, setLoading]       = useState(false);
 
   // Estado del formulario de edición
-  const [desc, setDesc]           = useState("");
-  const [date, setDate]           = useState("");
+  const [desc, setDesc]             = useState("");
+  const [amount, setAmount]         = useState("");
+  const [date, setDate]             = useState("");
   const [categoryId, setCategoryId] = useState("");
 
   // Reiniciar cuando cambia la transacción seleccionada o se cierra el sheet
@@ -156,6 +163,7 @@ export function TransactionDetailSheet({
     setPrevTx(tx);
     if (tx) {
       setDesc(tx.description);
+      setAmount(String(fromCents(tx.amount)));
       setDate(new Date(tx.date).toISOString().substring(0, 10));
       setCategoryId(tx.categoryId ?? "");
     }
@@ -177,12 +185,26 @@ export function TransactionDetailSheet({
   const Icon = config.icon;
   const canEdit = EDITABLE_TYPES.has(currentTx.type);
 
+  // Cuenta o tarjeta asociada (para mostrar en edición)
+  const linkedAccount = (accounts ?? []).find((a) => a._id === currentTx.accountId);
+  const linkedCard    = (cards    ?? []).find((c) => c._id === currentTx.cardId);
+  const sourceLabel   = linkedAccount
+    ? `${linkedAccount.name} · ${formatCents(linkedAccount.balance, linkedAccount.currency)}`
+    : linkedCard
+    ? `${linkedCard.name} ····${linkedCard.lastFourDigits}`
+    : null;
+
   // Solo mostrar categorías que correspondan al tipo de la transacción
   const filteredCategories = categories.filter(
     (c) => c.type === currentTx.type || c.type === "ambos"
   );
 
   async function handleSave() {
+    const amountNum = parseFloat(amount.replace(/[^0-9.]/g, ""));
+    if (!amountNum || amountNum <= 0) {
+      toast.error("El monto debe ser mayor que cero");
+      return;
+    }
     if (!desc.trim()) {
       toast.error("La descripción es obligatoria");
       return;
@@ -191,9 +213,10 @@ export function TransactionDetailSheet({
     try {
       await updateTx({
         transactionId: currentTx._id,
+        amount:      toCents(amountNum),
         description: desc.trim(),
-        date: new Date(date).getTime(),
-        categoryId: categoryId
+        date:        new Date(date).getTime(),
+        categoryId:  categoryId
           ? (categoryId as Parameters<typeof updateTx>[0]["categoryId"])
           : undefined,
       });
@@ -266,11 +289,51 @@ export function TransactionDetailSheet({
           {/* ── Modo edición ────────────────────────────────────────────────── */}
           {editing ? (
             <div className="space-y-4">
+
+              {/* Monto */}
               <div>
-                <Label
-                  htmlFor="edit-desc"
-                  className="text-[12px] font-semibold text-foreground mb-2 block"
+                <Label htmlFor="edit-amount" className="text-[12px] font-semibold text-foreground mb-2 block">
+                  Monto <span aria-hidden="true" className="text-danger">*</span>
+                </Label>
+                <div
+                  className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
+                  style={{
+                    background: "var(--surface-2)",
+                    padding: "14px 16px",
+                    "--ring": currentTx.type === "ingreso" ? "var(--os-lime)" : "var(--os-magenta)",
+                  } as React.CSSProperties}
                 >
+                  <MoneyInput
+                    id="edit-amount"
+                    value={amount}
+                    onChange={setAmount}
+                    placeholder="0"
+                    required
+                    aria-required="true"
+                    className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
+                    style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em" }}
+                  />
+                </div>
+              </div>
+
+              {/* Cuenta o tarjeta (solo display) */}
+              {sourceLabel && (
+                <div>
+                  <p className="text-[12px] font-semibold text-foreground mb-2">
+                    {linkedCard ? "Tarjeta" : "Cuenta"}
+                  </p>
+                  <div
+                    className="flex items-center px-3 h-8 rounded-lg text-sm text-muted-foreground"
+                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+                  >
+                    {sourceLabel}
+                  </div>
+                </div>
+              )}
+
+              {/* Descripción */}
+              <div>
+                <Label htmlFor="edit-desc" className="text-[12px] font-semibold text-foreground mb-2 block">
                   Descripción <span aria-hidden="true" className="text-danger">*</span>
                 </Label>
                 <Input
@@ -283,70 +346,60 @@ export function TransactionDetailSheet({
                 />
               </div>
 
+              {/* Fecha */}
               <div>
-                <Label
-                  htmlFor="edit-date"
-                  className="text-[12px] font-semibold text-foreground mb-2 block"
-                >
+                <Label htmlFor="edit-date" className="text-[12px] font-semibold text-foreground mb-2 block">
                   Fecha
                 </Label>
-                <DatePicker id="edit-date" value={date} onChange={setDate} required />
+                <DatePicker id="edit-date" value={date} onChange={setDate} required style={{ background: "var(--surface-2)" }} />
               </div>
 
+              {/* Categoría — Select */}
               {filteredCategories.length > 0 && (
                 <div>
-                  <p
-                    id="edit-cat-label"
-                    className="text-[12px] font-semibold text-foreground mb-2"
-                  >
+                  <Label htmlFor="edit-category" className="text-[12px] font-semibold text-foreground mb-2 block">
                     Categoría
-                  </p>
-                  <div
-                    role="group"
-                    aria-labelledby="edit-cat-label"
-                    className="grid grid-cols-4 gap-2"
-                  >
-                    {filteredCategories.slice(0, 8).map((cat) => {
-                      const isActive = categoryId === cat._id;
-                      return (
-                        <button
-                          key={cat._id}
-                          type="button"
-                          aria-pressed={isActive}
-                          aria-label={cat.name}
-                          onClick={() => setCategoryId(isActive ? "" : cat._id)}
-                          className="flex flex-col items-center gap-1.5 py-3 px-1 transition-all active:scale-95"
-                          style={{
-                            borderRadius: 14,
-                            background: isActive
-                              ? "color-mix(in oklch, var(--os-lime) 14%, var(--surface))"
-                              : "var(--surface-2)",
-                            border: isActive
-                              ? "1.5px solid var(--os-lime)"
-                              : "1.5px solid transparent",
-                            transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-                          }}
-                        >
+                  </Label>
+                  <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+                    <SelectTrigger id="edit-category" className="w-full" style={{ background: "var(--surface-2)" }}>
+                      {categoryId ? (
+                        (() => {
+                          const cat = filteredCategories.find((c) => c._id === categoryId);
+                          return cat ? (
+                            <span className="flex items-center gap-2 min-w-0">
+                              <CategoryIcon
+                                name={cat.icon}
+                                aria-hidden
+                                className="h-4 w-4 shrink-0"
+                                style={{ color: cat.color }}
+                                strokeWidth={1.8}
+                              />
+                              <span className="truncate">{cat.name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Sin categoría</span>
+                          );
+                        })()
+                      ) : (
+                        <span className="text-muted-foreground">Sin categoría</span>
+                      )}
+                    </SelectTrigger>
+                    <SelectContent side="bottom">
+                      <SelectItem value="">Sin categoría</SelectItem>
+                      {filteredCategories.map((cat) => (
+                        <SelectItem key={cat._id} value={cat._id}>
                           <CategoryIcon
                             name={cat.icon}
-                            aria-hidden="true"
-                            className="h-[20px] w-[20px]"
-                            style={{ color: isActive ? "var(--os-lime)" : cat.color }}
+                            aria-hidden
+                            className="h-[16px] w-[16px] shrink-0"
+                            style={{ color: cat.color }}
                             strokeWidth={1.8}
                           />
-                          <span
-                            aria-hidden="true"
-                            className="text-[10px] font-semibold leading-tight text-center"
-                            style={{
-                              color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
-                            }}
-                          >
-                            {cat.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>

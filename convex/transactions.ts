@@ -344,14 +344,18 @@ export const update = mutation({
   args: {
     transactionId: v.id("transactions"),
     description: v.optional(v.string()),
-    categoryId: v.optional(v.id("categories")),
-    notes: v.optional(v.string()),
-    tags: v.optional(v.array(v.string())),
-    date: v.optional(v.number()),
+    amount:       v.optional(v.number()),
+    categoryId:   v.optional(v.id("categories")),
+    notes:        v.optional(v.string()),
+    tags:         v.optional(v.array(v.string())),
+    date:         v.optional(v.number()),
   },
   handler: async (ctx, { transactionId, ...fields }) => {
     if (fields.description !== undefined && (fields.description.length === 0 || fields.description.length > 200)) {
       throw new Error("La descripción debe tener entre 1 y 200 caracteres");
+    }
+    if (fields.amount !== undefined && (fields.amount <= 0 || !Number.isFinite(fields.amount) || fields.amount > 9_999_999_999)) {
+      throw new Error("El monto debe ser mayor que cero");
     }
     if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
 
@@ -361,29 +365,46 @@ export const update = mutation({
       throw new Error("Transacción no encontrada");
     }
 
+    const newAmount   = fields.amount      ?? tx.amount;
+    const newMonth    = fields.date        ? toMonthString(fields.date) : tx.month;
+    const newCategory = fields.categoryId !== undefined ? fields.categoryId : tx.categoryId;
+
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     if (fields.description !== undefined) patch.description = fields.description;
-    if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
-    if (fields.notes !== undefined) patch.notes = fields.notes;
-    if (fields.tags !== undefined) patch.tags = fields.tags;
-    if (fields.date !== undefined) {
-      patch.date = fields.date;
-      patch.month = toMonthString(fields.date);
+    if (fields.categoryId  !== undefined) patch.categoryId  = fields.categoryId;
+    if (fields.notes       !== undefined) patch.notes       = fields.notes;
+    if (fields.tags        !== undefined) patch.tags        = fields.tags;
+    if (fields.amount      !== undefined) patch.amount      = fields.amount;
+    if (fields.date        !== undefined) {
+      patch.date  = fields.date;
+      patch.month = newMonth;
     }
 
-    // Recalcular budget.spent cuando cambia categoría o mes en un gasto
-    if (tx.type === "gasto") {
-      const newMonth = fields.date ? toMonthString(fields.date) : tx.month;
-      const categoryChanged = fields.categoryId !== undefined && fields.categoryId !== tx.categoryId;
-      const monthChanged = fields.date !== undefined && newMonth !== tx.month;
+    // Ajustar saldo de cuenta si cambió el monto
+    if (fields.amount !== undefined && fields.amount !== tx.amount && tx.accountId) {
+      const accountDelta = tx.type === "ingreso"
+        ? newAmount - tx.amount           // ingreso: acreditar la diferencia
+        : -(newAmount - tx.amount);       // gasto: debitar la diferencia
+      await applyAccountDelta(ctx, tx.accountId, accountDelta);
+    }
 
-      if (categoryChanged || monthChanged) {
+    // Ajustar balance de tarjeta si cambió el monto (solo gastos)
+    if (fields.amount !== undefined && fields.amount !== tx.amount && tx.cardId && tx.type === "gasto") {
+      await applyCardDelta(ctx, tx.cardId, newAmount - tx.amount);
+    }
+
+    // Recalcular budget.spent: revertir vieja contribución y aplicar nueva
+    if (tx.type === "gasto") {
+      const amountChanged   = newAmount   !== tx.amount;
+      const categoryChanged = newCategory !== tx.categoryId;
+      const monthChanged    = newMonth    !== tx.month;
+
+      if (amountChanged || categoryChanged || monthChanged) {
         if (tx.categoryId) {
           await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount);
         }
-        const newCategoryId = fields.categoryId ?? tx.categoryId;
-        if (newCategoryId) {
-          await applyBudgetDelta(ctx, tx.userId, newCategoryId, newMonth, tx.amount);
+        if (newCategory) {
+          await applyBudgetDelta(ctx, tx.userId, newCategory, newMonth, newAmount);
         }
       }
     }
