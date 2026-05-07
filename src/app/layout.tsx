@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkThemeProvider } from "@/components/providers/ClerkThemeProvider";
 import { ConvexClientProvider } from "@/components/providers/ConvexClientProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { SWRegistration } from "@/components/SWRegistration";
 import "./globals.css";
 
 const geist = Geist({
@@ -44,6 +45,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon.svg" />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased">
+        <SWRegistration />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <ClerkThemeProvider>
             <ConvexClientProvider>{children}</ConvexClientProvider>

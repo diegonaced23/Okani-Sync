@@ -14,29 +14,17 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait-primary",
     icons: [
       {
-        src: "/icons/icon-192x192.png",
-        sizes: "192x192",
-        type: "image/png",
+        src: "/icons/placeholder.svg",
+        sizes: "any",
+        type: "image/svg+xml",
         purpose: "any",
-      },
-      {
-        src: "/icons/icon-512x512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "any",
-      },
-      {
-        src: "/icons/icon-maskable-512x512.png",
-        sizes: "512x512",
-        type: "image/png",
-        purpose: "maskable",
       },
     ],
     shortcuts: [
       {
         name: "Nueva transacción",
         url: "/transacciones?nuevo=true",
-        icons: [{ src: "/icons/icon-192x192.png", sizes: "192x192" }],
+        icons: [{ src: "/icons/placeholder.svg", sizes: "any" }],
       },
     ],
   };
