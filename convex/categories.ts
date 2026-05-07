@@ -1,5 +1,8 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 
 export const list = query({
@@ -114,3 +117,190 @@ export const reorder = mutation({
     }
   },
 });
+
+export const listArchived = query({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const results = await ctx.db
+      .query("categories")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", clerkId).eq("archived", true)
+      )
+      .collect();
+    return results;
+  },
+});
+
+export const transactionCount = query({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const cat = await ctx.db.get(categoryId);
+    if (!cat || cat.userId !== clerkId) return 0;
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_category_month", (q) =>
+        q.eq("userId", clerkId).eq("categoryId", categoryId)
+      )
+      .take(501);
+    return txs.length;
+  },
+});
+
+export const remove = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    const user = await getCurrentUser(ctx);
+    const cat = await ctx.db.get(categoryId);
+    if (!cat || cat.userId !== user.clerkId) throw new Error("Categoría no encontrada");
+    if (!cat.archived) throw new Error("Solo se pueden eliminar categorías archivadas");
+
+    const existingTx = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_category_month", (q) =>
+        q.eq("userId", user.clerkId).eq("categoryId", categoryId)
+      )
+      .take(1);
+    if (existingTx.length > 0) {
+      throw new Error("La categoría tiene transacciones — migrá los movimientos antes de eliminar");
+    }
+
+    const now = Date.now();
+
+    // Desvincula transacciones recurrentes
+    const recurrings = await ctx.db
+      .query("recurringTransactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .filter((q) => q.eq(q.field("categoryId"), categoryId))
+      .collect();
+    for (const rt of recurrings) {
+      await ctx.db.patch(rt._id, { categoryId: undefined, updatedAt: now });
+    }
+
+    // Elimina presupuestos asociados
+    const budgets = await ctx.db
+      .query("budgets")
+      .withIndex("by_user_category_month", (q) =>
+        q.eq("userId", user.clerkId).eq("categoryId", categoryId)
+      )
+      .collect();
+    for (const budget of budgets) {
+      await ctx.db.delete(budget._id);
+    }
+
+    await ctx.db.delete(categoryId);
+  },
+});
+
+type CategoryType = "ingreso" | "gasto" | "ambos";
+
+function isTypeCompatible(sourceType: CategoryType, targetType: CategoryType): boolean {
+  if (sourceType === "ambos") return true;
+  return targetType === sourceType || targetType === "ambos";
+}
+
+export const migrateAndDelete = mutation({
+  args: {
+    categoryId: v.id("categories"),
+    targetCategoryId: v.id("categories"),
+  },
+  handler: async (ctx, { categoryId, targetCategoryId }) => {
+    const user = await getCurrentUser(ctx);
+    const cat = await ctx.db.get(categoryId);
+    if (!cat || cat.userId !== user.clerkId) throw new Error("Categoría no encontrada");
+    if (!cat.archived) throw new Error("Solo se pueden eliminar categorías archivadas");
+    if (categoryId === targetCategoryId) throw new Error("La categoría destino debe ser diferente");
+
+    const targetCat = await ctx.db.get(targetCategoryId);
+    if (!targetCat || targetCat.userId !== user.clerkId || targetCat.archived) {
+      throw new Error("Categoría destino no válida");
+    }
+    if (!isTypeCompatible(cat.type, targetCat.type)) {
+      throw new Error("El tipo de la categoría destino no es compatible");
+    }
+
+    const now = Date.now();
+    const txBatch = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_category_month", (q) =>
+        q.eq("userId", user.clerkId).eq("categoryId", categoryId)
+      )
+      .take(100);
+
+    for (const tx of txBatch) {
+      await ctx.db.patch(tx._id, { categoryId: targetCategoryId, updatedAt: now });
+    }
+
+    if (txBatch.length === 100) {
+      await ctx.scheduler.runAfter(0, internal.categories.continueMigrate, {
+        categoryId,
+        targetCategoryId,
+        userId: user.clerkId,
+      });
+      return { willContinue: true };
+    }
+
+    await _cleanup(ctx, categoryId, targetCategoryId, user.clerkId, now);
+    return { willContinue: false };
+  },
+});
+
+export const continueMigrate = internalMutation({
+  args: {
+    categoryId: v.id("categories"),
+    targetCategoryId: v.id("categories"),
+    userId: v.string(),
+  },
+  handler: async (ctx, { categoryId, targetCategoryId, userId }) => {
+    const now = Date.now();
+    const txBatch = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_category_month", (q) =>
+        q.eq("userId", userId).eq("categoryId", categoryId)
+      )
+      .take(100);
+
+    for (const tx of txBatch) {
+      await ctx.db.patch(tx._id, { categoryId: targetCategoryId, updatedAt: now });
+    }
+
+    if (txBatch.length === 100) {
+      await ctx.scheduler.runAfter(0, internal.categories.continueMigrate, {
+        categoryId, targetCategoryId, userId,
+      });
+      return;
+    }
+
+    await _cleanup(ctx, categoryId, targetCategoryId, userId, now);
+  },
+});
+
+async function _cleanup(
+  ctx: MutationCtx,
+  categoryId: Id<"categories">,
+  targetCategoryId: Id<"categories">,
+  userId: string,
+  now: number
+) {
+  const recurrings = await ctx.db
+    .query("recurringTransactions")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .filter((q) => q.eq(q.field("categoryId"), categoryId))
+    .collect();
+  for (const rt of recurrings) {
+    await ctx.db.patch(rt._id, { categoryId: targetCategoryId, updatedAt: now });
+  }
+
+  const budgets = await ctx.db
+    .query("budgets")
+    .withIndex("by_user_category_month", (q) =>
+      q.eq("userId", userId).eq("categoryId", categoryId)
+    )
+    .collect();
+  for (const budget of budgets) {
+    await ctx.db.delete(budget._id);
+  }
+
+  await ctx.db.delete(categoryId);
+}

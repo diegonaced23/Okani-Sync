@@ -9,7 +9,7 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel,
-  SelectSeparator, SelectTrigger,
+  SelectSeparator, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents } from "@/lib/money";
@@ -191,55 +191,32 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         <DatePicker id="tx-date" value={date} onChange={setDate} required />
       </div>
 
-      {/* ── Categoría — fila scrollable horizontal ────────────────────────── */}
+      {/* ── Categoría — dropdown ──────────────────────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
-          <p id="tx-category-label" className="text-[12px] font-semibold text-foreground mb-2">Categoría</p>
-          <div
-            role="group"
-            aria-labelledby="tx-category-label"
-            className="flex gap-2 overflow-x-auto py-1"
-            style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch", overscrollBehaviorX: "contain" } as React.CSSProperties}
-          >
-            {filteredCategories.map((cat) => {
-              const isActive = categoryId === cat._id;
-              return (
-                <button
-                  key={cat._id}
-                  type="button"
-                  aria-pressed={isActive}
-                  onClick={() => setCategoryId(isActive ? "" : cat._id)}
-                  className="flex-none flex items-center gap-1.5 transition-all active:scale-95"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    whiteSpace: "nowrap",
-                    background: isActive
-                      ? "color-mix(in oklch, var(--os-lime) 14%, var(--surface))"
-                      : "var(--surface-2)",
-                    border: isActive
-                      ? "1.5px solid var(--os-lime)"
-                      : "1.5px solid transparent",
-                    transition: "all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-                  }}
-                >
+          <Label htmlFor="tx-category" className="text-[12px] font-semibold text-foreground mb-2 block">
+            Categoría
+          </Label>
+          <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+            <SelectTrigger id="tx-category" className="w-full" style={{ background: "var(--surface-2)" }}>
+              <SelectValue placeholder="Sin categoría" />
+            </SelectTrigger>
+            <SelectContent side="bottom">
+              <SelectItem value="">Sin categoría</SelectItem>
+              {filteredCategories.map((cat) => (
+                <SelectItem key={cat._id} value={cat._id}>
                   <CategoryIcon
                     name={cat.icon}
                     aria-hidden
                     className="h-[16px] w-[16px] shrink-0"
-                    style={{ color: isActive ? "var(--os-lime)" : cat.color }}
+                    style={{ color: cat.color }}
                     strokeWidth={1.8}
                   />
-                  <span
-                    className="text-[12px] font-semibold"
-                    style={{ color: isActive ? "var(--foreground)" : "var(--muted-foreground)" }}
-                  >
-                    {cat.name}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 

@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useState, useEffect, useRef } from "react";
 import { Reorder, useDragControls } from "framer-motion";
-import { Plus, Archive, Pencil, GripVertical } from "lucide-react";
+import { Plus, Archive, Pencil, GripVertical, Trash2, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AppSheet } from "@/components/ui/app-sheet";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
@@ -36,6 +35,11 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type CategoryType = "ingreso" | "gasto" | "ambos";
+
+function isTypeCompatible(sourceType: CategoryType, targetType: CategoryType): boolean {
+  if (sourceType === "ambos") return true;
+  return targetType === sourceType || targetType === "ambos";
+}
 
 // ─── Pickers ──────────────────────────────────────────────────────────────────
 
@@ -97,7 +101,7 @@ function IconPicker({
   );
 }
 
-// ─── Fila ordenable ───────────────────────────────────────────────────────────
+// ─── Fila ordenable (activas) ─────────────────────────────────────────────────
 
 function SortableCategoryRow({
   cat,
@@ -128,7 +132,6 @@ function SortableCategoryRow({
         zIndex: 50,
       }}
     >
-      {/* Handle de arrastre */}
       <button
         type="button"
         aria-label="Arrastrar para reordenar"
@@ -138,7 +141,6 @@ function SortableCategoryRow({
         <GripVertical className="h-4 w-4" />
       </button>
 
-      {/* Ícono con color */}
       <span
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
         style={{ backgroundColor: cat.color + "33", color: cat.color }}
@@ -146,12 +148,7 @@ function SortableCategoryRow({
         <CategoryIcon name={cat.icon} className="h-4 w-4" />
       </span>
 
-      {/* Nombre */}
       <span className="flex-1 text-sm font-medium text-foreground truncate">{cat.name}</span>
-
-      {cat.isDefault && (
-        <Badge variant="secondary" className="text-[10px] shrink-0">Sistema</Badge>
-      )}
 
       <div className="flex items-center gap-0.5 shrink-0">
         <button
@@ -175,6 +172,247 @@ function SortableCategoryRow({
   );
 }
 
+// ─── Fila archivada ───────────────────────────────────────────────────────────
+
+function ArchivedCategoryRow({
+  cat,
+  onDelete,
+}: {
+  cat: Doc<"categories">;
+  onDelete: () => void;
+}) {
+  return (
+    <li className="flex items-center gap-3 py-2.5 px-4 bg-card border-b border-border last:border-b-0">
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full opacity-60"
+        style={{ backgroundColor: cat.color + "33", color: cat.color }}
+      >
+        <CategoryIcon name={cat.icon} className="h-4 w-4" />
+      </span>
+
+      <span className="flex-1 text-sm font-medium text-muted-foreground truncate">{cat.name}</span>
+
+      <span className="text-[10px] text-muted-foreground/60 shrink-0 capitalize">
+        {cat.type === "ambos" ? "ambos" : cat.type}
+      </span>
+
+      <button
+        type="button"
+        onClick={onDelete}
+        className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger shrink-0"
+        aria-label="Eliminar categoría"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </li>
+  );
+}
+
+// ─── Flujo de eliminación ─────────────────────────────────────────────────────
+
+function DeleteCategoryFlow({
+  deletingCat,
+  txCount,
+  activeCategories,
+  onClose,
+  onRemove,
+  onMigrate,
+}: {
+  deletingCat: Doc<"categories"> | null;
+  txCount: number | undefined;
+  activeCategories: Doc<"categories">[];
+  onClose: () => void;
+  onRemove: () => Promise<void>;
+  onMigrate: (targetId: Id<"categories">) => Promise<void>;
+}) {
+  const [confirmName, setConfirmName] = useState("");
+  const [migrationTarget, setMigrationTarget] = useState<string>("");
+  const [migrationStep, setMigrationStep] = useState<"select" | "confirm">("select");
+  const [loading, setLoading] = useState(false);
+
+  // Resetear estado al cambiar categoría
+  useEffect(() => {
+    setConfirmName("");
+    setMigrationTarget("");
+    setMigrationStep("select");
+    setLoading(false);
+  }, [deletingCat?._id]);
+
+  const isOpen = deletingCat !== null;
+  const catName = deletingCat?.name ?? "";
+  const catType = deletingCat?.type as CategoryType | undefined;
+  const countLabel = txCount === 501 ? "más de 500" : String(txCount ?? 0);
+
+  const compatibleTargets = catType
+    ? activeCategories.filter(
+        (c) => c._id !== deletingCat?._id && isTypeCompatible(catType, c.type as CategoryType)
+      )
+    : [];
+
+  const targetCat = compatibleTargets.find((c) => c._id === migrationTarget);
+
+  async function handleRemove() {
+    setLoading(true);
+    try {
+      await onRemove();
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMigrate() {
+    if (!migrationTarget) return;
+    setLoading(true);
+    try {
+      await onMigrate(migrationTarget as Id<"categories">);
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AppSheet
+      open={isOpen}
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title={
+        txCount === undefined
+          ? "Eliminar categoría"
+          : txCount === 0
+          ? "Eliminar categoría"
+          : "Categoría con movimientos"
+      }
+    >
+      {/* Loading */}
+      {txCount === undefined && (
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-2/3" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      )}
+
+      {/* Sin transacciones → confirmar con nombre */}
+      {txCount === 0 && (
+        <div className="space-y-5">
+          <div className="flex items-start gap-3 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <p className="text-sm text-destructive">
+              Esta acción es <strong>irreversible</strong>. Una vez eliminada, la categoría no se puede recuperar.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-name">
+              Escribí <strong>{catName}</strong> para confirmar
+            </Label>
+            <Input
+              id="confirm-name"
+              placeholder={catName}
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+
+          <Button
+            variant="destructive"
+            className="w-full"
+            disabled={loading || confirmName !== catName}
+            onClick={handleRemove}
+          >
+            {loading ? "Eliminando…" : "Eliminar categoría"}
+          </Button>
+        </div>
+      )}
+
+      {/* Con transacciones → migrar */}
+      {txCount !== undefined && txCount > 0 && (
+        <div className="space-y-5">
+          {migrationStep === "select" && (
+            <>
+              <div className="rounded-lg bg-muted px-4 py-3 space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  <strong className="text-foreground">{catName}</strong> tiene{" "}
+                  <strong className="text-foreground">{countLabel} movimientos</strong>.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Antes de eliminarla, migrá los movimientos a otra categoría.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Categoría destino</Label>
+                <Select value={migrationTarget} onValueChange={(v) => { if (v) setMigrationTarget(v); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccioná una categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {compatibleTargets.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full"
+                            style={{ backgroundColor: c.color + "33", color: c.color }}
+                          >
+                            <CategoryIcon name={c.icon} className="h-2.5 w-2.5" />
+                          </span>
+                          {c.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                className="w-full"
+                disabled={!migrationTarget}
+                onClick={() => setMigrationStep("confirm")}
+              >
+                Migrar
+              </Button>
+            </>
+          )}
+
+          {migrationStep === "confirm" && targetCat && (
+            <>
+              <div className="flex items-start gap-3 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3">
+                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                <p className="text-sm text-destructive">
+                  Se migrarán <strong>{countLabel} movimientos</strong> a{" "}
+                  <strong>{targetCat.name}</strong> y la categoría{" "}
+                  <strong>{catName}</strong> se eliminará automáticamente.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="destructive"
+                  className="w-full"
+                  disabled={loading}
+                  onClick={handleMigrate}
+                >
+                  {loading ? "Migrando…" : "Confirmar y eliminar"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  disabled={loading}
+                  onClick={() => setMigrationStep("select")}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </AppSheet>
+  );
+}
+
 // ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function CategoriasPage() {
@@ -183,6 +421,8 @@ export default function CategoriasPage() {
   const updateCategory = useMutation(api.categories.update);
   const archiveCategory = useMutation(api.categories.archive);
   const reorderCategories = useMutation(api.categories.reorder);
+  const removeCategory = useMutation(api.categories.remove);
+  const migrateAndDeleteMutation = useMutation(api.categories.migrateAndDelete);
 
   // ── Estado formulario creación ────────────────────────────────────────────
   const [createOpen, setCreateOpen] = useState(false);
@@ -202,15 +442,26 @@ export default function CategoriasPage() {
   // ── Estado confirmación archivo ───────────────────────────────────────────
   const [archivingCat, setArchivingCat] = useState<Doc<"categories"> | null>(null);
 
+  // ── Estado archivadas ─────────────────────────────────────────────────────
+  const [showArchived, setShowArchived] = useState(false);
+  const [deletingCat, setDeletingCat] = useState<Doc<"categories"> | null>(null);
+
+  const archivedCategories = useQuery(
+    api.categories.listArchived,
+    showArchived ? {} : "skip"
+  );
+  const txCount = useQuery(
+    api.categories.transactionCount,
+    deletingCat ? { categoryId: deletingCat._id } : "skip"
+  );
+
   // ── Estado local para reordenamiento optimista ────────────────────────────
   const [gastosItems, setGastosItems] = useState<Doc<"categories">[]>([]);
   const [ingresosItems, setIngresosItems] = useState<Doc<"categories">[]>([]);
 
-  // Refs para leer el orden más reciente dentro de los event handlers de drag
   const gastosRef = useRef<Doc<"categories">[]>([]);
   const ingresosRef = useRef<Doc<"categories">[]>([]);
 
-  // Sincroniza el estado cuando Convex actualiza (patrón "update during rendering")
   const [prevCategories, setPrevCategories] = useState(categories);
   if (categories !== prevCategories) {
     setPrevCategories(categories);
@@ -221,7 +472,6 @@ export default function CategoriasPage() {
     }
   }
 
-  // Mantiene refs sincronizados con el estado para los event handlers de drag
   useEffect(() => { gastosRef.current = gastosItems; }, [gastosItems]);
   useEffect(() => { ingresosRef.current = ingresosItems; }, [ingresosItems]);
 
@@ -284,6 +534,25 @@ export default function CategoriasPage() {
     reorderCategories({
       categoryIds: sectionRef.current.map((c) => c._id),
     }).catch(() => toast.error("Error al guardar el orden"));
+  }
+
+  async function handleRemove() {
+    if (!deletingCat) return;
+    await removeCategory({ categoryId: deletingCat._id });
+    toast.success("Categoría eliminada");
+  }
+
+  async function handleMigrateAndDelete(targetId: Id<"categories">) {
+    if (!deletingCat) return;
+    const result = await migrateAndDeleteMutation({
+      categoryId: deletingCat._id,
+      targetCategoryId: targetId,
+    });
+    if (result?.willContinue) {
+      toast.success("Migrando movimientos…");
+    } else {
+      toast.success("Movimientos migrados y categoría eliminada");
+    }
   }
 
   const isLoading = categories === undefined;
@@ -448,16 +717,59 @@ export default function CategoriasPage() {
               ))}
             </Reorder.Group>
           </section>
+
+          {/* Toggle archivadas */}
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            className="flex w-full items-center gap-2 px-1 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showArchived ? (
+              <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="font-medium">
+              Archivadas
+              {archivedCategories !== undefined && ` (${archivedCategories.length})`}
+            </span>
+          </button>
+
+          {/* Sección archivadas */}
+          {showArchived && (
+            <section className="rounded-xl bg-card border border-border">
+              {archivedCategories === undefined ? (
+                <div className="p-4 space-y-2">
+                  {[1, 2].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+                </div>
+              ) : archivedCategories.length === 0 ? (
+                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  No hay categorías archivadas
+                </p>
+              ) : (
+                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                  {archivedCategories.map((cat) => (
+                    <ArchivedCategoryRow
+                      key={cat._id}
+                      cat={cat}
+                      onDelete={() => setDeletingCat(cat)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </>
       )}
 
+      {/* Diálogo de confirmación de archivo */}
       <AlertDialog open={archivingCat !== null} onOpenChange={(open) => { if (!open) setArchivingCat(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Archivar categoría</AlertDialogTitle>
             <AlertDialogDescription>
               {archivingCat?.isDefault
-                ? "Esta categoría del sistema dejará de aparecer en tus selects."
+                ? "Esta categoría dejará de aparecer en los selectores."
                 : `¿Archivar "${archivingCat?.name}"?`}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -469,6 +781,16 @@ export default function CategoriasPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Flujo de eliminación */}
+      <DeleteCategoryFlow
+        deletingCat={deletingCat}
+        txCount={txCount}
+        activeCategories={categories ?? []}
+        onClose={() => setDeletingCat(null)}
+        onRemove={handleRemove}
+        onMigrate={handleMigrateAndDelete}
+      />
     </div>
   );
 }

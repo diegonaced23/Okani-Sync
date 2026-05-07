@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,9 @@ interface BalanceReassignFormProps {
 }
 
 export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormProps) {
+  const hasTx = useQuery(api.accounts.hasTransactions, { accountId: account._id });
   const reassign = useMutation(api.accounts.reassignBalance);
+  const correct = useMutation(api.accounts.correctBalance);
   const [newBalanceStr, setNewBalanceStr] = useState(String(fromCents(account.balance)));
   const [loading, setLoading] = useState(false);
 
@@ -25,6 +27,7 @@ export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormP
   const isValid = Number.isInteger(newBalanceCents) && newBalanceCents >= 0;
   const delta = isValid ? newBalanceCents - account.balance : 0;
   const isNoOp = isValid && delta === 0;
+  const isReady = hasTx !== undefined;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,20 +41,24 @@ export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormP
     }
     setLoading(true);
     try {
-      const result = await reassign({
-        accountId: account._id,
-        newBalance: newBalanceCents,
-      });
-      if (result.adjusted) {
-        toast.success(
-          delta > 0
-            ? `Saldo ajustado +${formatCents(Math.abs(delta), account.currency)}`
-            : `Saldo ajustado −${formatCents(Math.abs(delta), account.currency)}`
-        );
+      if (hasTx) {
+        const result = await reassign({ accountId: account._id, newBalance: newBalanceCents });
+        if (result.adjusted) {
+          toast.success(
+            delta > 0
+              ? `Saldo ajustado +${formatCents(Math.abs(delta), account.currency)}`
+              : `Saldo ajustado −${formatCents(Math.abs(delta), account.currency)}`
+          );
+        }
+      } else {
+        const result = await correct({ accountId: account._id, newBalance: newBalanceCents });
+        if (result.corrected) {
+          toast.success(`Saldo corregido a ${formatCents(newBalanceCents, account.currency)}`);
+        }
       }
       onSuccess?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al reasignar saldo");
+      toast.error(err instanceof Error ? err.message : "Error al actualizar saldo");
     } finally {
       setLoading(false);
     }
@@ -70,7 +77,8 @@ export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormP
 
       <div className="space-y-1.5">
         <Label htmlFor="new-balance">
-          Nuevo saldo <span aria-hidden="true" className="text-danger">*</span>
+          {hasTx ? "Nuevo saldo" : "Corregir saldo"}{" "}
+          <span aria-hidden="true" className="text-danger">*</span>
         </Label>
         <MoneyInput
           id="new-balance"
@@ -80,7 +88,7 @@ export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormP
         />
       </div>
 
-      {isValid && !isNoOp && (
+      {isValid && !isNoOp && isReady && (
         <div
           className="rounded-lg border px-4 py-3 text-sm"
           style={{
@@ -92,13 +100,17 @@ export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormP
               : "color-mix(in oklch, var(--os-magenta) 10%, transparent)",
           }}
         >
-          <p className="text-muted-foreground text-xs mb-1">Se registrará un movimiento</p>
+          <p className="text-muted-foreground text-xs mb-1">
+            {hasTx ? "Se registrará un movimiento" : "Sin transacciones · corrección directa"}
+          </p>
           <p className="font-bold tabular" style={{
             color: delta > 0 ? "var(--os-lime)" : "var(--os-magenta)",
           }}>
             {delta > 0 ? "+" : "−"}{formatCents(Math.abs(delta), account.currency)}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">Reasignación bancaria</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {hasTx ? "Reasignación bancaria" : "No se generará ningún registro"}
+          </p>
         </div>
       )}
 
@@ -106,8 +118,8 @@ export function BalanceReassignForm({ account, onSuccess }: BalanceReassignFormP
         <p className="text-sm text-muted-foreground text-center">Sin cambios en el saldo</p>
       )}
 
-      <Button type="submit" className="w-full" disabled={loading || !isValid || isNoOp}>
-        {loading ? "Aplicando…" : "Confirmar ajuste"}
+      <Button type="submit" className="w-full" disabled={loading || !isValid || isNoOp || !isReady}>
+        {loading ? "Aplicando…" : hasTx ? "Confirmar ajuste" : "Corregir saldo"}
       </Button>
     </form>
   );

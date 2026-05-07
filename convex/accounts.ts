@@ -359,6 +359,73 @@ export const reassignBalance = mutation({
   },
 });
 
+/** Retorna true si la cuenta tiene al menos una transacción registrada. */
+export const hasTransactions = query({
+  args: { accountId: v.id("accounts") },
+  handler: async (ctx, { accountId }) => {
+    await assertIsOwner(ctx, accountId);
+    const tx = await ctx.db
+      .query("transactions")
+      .withIndex("by_account", (q) => q.eq("accountId", accountId))
+      .take(1);
+    return tx.length > 0;
+  },
+});
+
+/**
+ * Corrige directamente el saldo de una cuenta sin transacciones.
+ * Actualiza `balance` e `initialBalance` sin generar ningún registro.
+ * Falla si la cuenta ya tiene transacciones — usar `reassignBalance` en ese caso.
+ */
+export const correctBalance = mutation({
+  args: {
+    accountId: v.id("accounts"),
+    newBalance: v.number(),
+  },
+  handler: async (ctx, { accountId, newBalance }) => {
+    if (!Number.isInteger(newBalance) || newBalance < 0) {
+      throw new Error("El saldo debe ser un entero mayor o igual a cero");
+    }
+    if (newBalance > 9_999_999_999) {
+      throw new Error("Saldo fuera de rango permitido");
+    }
+
+    await assertIsOwner(ctx, accountId);
+
+    const user = await getCurrentUser(ctx);
+    const account = await ctx.db.get(accountId);
+    if (!account) throw new Error("Cuenta no encontrada");
+    if (account.archived) throw new Error("No se puede corregir una cuenta archivada");
+
+    const existingTx = await ctx.db
+      .query("transactions")
+      .withIndex("by_account", (q) => q.eq("accountId", accountId))
+      .take(1);
+    if (existingTx.length > 0) {
+      throw new Error("La cuenta ya tiene transacciones — usá Ajustar saldo en su lugar");
+    }
+
+    const previousBalance = account.balance;
+    if (newBalance === previousBalance) {
+      return { corrected: false as const };
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(accountId, { balance: newBalance, initialBalance: newBalance, updatedAt: now });
+
+    await ctx.db.insert("auditLogs", {
+      userId: user.clerkId,
+      action: "account.balance.corrected",
+      entity: "account",
+      entityId: accountId,
+      metadata: { previousBalance, newBalance },
+      createdAt: now,
+    });
+
+    return { corrected: true as const };
+  },
+});
+
 // Incluye o excluye una cuenta propia del cálculo de patrimonio total.
 // Las cuentas compartidas no son modificables por el que las recibe.
 export const toggleBalanceInclusion = mutation({
