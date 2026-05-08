@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { ClerkThemeProvider } from "@/components/providers/ClerkThemeProvider";
 import { ConvexClientProvider } from "@/components/providers/ConvexClientProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
@@ -46,6 +47,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-background font-sans antialiased">
         <SWRegistration />
+        <SpeedInsights />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <ClerkThemeProvider>
             <ConvexClientProvider>{children}</ConvexClientProvider>
