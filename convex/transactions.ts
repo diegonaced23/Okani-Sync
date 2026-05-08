@@ -343,12 +343,14 @@ export const create = mutation({
 export const update = mutation({
   args: {
     transactionId: v.id("transactions"),
-    description: v.optional(v.string()),
-    amount:       v.optional(v.number()),
-    categoryId:   v.optional(v.id("categories")),
-    notes:        v.optional(v.string()),
-    tags:         v.optional(v.array(v.string())),
-    date:         v.optional(v.number()),
+    description:   v.optional(v.string()),
+    amount:        v.optional(v.number()),
+    accountId:     v.optional(v.id("accounts")),
+    cardId:        v.optional(v.id("cards")),
+    categoryId:    v.optional(v.id("categories")),
+    notes:         v.optional(v.string()),
+    tags:          v.optional(v.array(v.string())),
+    date:          v.optional(v.number()),
   },
   handler: async (ctx, { transactionId, ...fields }) => {
     if (fields.description !== undefined && (fields.description.length === 0 || fields.description.length > 200)) {
@@ -358,11 +360,39 @@ export const update = mutation({
       throw new Error("El monto debe ser mayor que cero");
     }
     if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+    if (fields.accountId !== undefined && fields.cardId !== undefined) {
+      throw new Error("Una transacción no puede asociarse a cuenta y tarjeta al mismo tiempo");
+    }
 
     const user = await getCurrentUser(ctx);
     const tx = await ctx.db.get(transactionId);
-    if (!tx || tx.userId !== user.clerkId) {
-      throw new Error("Transacción no encontrada");
+    if (!tx || tx.userId !== user.clerkId) throw new Error("Transacción no encontrada");
+
+    // Derivar nueva fuente (exclusión mutua: si llega uno, el otro se borra)
+    const changingToAccount = fields.accountId !== undefined;
+    const changingToCard    = fields.cardId    !== undefined;
+    const newAccountId = changingToAccount ? fields.accountId
+                       : changingToCard    ? undefined
+                       : tx.accountId;
+    const newCardId    = changingToCard    ? fields.cardId
+                       : changingToAccount ? undefined
+                       : tx.cardId;
+
+    // Validar currency de la nueva fuente
+    if (newAccountId && newAccountId !== tx.accountId) {
+      const acct = await ctx.db.get(newAccountId);
+      if (!acct) throw new Error("Cuenta no encontrada");
+      if (acct.currency !== tx.currency) {
+        throw new Error(`La cuenta "${acct.name}" usa ${acct.currency} pero la transacción es en ${tx.currency}`);
+      }
+      await assertCanWrite(ctx, newAccountId);
+    }
+    if (newCardId && newCardId !== tx.cardId) {
+      const card = await ctx.db.get(newCardId);
+      if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+      if (card.currency !== tx.currency) {
+        throw new Error(`La tarjeta "${card.name}" usa ${card.currency} pero la transacción es en ${tx.currency}`);
+      }
     }
 
     const newAmount   = fields.amount      ?? tx.amount;
@@ -375,27 +405,33 @@ export const update = mutation({
     if (fields.notes       !== undefined) patch.notes       = fields.notes;
     if (fields.tags        !== undefined) patch.tags        = fields.tags;
     if (fields.amount      !== undefined) patch.amount      = fields.amount;
-    if (fields.date        !== undefined) {
-      patch.date  = fields.date;
-      patch.month = newMonth;
-    }
+    if (fields.date        !== undefined) { patch.date = fields.date; patch.month = newMonth; }
+    if (changingToAccount) { patch.accountId = newAccountId; patch.cardId = undefined; }
+    if (changingToCard)    { patch.cardId    = newCardId;    patch.accountId = undefined; }
 
-    // Ajustar saldo de cuenta si cambió el monto
-    if (fields.amount !== undefined && fields.amount !== tx.amount && tx.accountId) {
-      const accountDelta = tx.type === "ingreso"
-        ? newAmount - tx.amount           // ingreso: acreditar la diferencia
-        : -(newAmount - tx.amount);       // gasto: debitar la diferencia
-      await applyAccountDelta(ctx, tx.accountId, accountDelta);
-    }
+    // Ajustar saldos con patrón revert+apply (cubre cambio de fuente, monto, o ambos)
+    const sourceChanged = newAccountId !== tx.accountId || newCardId !== tx.cardId;
+    const amountChanged = newAmount !== tx.amount;
 
-    // Ajustar balance de tarjeta si cambió el monto (solo gastos)
-    if (fields.amount !== undefined && fields.amount !== tx.amount && tx.cardId && tx.type === "gasto") {
-      await applyCardDelta(ctx, tx.cardId, newAmount - tx.amount);
+    if (sourceChanged || amountChanged) {
+      // Revertir impacto en fuente vieja
+      if (tx.accountId) {
+        await applyAccountDelta(ctx, tx.accountId, tx.type === "ingreso" ? -tx.amount : tx.amount);
+      }
+      if (tx.cardId && tx.type === "gasto") {
+        await applyCardDelta(ctx, tx.cardId, -tx.amount);
+      }
+      // Aplicar impacto en fuente nueva
+      if (newAccountId) {
+        await applyAccountDelta(ctx, newAccountId, tx.type === "ingreso" ? newAmount : -newAmount);
+      }
+      if (newCardId && tx.type === "gasto") {
+        await applyCardDelta(ctx, newCardId, newAmount);
+      }
     }
 
     // Recalcular budget.spent: revertir vieja contribución y aplicar nueva
     if (tx.type === "gasto") {
-      const amountChanged   = newAmount   !== tx.amount;
       const categoryChanged = newCategory !== tx.categoryId;
       const monthChanged    = newMonth    !== tx.month;
 

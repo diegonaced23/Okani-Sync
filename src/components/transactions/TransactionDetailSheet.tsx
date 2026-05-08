@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Doc } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { AppSheet } from "@/components/ui/app-sheet";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -15,7 +15,8 @@ import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyInput } from "@/components/ui/money-input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger,
+  Select, SelectContent, SelectGroup, SelectItem,
+  SelectLabel, SelectSeparator, SelectTrigger,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -154,6 +155,7 @@ export function TransactionDetailSheet({
   // Estado del formulario de edición
   const [desc, setDesc]             = useState("");
   const [amount, setAmount]         = useState("");
+  const [sourceId, setSourceId]     = useState("");   // "account:ID" | "card:ID" | ""
   const [date, setDate]             = useState("");
   const [categoryId, setCategoryId] = useState("");
 
@@ -164,6 +166,10 @@ export function TransactionDetailSheet({
     if (tx) {
       setDesc(tx.description);
       setAmount(String(fromCents(tx.amount)));
+      setSourceId(
+        tx.accountId ? `account:${tx.accountId}` :
+        tx.cardId    ? `card:${tx.cardId}`        : ""
+      );
       setDate(new Date(tx.date).toISOString().substring(0, 10));
       setCategoryId(tx.categoryId ?? "");
     }
@@ -185,14 +191,13 @@ export function TransactionDetailSheet({
   const Icon = config.icon;
   const canEdit = EDITABLE_TYPES.has(currentTx.type);
 
-  // Cuenta o tarjeta asociada (para mostrar en edición)
-  const linkedAccount = (accounts ?? []).find((a) => a._id === currentTx.accountId);
-  const linkedCard    = (cards    ?? []).find((c) => c._id === currentTx.cardId);
-  const sourceLabel   = linkedAccount
-    ? `${linkedAccount.name} · ${formatCents(linkedAccount.balance, linkedAccount.currency)}`
-    : linkedCard
-    ? `${linkedCard.name} ····${linkedCard.lastFourDigits}`
-    : null;
+  // Decodificar sourceId para el Select
+  const [sourceKind, sourceRawId] = sourceId.includes(":") ? sourceId.split(":") : ["", ""];
+  const selectedAccount = sourceKind === "account" ? (accounts ?? []).find((a) => a._id === sourceRawId) : undefined;
+  const selectedCard    = sourceKind === "card"    ? (cards    ?? []).find((c) => c._id === sourceRawId) : undefined;
+
+  const accountList = (accounts ?? []).filter((a) => !a.archived);
+  const cardList    = (cards    ?? []).filter((c) => !c.archived);
 
   // Solo mostrar categorías que correspondan al tipo de la transacción
   const filteredCategories = categories.filter(
@@ -216,9 +221,9 @@ export function TransactionDetailSheet({
         amount:      toCents(amountNum),
         description: desc.trim(),
         date:        new Date(date).getTime(),
-        categoryId:  categoryId
-          ? (categoryId as Parameters<typeof updateTx>[0]["categoryId"])
-          : undefined,
+        categoryId:  categoryId ? (categoryId as Id<"categories">) : undefined,
+        accountId:   sourceKind === "account" && sourceRawId ? (sourceRawId as Id<"accounts">) : undefined,
+        cardId:      sourceKind === "card"    && sourceRawId ? (sourceRawId as Id<"cards">)    : undefined,
       });
       toast.success("Movimiento actualizado");
       setEditing(false);
@@ -316,20 +321,51 @@ export function TransactionDetailSheet({
                 </div>
               </div>
 
-              {/* Cuenta o tarjeta (solo display) */}
-              {sourceLabel && (
-                <div>
-                  <p className="text-[12px] font-semibold text-foreground mb-2">
-                    {linkedCard ? "Tarjeta" : "Cuenta"}
-                  </p>
-                  <div
-                    className="flex items-center px-3 h-8 rounded-lg text-sm text-muted-foreground"
-                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-                  >
-                    {sourceLabel}
-                  </div>
-                </div>
-              )}
+              {/* Cuenta o tarjeta — Select editable */}
+              <div>
+                <Label htmlFor="edit-source" className="text-[12px] font-semibold text-foreground mb-2 block">
+                  {currentTx.type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
+                </Label>
+                <Select value={sourceId} onValueChange={(v) => setSourceId(v ?? "")}>
+                  <SelectTrigger id="edit-source" className="w-full" style={{ background: "var(--surface-2)" }}>
+                    <span className="flex-1 text-left text-sm truncate">
+                      {selectedAccount ? (
+                        `${selectedAccount.name} · ${formatCents(selectedAccount.balance, selectedAccount.currency)}`
+                      ) : selectedCard ? (
+                        `${selectedCard.name} ····${selectedCard.lastFourDigits}`
+                      ) : (
+                        <span className="text-muted-foreground">Sin origen</span>
+                      )}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Sin origen</SelectItem>
+                    {accountList.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Cuentas</SelectLabel>
+                        {accountList.map((a) => (
+                          <SelectItem key={a._id} value={`account:${a._id}`}>
+                            {a.name} · {formatCents(a.balance, a.currency)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {currentTx.type === "gasto" && cardList.length > 0 && (
+                      <>
+                        {accountList.length > 0 && <SelectSeparator />}
+                        <SelectGroup>
+                          <SelectLabel>Tarjetas de crédito</SelectLabel>
+                          {cardList.map((c) => (
+                            <SelectItem key={c._id} value={`card:${c._id}`}>
+                              {c.name} ····{c.lastFourDigits}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* Descripción */}
               <div>
