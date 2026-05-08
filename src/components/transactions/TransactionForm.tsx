@@ -154,7 +154,7 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
               )}
             </span>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent alignItemWithTrigger={false} className="max-h-[40vh]">
             <SelectItem value="">Sin origen</SelectItem>
             {accountList.length > 0 && (
               <SelectGroup>
@@ -221,7 +221,7 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
                 <span className="text-muted-foreground">Sin categoría</span>
               )}
             </SelectTrigger>
-            <SelectContent side="bottom">
+            <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[40vh]">
               <SelectItem value="">Sin categoría</SelectItem>
               {filteredCategories.map((cat) => (
                 <SelectItem key={cat._id} value={cat._id}>

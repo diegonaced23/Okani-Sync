@@ -41,7 +41,7 @@ export function AppSheet({
         className={cn(
           isDesktop
             ? "overflow-y-auto overflow-x-hidden sm:max-w-md flex flex-col gap-0"
-            : "max-h-[92dvh] overflow-y-auto overflow-x-hidden rounded-t-[28px] flex flex-col gap-0",
+            : "max-h-[92dvh] overflow-y-auto overflow-x-hidden rounded-t-[28px] flex flex-col gap-0 transition-[max-height] duration-300 ease-out",
           contentClassName
         )}
       >
