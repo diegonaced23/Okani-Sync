@@ -35,8 +35,7 @@ import { PayCardForm } from "@/components/cards/PayCardForm";
 import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
-import { formatCents, currentMonth, toMonthString, toCents, fromCents } from "@/lib/money";
-import { cn } from "@/lib/utils";
+import { formatCents, currentMonth, toCents, fromCents } from "@/lib/money";
 import { toast } from "sonner";
 
 // ─── Formulario inline para editar gastos directos ───────────────────────────
@@ -277,7 +276,6 @@ export default function CardDetailPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [payMode, setPayMode] = useState<"minimo" | "total" | null>(null);
-  const [monthTab, setMonthTab] = useState<"actual" | "anterior">("actual");
 
   // Estado compras
   const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
@@ -296,17 +294,10 @@ export default function CardDetailPage({
   });
   const directTransactions = useQuery(api.transactions.listDirectByCard, { cardId });
   const currMonthStr = currentMonth();
-  const prevMonthStr = toMonthString(
-    new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime()
-  );
 
   const monthInstallments = useQuery(api.cardInstallments.listByCardMonth, {
     cardId,
     month: currMonthStr,
-  });
-  const prevMonthInstallments = useQuery(api.cardInstallments.listByCardMonth, {
-    cardId,
-    month: prevMonthStr,
   });
   const categories = useQuery(api.categories.list, { type: "gasto" });
 
@@ -389,18 +380,6 @@ export default function CardDetailPage({
 
   const unpaidThisMonth = (monthInstallments ?? []).filter((i) => !i.paid);
   const monthlyDue = unpaidThisMonth.reduce((s, i) => s + i.amount, 0);
-
-  const unpaidPrevMonth = (prevMonthInstallments ?? []).filter((i) => !i.paid);
-  const prevMonthDue = unpaidPrevMonth.reduce((s, i) => s + i.amount, 0);
-
-  const activeTabInstallments = monthTab === "actual" ? unpaidThisMonth : unpaidPrevMonth;
-  const activeTabTotal = monthTab === "actual" ? monthlyDue : prevMonthDue;
-  const activeTabMonth = monthTab === "actual" ? currMonthStr : prevMonthStr;
-
-  // Mapa purchaseId → purchase para mostrar descripciones en la lista
-  const purchaseById = Object.fromEntries(
-    (purchases ?? []).map((p) => [p._id, p])
-  );
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -487,126 +466,50 @@ export default function CardDetailPage({
             cardId={cardId}
             currency={card.currency}
             mode={payMode}
-            amount={payMode === "minimo" ? activeTabTotal : card.currentBalance}
-            targetMonth={payMode === "minimo" ? activeTabMonth : undefined}
+            amount={payMode === "minimo" ? monthlyDue : card.currentBalance}
+            targetMonth={payMode === "minimo" ? currMonthStr : undefined}
             onSuccess={() => setPayMode(null)}
           />
         )}
       </AppSheet>
 
-      {/* Bloque de pago con toggles por mes */}
+      {/* Bloque de pago */}
       {card.currentBalance > 0 && (
-        <div className="rounded-xl bg-card border border-border overflow-hidden">
-
-          {/* Tabs mes actual / mes anterior */}
-          <div className="flex border-b border-border">
-            <button
-              type="button"
-              onClick={() => setMonthTab("actual")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors",
-                monthTab === "actual"
-                  ? "text-foreground border-b-2 border-primary"
-                  : "text-muted-foreground hover:bg-muted/40"
-              )}
-            >
-              Mes actual
-              {unpaidThisMonth.length > 0 && (
-                <span className={cn(
-                  "text-[10px] font-semibold rounded-full px-1.5 py-0.5 leading-none",
-                  monthTab === "actual" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                )}>
-                  {unpaidThisMonth.length}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMonthTab("anterior")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors border-l border-border",
-                monthTab === "anterior"
-                  ? "text-foreground border-b-2 border-primary"
-                  : "text-muted-foreground hover:bg-muted/40"
-              )}
-            >
-              Mes anterior
-              {unpaidPrevMonth.length > 0 && (
-                <span className={cn(
-                  "text-[10px] font-semibold rounded-full px-1.5 py-0.5 leading-none",
-                  monthTab === "anterior" ? "bg-danger/15 text-danger" : "bg-danger/10 text-danger"
-                )}>
-                  {unpaidPrevMonth.length}
-                </span>
-              )}
-            </button>
+        <div className="rounded-xl bg-card border border-border p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pago mínimo</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">
+                {formatCents(monthlyDue, card.currency)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {unpaidThisMonth.length} cuota{unpaidThisMonth.length !== 1 ? "s" : ""} de este mes
+              </p>
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pago total</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">
+                {formatCents(card.currentBalance, card.currency)}
+              </p>
+              <p className="text-xs text-muted-foreground">Saldo total de la tarjeta</p>
+            </div>
           </div>
-
-          {/* Lista de movimientos del mes seleccionado */}
-          {(monthInstallments === undefined || prevMonthInstallments === undefined) ? (
-            <div className="p-4 space-y-2">
-              {[1, 2].map((i) => <Skeleton key={i} className="h-10" />)}
-            </div>
-          ) : activeTabInstallments.length === 0 ? (
-            <p className="py-5 text-center text-sm text-muted-foreground">
-              Sin cuotas pendientes este período
-            </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {activeTabInstallments.map((inst) => {
-                const purchase = purchaseById[inst.purchaseId];
-                return (
-                  <div key={inst._id} className="flex items-center gap-3 px-4 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate">
-                        {purchase?.description ?? "Compra"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Cuota {inst.installmentNumber}
-                        {purchase ? `/${purchase.totalInstallments}` : ""}
-                        {" · "}
-                        {new Date(inst.dueDate).toLocaleDateString("es-CO", {
-                          day: "2-digit",
-                          month: "short",
-                        })}
-                      </p>
-                    </div>
-                    <p className="text-sm font-semibold tabular-nums text-foreground shrink-0">
-                      {formatCents(inst.amount, card.currency)}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Totales + botones */}
-          <div className="border-t border-border p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                {monthTab === "actual" ? "Total mes actual" : "Total mes anterior"}
-              </span>
-              <span className="text-xl font-bold tabular-nums text-foreground">
-                {formatCents(activeTabTotal, card.currency)}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                disabled={activeTabInstallments.length === 0}
-                onClick={() => setPayMode("minimo")}
-              >
-                Pagar mínimo
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                disabled={card.currentBalance <= 0}
-                onClick={() => setPayMode("total")}
-              >
-                Pagar total ({formatCents(card.currentBalance, card.currency)})
-              </Button>
-            </div>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              disabled={unpaidThisMonth.length === 0}
+              onClick={() => setPayMode("minimo")}
+            >
+              Pagar mínimo
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              disabled={card.currentBalance <= 0}
+              onClick={() => setPayMode("total")}
+            >
+              Pagar total
+            </Button>
           </div>
         </div>
       )}

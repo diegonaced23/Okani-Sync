@@ -6,6 +6,28 @@ import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { calculateInstallment, addMonths } from "./lib/money";
 import { toMonthString } from "./lib/utils";
 
+// ─── Helper: actualizar presupuesto de categoría ─────────────────────────────
+
+async function applyBudgetDelta(
+  ctx: MutationCtx,
+  userId: string,
+  categoryId: Id<"categories">,
+  month: string,
+  delta: number
+) {
+  const budget = await ctx.db
+    .query("budgets")
+    .withIndex("by_user_category_month", (q) =>
+      q.eq("userId", userId).eq("categoryId", categoryId).eq("month", month)
+    )
+    .unique();
+  if (!budget) return;
+  await ctx.db.patch(budget._id, {
+    spent: Math.max(0, budget.spent + delta),
+    updatedAt: Date.now(),
+  });
+}
+
 // ─── Helper: actualizar saldo de cuenta ──────────────────────────────────────
 
 async function applyAccountDelta(
@@ -126,6 +148,14 @@ export const createPurchase = mutation({
         paid: false,
         createdAt: now,
       });
+    }
+
+    // Cargar presupuesto: cada cuota en su mes correspondiente
+    if (args.categoryId) {
+      for (const item of result.schedule) {
+        const instMonth = toMonthString(addMonths(args.firstInstallmentDate, item.installmentNumber - 1));
+        await applyBudgetDelta(ctx, user.clerkId, args.categoryId, instMonth, item.amount);
+      }
     }
 
     // Actualizar saldo y cupo de la tarjeta
@@ -271,6 +301,14 @@ export const updatePurchase = mutation({
         .query("cardInstallments")
         .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
         .collect();
+
+      // Revertir presupuesto de cuotas anteriores
+      if (purchase.categoryId) {
+        for (const inst of oldInstallments) {
+          await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -inst.amount);
+        }
+      }
+
       await Promise.all(oldInstallments.map((i) => ctx.db.delete(i._id)));
 
       for (const item of result.schedule) {
@@ -289,6 +327,15 @@ export const updatePurchase = mutation({
           paid: false,
           createdAt: now,
         });
+      }
+
+      // Aplicar presupuesto de nuevas cuotas con la categoría final
+      const finalCategoryId = clearCategory ? undefined : (fields.categoryId ?? purchase.categoryId);
+      if (finalCategoryId) {
+        for (const item of result.schedule) {
+          const instMonth = toMonthString(addMonths(firstInstallmentDate, item.installmentNumber - 1));
+          await applyBudgetDelta(ctx, user.clerkId, finalCategoryId, instMonth, item.amount);
+        }
       }
 
       const card = await ctx.db.get(purchase.cardId);
@@ -325,6 +372,26 @@ export const updatePurchase = mutation({
       else if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
       if (fields.notes !== undefined) patch.notes = fields.notes;
       await ctx.db.patch(purchaseId, patch);
+
+      // Si cambió la categoría, rotar el presupuesto a la nueva
+      const categoryChanged = clearCategory || (fields.categoryId !== undefined && fields.categoryId !== purchase.categoryId);
+      if (categoryChanged && (purchase.categoryId || (!clearCategory && fields.categoryId))) {
+        const installments = await ctx.db
+          .query("cardInstallments")
+          .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+          .collect();
+        if (purchase.categoryId) {
+          for (const inst of installments) {
+            await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -inst.amount);
+          }
+        }
+        const newCatId = clearCategory ? undefined : fields.categoryId;
+        if (newCatId) {
+          for (const inst of installments) {
+            await applyBudgetDelta(ctx, user.clerkId, newCatId, inst.month, inst.amount);
+          }
+        }
+      }
     }
   },
 });
@@ -347,6 +414,13 @@ export const deletePurchase = mutation({
     const remainingDebt = installments
       .filter((i) => !i.paid)
       .reduce((sum, i) => sum + i.amount, 0);
+
+    // Revertir presupuesto de todas las cuotas (se cargaron al crear)
+    if (purchase.categoryId) {
+      for (const inst of installments) {
+        await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -inst.amount);
+      }
+    }
 
     await Promise.all(installments.map((i) => ctx.db.delete(i._id)));
 
