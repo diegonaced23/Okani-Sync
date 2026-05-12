@@ -9,16 +9,9 @@ import type { Doc } from "../../../convex/_generated/dataModel";
 interface InstallmentScheduleProps {
   installments: Doc<"cardInstallments">[];
   currency: string;
-  onPay?: (installmentId: Doc<"cardInstallments">["_id"]) => void;
-  paying?: string; // installmentId being paid
 }
 
-export function InstallmentSchedule({
-  installments,
-  currency,
-  onPay,
-  paying,
-}: InstallmentScheduleProps) {
+export function InstallmentSchedule({ installments, currency }: InstallmentScheduleProps) {
   const sorted = [...installments].sort(
     (a, b) => a.installmentNumber - b.installmentNumber
   );
@@ -59,20 +52,6 @@ export function InstallmentSchedule({
               <td className="py-2.5">
                 {inst.paid ? (
                   <Check className="h-4 w-4 text-accent mx-auto" />
-                ) : onPay ? (
-                  <button
-                    type="button"
-                    onClick={() => onPay(inst._id)}
-                    disabled={paying === inst._id}
-                    className="flex h-6 w-6 items-center justify-center rounded-full border border-border hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors mx-auto disabled:opacity-50"
-                    aria-label="Pagar cuota"
-                  >
-                    {paying === inst._id ? (
-                      <Clock className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <span className="text-[10px] font-bold">$</span>
-                    )}
-                  </button>
                 ) : (
                   <Clock className="h-4 w-4 text-muted-foreground mx-auto" />
                 )}

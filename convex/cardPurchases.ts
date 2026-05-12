@@ -363,3 +363,208 @@ export const deletePurchase = mutation({
     await ctx.db.delete(purchaseId);
   },
 });
+
+export const payMinimum = mutation({
+  args: {
+    cardId: v.id("cards"),
+    fromAccountId: v.id("accounts"),
+    paymentDate: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    const card = await ctx.db.get(args.cardId);
+    if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+
+    const account = await ctx.db.get(args.fromAccountId);
+    if (!account) throw new Error("Cuenta no encontrada");
+    if (account.currency !== card.currency) {
+      throw new Error(`La cuenta usa ${account.currency} pero la tarjeta es en ${card.currency}`);
+    }
+
+    const paymentDate = args.paymentDate ?? Date.now();
+    const currentMonthStr = toMonthString(Date.now());
+    const now = Date.now();
+
+    const monthInstallments = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_card_month", (q) =>
+        q.eq("cardId", args.cardId).eq("month", currentMonthStr)
+      )
+      .collect();
+
+    const unpaid = monthInstallments.filter((i) => !i.paid);
+    if (unpaid.length === 0) throw new Error("No hay cuotas pendientes este mes");
+
+    let totalAmount = 0;
+
+    for (const inst of unpaid) {
+      const purchase = await ctx.db.get(inst.purchaseId);
+      if (!purchase) continue;
+
+      const txId = await ctx.db.insert("transactions", {
+        userId: user.clerkId,
+        type: "pago_tarjeta",
+        amount: inst.amount,
+        description: `Cuota ${inst.installmentNumber}/${purchase.totalInstallments} — ${purchase.description}`,
+        date: paymentDate,
+        month: toMonthString(paymentDate),
+        currency: card.currency,
+        accountId: args.fromAccountId,
+        cardId: args.cardId,
+        cardInstallmentId: inst._id,
+        cardPurchaseId: inst.purchaseId,
+        status: "completada",
+        isRecurring: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await ctx.db.patch(inst._id, { paid: true, paidAt: now, transactionId: txId });
+
+      const newPaidCount = purchase.paidInstallments + 1;
+      await ctx.db.patch(inst.purchaseId, {
+        paidInstallments: newPaidCount,
+        status: newPaidCount >= purchase.totalInstallments ? "pagada" : "activa",
+        updatedAt: now,
+      });
+
+      totalAmount += inst.amount;
+    }
+
+    const newBalance = Math.max(0, card.currentBalance - totalAmount);
+    await ctx.db.patch(args.cardId, {
+      currentBalance: newBalance,
+      availableCredit: Math.min(card.creditLimit, card.availableCredit + totalAmount),
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(args.fromAccountId, {
+      balance: account.balance - totalAmount,
+      updatedAt: now,
+    });
+
+    return { paidCount: unpaid.length, totalAmount };
+  },
+});
+
+export const payTotal = mutation({
+  args: {
+    cardId: v.id("cards"),
+    fromAccountId: v.id("accounts"),
+    paymentDate: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+
+    const card = await ctx.db.get(args.cardId);
+    if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+
+    const account = await ctx.db.get(args.fromAccountId);
+    if (!account) throw new Error("Cuenta no encontrada");
+    if (account.currency !== card.currency) {
+      throw new Error(`La cuenta usa ${account.currency} pero la tarjeta es en ${card.currency}`);
+    }
+
+    if (card.currentBalance <= 0) throw new Error("La tarjeta no tiene deuda pendiente");
+
+    const totalAmount = card.currentBalance;
+    const paymentDate = args.paymentDate ?? Date.now();
+    const now = Date.now();
+
+    // Todas las cuotas no pagadas de esta tarjeta
+    const allUnpaid = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_user_paid", (q) =>
+        q.eq("userId", user.clerkId).eq("paid", false)
+      )
+      .collect();
+    const unpaidForCard = allUnpaid.filter((i) => i.cardId === args.cardId);
+
+    // Agrupar por compra para actualizar paidInstallments en una sola pasada
+    const purchaseMap = new Map<
+      Id<"cardPurchases">,
+      { paidInstallments: number; totalInstallments: number; description: string; installments: typeof unpaidForCard }
+    >();
+
+    for (const inst of unpaidForCard) {
+      if (!purchaseMap.has(inst.purchaseId)) {
+        const purchase = await ctx.db.get(inst.purchaseId);
+        if (!purchase) continue;
+        purchaseMap.set(inst.purchaseId, {
+          paidInstallments: purchase.paidInstallments,
+          totalInstallments: purchase.totalInstallments,
+          description: purchase.description,
+          installments: [],
+        });
+      }
+      purchaseMap.get(inst.purchaseId)!.installments.push(inst);
+    }
+
+    let installmentSum = 0;
+
+    for (const [purchaseId, entry] of purchaseMap) {
+      for (const inst of entry.installments) {
+        const txId = await ctx.db.insert("transactions", {
+          userId: user.clerkId,
+          type: "pago_tarjeta",
+          amount: inst.amount,
+          description: `Cuota ${inst.installmentNumber}/${entry.totalInstallments} — ${entry.description}`,
+          date: paymentDate,
+          month: toMonthString(paymentDate),
+          currency: card.currency,
+          accountId: args.fromAccountId,
+          cardId: args.cardId,
+          cardInstallmentId: inst._id,
+          cardPurchaseId: purchaseId,
+          status: "completada",
+          isRecurring: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await ctx.db.patch(inst._id, { paid: true, paidAt: now, transactionId: txId });
+        installmentSum += inst.amount;
+      }
+
+      const newPaidCount = entry.paidInstallments + entry.installments.length;
+      await ctx.db.patch(purchaseId, {
+        paidInstallments: newPaidCount,
+        status: newPaidCount >= entry.totalInstallments ? "pagada" : "activa",
+        updatedAt: now,
+      });
+    }
+
+    // Gastos directos: parte del saldo no cubierta por cuotas
+    const directExpenseTotal = totalAmount - installmentSum;
+    if (directExpenseTotal > 0) {
+      await ctx.db.insert("transactions", {
+        userId: user.clerkId,
+        type: "pago_tarjeta",
+        amount: directExpenseTotal,
+        description: "Pago de gastos directos",
+        date: paymentDate,
+        month: toMonthString(paymentDate),
+        currency: card.currency,
+        accountId: args.fromAccountId,
+        cardId: args.cardId,
+        status: "completada",
+        isRecurring: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await ctx.db.patch(args.cardId, {
+      currentBalance: 0,
+      availableCredit: card.creditLimit,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(args.fromAccountId, {
+      balance: account.balance - totalAmount,
+      updatedAt: now,
+    });
+
+    return { paidCount: unpaidForCard.length, totalAmount };
+  },
+});

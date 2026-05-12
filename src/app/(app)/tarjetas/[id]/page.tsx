@@ -31,6 +31,7 @@ import {
 import { CardSummary } from "@/components/cards/CardSummary";
 import { CardForm } from "@/components/cards/CardForm";
 import { PurchaseForm } from "@/components/cards/PurchaseForm";
+import { PayCardForm } from "@/components/cards/PayCardForm";
 import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -147,16 +148,12 @@ function PurchaseRow({
   purchase,
   currency,
   categoryName,
-  onPay,
-  paying,
   onEdit,
   onDelete,
 }: {
   purchase: Doc<"cardPurchases">;
   currency: string;
   categoryName?: string;
-  onPay: (id: Id<"cardInstallments">) => void;
-  paying: string;
   onEdit: (p: Doc<"cardPurchases">) => void;
   onDelete: (id: Id<"cardPurchases">) => void;
 }) {
@@ -254,8 +251,6 @@ function PurchaseRow({
             <InstallmentSchedule
               installments={installments}
               currency={currency}
-              onPay={onPay}
-              paying={paying}
             />
           )}
         </div>
@@ -278,9 +273,9 @@ export default function CardDetailPage({
   // Estado tarjeta
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [paying, setPaying] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [payMode, setPayMode] = useState<"minimo" | "total" | null>(null);
 
   // Estado compras
   const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
@@ -304,22 +299,9 @@ export default function CardDetailPage({
   });
   const categories = useQuery(api.categories.list, { type: "gasto" });
 
-  const payInstallment = useMutation(api.cardPurchases.payInstallment);
   const removeCard = useMutation(api.cards.remove);
   const deletePurchaseMut = useMutation(api.cardPurchases.deletePurchase);
   const removeTx = useMutation(api.transactions.remove);
-
-  async function handlePay(installmentId: Id<"cardInstallments">) {
-    setPaying(installmentId);
-    try {
-      await payInstallment({ installmentId });
-      toast.success("Cuota pagada correctamente");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al pagar");
-    } finally {
-      setPaying("");
-    }
-  }
 
   async function executeDeleteCard() {
     setDeleteOpen(false);
@@ -471,16 +453,61 @@ export default function CardDetailPage({
       {/* Resumen tarjeta */}
       <CardSummary card={card} />
 
-      {/* Cuotas de este mes */}
-      {unpaidThisMonth.length > 0 && (
-        <div className="rounded-xl bg-warning/10 border border-warning/20 p-4">
-          <p className="text-sm font-semibold text-warning">
-            Este mes debes pagar {formatCents(monthlyDue, card.currency)}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {unpaidThisMonth.length} cuota{unpaidThisMonth.length > 1 ? "s" : ""} pendiente
-            {unpaidThisMonth.length > 1 ? "s" : ""}
-          </p>
+      {/* Sheet pago mínimo / total */}
+      <AppSheet
+        open={!!payMode}
+        onOpenChange={(open) => { if (!open) setPayMode(null); }}
+        title={payMode === "minimo" ? "Pagar mínimo" : "Pagar total"}
+      >
+        {payMode && (
+          <PayCardForm
+            cardId={cardId}
+            currency={card.currency}
+            mode={payMode}
+            amount={payMode === "minimo" ? monthlyDue : card.currentBalance}
+            onSuccess={() => setPayMode(null)}
+          />
+        )}
+      </AppSheet>
+
+      {/* Bloque de pago */}
+      {(card.currentBalance > 0 || unpaidThisMonth.length > 0) && (
+        <div className="rounded-xl bg-card border border-border p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pago mínimo</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">
+                {formatCents(monthlyDue, card.currency)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {unpaidThisMonth.length} cuota{unpaidThisMonth.length !== 1 ? "s" : ""} de este mes
+              </p>
+            </div>
+            <div className="space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pago total</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">
+                {formatCents(card.currentBalance, card.currency)}
+              </p>
+              <p className="text-xs text-muted-foreground">Saldo total de la tarjeta</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              disabled={unpaidThisMonth.length === 0}
+              onClick={() => setPayMode("minimo")}
+            >
+              Pagar mínimo
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              disabled={card.currentBalance <= 0}
+              onClick={() => setPayMode("total")}
+            >
+              Pagar total
+            </Button>
+          </div>
         </div>
       )}
 
@@ -525,8 +552,6 @@ export default function CardDetailPage({
                 purchase={purchase}
                 currency={card.currency}
                 categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
-                onPay={handlePay}
-                paying={paying}
                 onEdit={setEditingPurchase}
                 onDelete={setPurchaseDeleteId}
               />
