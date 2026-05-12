@@ -22,7 +22,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { formatCents, fromCents, toCents } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Pencil, Trash2, X, ArrowRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight,
   BookOpen, Briefcase, Car, CircleDollarSign, Coffee,
@@ -124,7 +125,7 @@ const TYPE_CONFIG: Record<string, {
   },
 };
 
-const EDITABLE_TYPES = new Set(["ingreso", "gasto"]);
+const EDITABLE_TYPES = new Set(["ingreso", "gasto", "transferencia"]);
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
@@ -147,6 +148,8 @@ export function TransactionDetailSheet({
   const removeTx = useMutation(api.transactions.remove);
   const accounts = useQuery(api.accounts.list);
   const cards    = useQuery(api.cards.list);
+
+  const accountMap = Object.fromEntries((accounts ?? []).map((a) => [a._id, a.name]));
 
   const [editing, setEditing]       = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -205,13 +208,32 @@ export function TransactionDetailSheet({
   );
 
   async function handleSave() {
+    if (!desc.trim()) {
+      toast.error("La descripción es obligatoria");
+      return;
+    }
+
+    // Transferencias: solo se editan descripción y notas
+    if (currentTx.type === "transferencia") {
+      setLoading(true);
+      try {
+        await updateTx({
+          transactionId: currentTx._id,
+          description: desc.trim(),
+        });
+        toast.success("Transferencia actualizada");
+        setEditing(false);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error al actualizar");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const amountNum = parseFloat(amount.replace(/[^0-9.]/g, ""));
     if (!amountNum || amountNum <= 0) {
       toast.error("El monto debe ser mayor que cero");
-      return;
-    }
-    if (!desc.trim()) {
-      toast.error("La descripción es obligatoria");
       return;
     }
     setLoading(true);
@@ -295,8 +317,18 @@ export function TransactionDetailSheet({
           {editing ? (
             <div className="space-y-4">
 
-              {/* Monto */}
-              <div>
+              {/* Edición limitada para transferencias */}
+              {currentTx.type === "transferencia" && (
+                <div
+                  className="rounded-xl p-3 text-xs text-muted-foreground"
+                  style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+                >
+                  Las cuentas, el monto y la fecha no se pueden modificar. Elimina y recrea la transferencia si hay errores en los datos principales.
+                </div>
+              )}
+
+              {/* Monto — oculto para transferencias */}
+              {currentTx.type !== "transferencia" && <div>
                 <Label htmlFor="edit-amount" className="text-[12px] font-semibold text-foreground mb-2 block">
                   Monto <span aria-hidden="true" className="text-danger">*</span>
                 </Label>
@@ -319,10 +351,10 @@ export function TransactionDetailSheet({
                     style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em" }}
                   />
                 </div>
-              </div>
+              </div>}
 
-              {/* Cuenta o tarjeta — Select editable */}
-              <div>
+              {/* Cuenta o tarjeta — Select editable — oculto para transferencias */}
+              {currentTx.type !== "transferencia" && <div>
                 <Label htmlFor="edit-source" className="text-[12px] font-semibold text-foreground mb-2 block">
                   {currentTx.type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
                 </Label>
@@ -365,7 +397,7 @@ export function TransactionDetailSheet({
                     )}
                   </SelectContent>
                 </Select>
-              </div>
+              </div>}
 
               {/* Descripción */}
               <div>
@@ -382,16 +414,16 @@ export function TransactionDetailSheet({
                 />
               </div>
 
-              {/* Fecha */}
-              <div>
+              {/* Fecha — oculta para transferencias */}
+              {currentTx.type !== "transferencia" && <div>
                 <Label htmlFor="edit-date" className="text-[12px] font-semibold text-foreground mb-2 block">
                   Fecha
                 </Label>
                 <DatePicker id="edit-date" value={date} onChange={setDate} required style={{ background: "var(--surface-2)" }} />
-              </div>
+              </div>}
 
-              {/* Categoría — Select */}
-              {filteredCategories.length > 0 && (
+              {/* Categoría — Select — oculta para transferencias */}
+              {currentTx.type !== "transferencia" && filteredCategories.length > 0 && (
                 <div>
                   <Label htmlFor="edit-category" className="text-[12px] font-semibold text-foreground mb-2 block">
                     Categoría
@@ -442,22 +474,66 @@ export function TransactionDetailSheet({
 
           ) : (
             /* ── Modo vista: lista de campos ────────────────────────────────── */
-            <dl
-              className="rounded-xl divide-y"
-              style={{
-                background: "var(--surface-2)",
-                border: "1px solid var(--border)",
-                overflow: "hidden",
-              }}
-            >
-              <DetailRow label="Descripción" value={currentTx.description} />
-              <DetailRow label="Fecha" value={formatDate(currentTx.date)} />
-              {categoryName && <DetailRow label="Categoría" value={categoryName} />}
-              {currentTx.notes && <DetailRow label="Notas" value={currentTx.notes} />}
-              {currentTx.currency && (
-                <DetailRow label="Moneda" value={currentTx.currency} />
+            <div className="space-y-3">
+              {/* Bloque especial para transferencias */}
+              {currentTx.type === "transferencia" && (
+                <div className="space-y-2">
+                  {/* Badge de dirección */}
+                  {currentTx.transferDirection && (
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={currentTx.transferDirection === "out" ? "destructive" : "secondary"}
+                        className="gap-1"
+                      >
+                        {currentTx.transferDirection === "out" ? "↑ Salida" : "↓ Entrada"}
+                      </Badge>
+                    </div>
+                  )}
+
+                  {/* Bloque origen → destino */}
+                  {currentTx.accountId && currentTx.toAccountId && (() => {
+                    const fromName = currentTx.transferDirection === "in"
+                      ? accountMap[currentTx.toAccountId]
+                      : accountMap[currentTx.accountId];
+                    const toName = currentTx.transferDirection === "in"
+                      ? accountMap[currentTx.accountId]
+                      : accountMap[currentTx.toAccountId];
+                    return (
+                      <div
+                        className="rounded-xl p-3"
+                        style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          Desde → Hacia
+                        </p>
+                        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                          <span className="truncate">{fromName ?? "Cuenta"}</span>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="truncate">{toName ?? "Cuenta"}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               )}
-            </dl>
+
+              <dl
+                className="rounded-xl divide-y"
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  overflow: "hidden",
+                }}
+              >
+                <DetailRow label="Descripción" value={currentTx.description} />
+                <DetailRow label="Fecha" value={formatDate(currentTx.date)} />
+                {categoryName && <DetailRow label="Categoría" value={categoryName} />}
+                {currentTx.notes && <DetailRow label="Notas" value={currentTx.notes} />}
+                {currentTx.currency && (
+                  <DetailRow label="Moneda" value={currentTx.currency} />
+                )}
+              </dl>
+            </div>
           )}
 
           {/* ── Acciones ─────────────────────────────────────────────────────── */}

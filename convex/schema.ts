@@ -382,6 +382,7 @@ export default defineSchema({
     cardInstallmentId: v.optional(v.id("cardInstallments")),
     debtId: v.optional(v.id("debts")),
     loanId: v.optional(v.id("loans")),
+    transferDirection: v.optional(v.union(v.literal("out"), v.literal("in"))),
 
     receiptStorageId: v.optional(v.id("_storage")),
     receiptUrl: v.optional(v.string()),

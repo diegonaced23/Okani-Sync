@@ -388,6 +388,33 @@ export const update = mutation({
     const tx = await ctx.db.get(transactionId);
     if (!tx || tx.userId !== user.clerkId) throw new Error("Transacción no encontrada");
 
+    // Transferencias: solo se permite editar descripción y notas
+    if (tx.type === "transferencia") {
+      if (fields.amount !== undefined || fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined) {
+        throw new Error("En una transferencia solo se pueden editar la descripción y las notas. Elimínala y créala de nuevo si hay errores en los datos principales.");
+      }
+      const patch: Record<string, unknown> = { updatedAt: Date.now() };
+      if (fields.description !== undefined) patch.description = fields.description;
+      if (fields.notes !== undefined) patch.notes = fields.notes;
+      await ctx.db.patch(transactionId, patch);
+      // Si hay pierna hermana, actualizarla también
+      if (tx.transferGroupId) {
+        const txs = await ctx.db
+          .query("transactions")
+          .withIndex("by_transfer_group", (q) => q.eq("transferGroupId", tx.transferGroupId))
+          .collect();
+        for (const sibling of txs) {
+          if (sibling._id !== transactionId) {
+            const siblingPatch: Record<string, unknown> = { updatedAt: Date.now() };
+            if (fields.description !== undefined) siblingPatch.description = fields.description;
+            if (fields.notes !== undefined) siblingPatch.notes = fields.notes;
+            await ctx.db.patch(sibling._id, siblingPatch);
+          }
+        }
+      }
+      return;
+    }
+
     // Derivar nueva fuente (exclusión mutua: si llega uno, el otro se borra)
     const changingToAccount = fields.accountId !== undefined;
     const changingToCard    = fields.cardId    !== undefined;
@@ -583,6 +610,7 @@ export const createTransfer = mutation({
       accountId: args.fromAccountId,
       toAccountId: args.toAccountId,
       transferGroupId,
+      transferDirection: "out",
       exchangeRate: args.exchangeRate,
       toAmount,
       toCurrency: toAccount.currency,
@@ -603,8 +631,9 @@ export const createTransfer = mutation({
       month,
       currency: toAccount.currency,
       accountId: args.toAccountId,
-      toAccountId: args.fromAccountId, // referencia de vuelta
+      toAccountId: args.fromAccountId,
       transferGroupId,
+      transferDirection: "in",
       exchangeRate: args.exchangeRate ? 1 / args.exchangeRate : undefined,
       toAmount: args.amount,
       toCurrency: fromAccount.currency,

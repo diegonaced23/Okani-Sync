@@ -60,10 +60,16 @@ export default function TransaccionesPage() {
 
   const transactions = useQuery(api.transactions.listByMonth, { month });
   const categories   = useQuery(api.categories.list, {});
+  const accounts     = useQuery(api.accounts.list);
 
   const catMap = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c._id, c.name])),
     [categories]
+  );
+
+  const accountMap = useMemo(
+    () => Object.fromEntries((accounts ?? []).map((a) => [a._id, a.name])),
+    [accounts]
   );
 
   // ── Totales del mes (independientes del filtro) ────────────────────────────
@@ -278,6 +284,7 @@ export default function TransaccionesPage() {
               <TransactionItem
                 transaction={tx}
                 categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+                accountMap={accountMap}
                 onPress={() => {
                   setSelectedTx(tx);
                   setDetailOpen(true);

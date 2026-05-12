@@ -39,6 +39,8 @@ import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_utils from "../lib/utils.js";
+import type * as loanRepayments from "../loanRepayments.js";
+import type * as loans from "../loans.js";
 import type * as notifications from "../notifications.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as recurringTransactions from "../recurringTransactions.js";
@@ -83,6 +85,8 @@ declare const fullApi: ApiFromModules<{
   "lib/money": typeof lib_money;
   "lib/permissions": typeof lib_permissions;
   "lib/utils": typeof lib_utils;
+  loanRepayments: typeof loanRepayments;
+  loans: typeof loans;
   notifications: typeof notifications;
   pushSubscriptions: typeof pushSubscriptions;
   recurringTransactions: typeof recurringTransactions;

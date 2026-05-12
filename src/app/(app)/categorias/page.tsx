@@ -230,13 +230,15 @@ function DeleteCategoryFlow({
   const [migrationStep, setMigrationStep] = useState<"select" | "confirm">("select");
   const [loading, setLoading] = useState(false);
 
-  // Resetear estado al cambiar categoría
-  useEffect(() => {
+  // Resetear estado al cambiar categoría (durante render, sin efecto)
+  const [prevCatId, setPrevCatId] = useState(deletingCat?._id);
+  if (deletingCat?._id !== prevCatId) {
+    setPrevCatId(deletingCat?._id);
     setConfirmName("");
     setMigrationTarget("");
     setMigrationStep("select");
     setLoading(false);
-  }, [deletingCat?._id]);
+  }
 
   const isOpen = deletingCat !== null;
   const catName = deletingCat?.name ?? "";

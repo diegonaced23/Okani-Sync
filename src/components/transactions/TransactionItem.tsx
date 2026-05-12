@@ -8,6 +8,7 @@ import type { Doc } from "../../../convex/_generated/dataModel";
 interface TransactionItemProps {
   transaction: Doc<"transactions">;
   categoryName?: string;
+  accountMap?: Record<string, string>;
   onPress?: () => void;
 }
 
@@ -62,9 +63,32 @@ const TYPE_LABELS: Record<string, string> = {
   ajuste: "Ajuste",
 };
 
-export function TransactionItem({ transaction: tx, categoryName, onPress }: TransactionItemProps) {
+export function TransactionItem({ transaction: tx, categoryName, accountMap, onPress }: TransactionItemProps) {
   const config = TYPE_CONFIG[tx.type];
   const Icon = config.icon;
+
+  // Para transferencias: calcular signo y subtítulo dinámicos según dirección
+  let sign = config.sign;
+  let subtitle = categoryName ?? TYPE_LABELS[tx.type];
+  let amountColor = config.amountColor;
+
+  if (tx.type === "transferencia" && accountMap) {
+    const accountName   = accountMap[tx.accountId   ?? ""] ?? "Cuenta";
+    const toAccountName = accountMap[tx.toAccountId ?? ""] ?? "Cuenta";
+
+    if (tx.transferDirection === "out") {
+      sign = "−";
+      subtitle = `${accountName} → ${toAccountName}`;
+      amountColor = "var(--foreground)";
+    } else if (tx.transferDirection === "in") {
+      sign = "+";
+      subtitle = `${toAccountName} → ${accountName}`;
+      amountColor = "var(--os-lime)";
+    } else {
+      // Fallback para transferencias antiguas sin transferDirection
+      subtitle = "Transferencia";
+    }
+  }
 
   return (
     <button
@@ -89,16 +113,16 @@ export function TransactionItem({ transaction: tx, categoryName, onPress }: Tran
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
-        <p className="text-xs text-muted-foreground">
-          {categoryName ?? TYPE_LABELS[tx.type]} · {formatDateShort(tx.date)}
+        <p className="text-xs text-muted-foreground truncate">
+          {subtitle} · {formatDateShort(tx.date)}
         </p>
       </div>
 
       <p
         className="text-sm font-bold tabular shrink-0"
-        style={{ color: config.amountColor, letterSpacing: "-0.02em" }}
+        style={{ color: amountColor, letterSpacing: "-0.02em" }}
       >
-        {config.sign}{formatCents(tx.amount, tx.currency)}
+        {sign}{formatCents(tx.amount, tx.currency)}
       </p>
     </button>
   );

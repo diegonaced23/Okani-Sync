@@ -57,7 +57,7 @@ export function LoanForm({ loan, onSuccess }: LoanFormProps) {
 
     setLoading(true);
     try {
-      if (isEdit) {
+      if (loan) {
         await updateLoan({
           loanId: loan._id,
           name: name.trim(),
