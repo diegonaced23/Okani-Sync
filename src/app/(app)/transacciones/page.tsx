@@ -61,15 +61,25 @@ export default function TransaccionesPage() {
   const transactions = useQuery(api.transactions.listByMonth, { month });
   const categories   = useQuery(api.categories.list, {});
   const accounts     = useQuery(api.accounts.list);
+  const cards        = useQuery(api.cards.list);
 
   const catMap = useMemo(
-    () => Object.fromEntries((categories ?? []).map((c) => [c._id, c.name])),
+    () => Object.fromEntries(
+      (categories ?? []).map((c) => [c._id, { name: c.name, icon: c.icon, color: c.color }])
+    ),
     [categories]
   );
 
   const accountMap = useMemo(
     () => Object.fromEntries((accounts ?? []).map((a) => [a._id, a.name])),
     [accounts]
+  );
+
+  const cardMap = useMemo(
+    () => Object.fromEntries(
+      (cards ?? []).map((c) => [c._id, { name: c.name, lastFourDigits: c.lastFourDigits }])
+    ),
+    [cards]
   );
 
   // ── Totales del mes (independientes del filtro) ────────────────────────────
@@ -289,8 +299,9 @@ export default function TransaccionesPage() {
             <div key={tx._id}>
               <TransactionItem
                 transaction={tx}
-                categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+                category={tx.categoryId ? catMap[tx.categoryId] : undefined}
                 accountMap={accountMap}
+                cardMap={cardMap}
                 onPress={() => {
                   setSelectedTx(tx);
                   setDetailOpen(true);
@@ -310,7 +321,7 @@ export default function TransaccionesPage() {
           setDetailOpen(o);
           if (!o) setSelectedTx(null);
         }}
-        categoryName={selectedTx?.categoryId ? catMap[selectedTx.categoryId] : undefined}
+        categoryName={selectedTx?.categoryId ? catMap[selectedTx.categoryId]?.name : undefined}
         categories={categories ?? []}
       />
 
