@@ -65,7 +65,7 @@ export function SpendingChart({ data, currency }: SpendingChartProps) {
       </div>
       {/* Tabla de datos accesible para lectores de pantalla */}
       <table className="sr-only">
-        <caption>Gastos por categoría este mes</caption>
+        <caption className="sr-only">Gastos por categoría este mes</caption>
         <thead>
           <tr>
             <th scope="col">Categoría</th>

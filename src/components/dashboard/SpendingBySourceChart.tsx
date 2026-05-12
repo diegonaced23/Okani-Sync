@@ -119,7 +119,7 @@ export function SpendingBySourceChart({ data, currency }: SpendingBySourceChartP
 
       {/* Tabla accesible para lectores de pantalla */}
       <table className="sr-only">
-        <caption>Gastos por cuenta y tarjeta este mes</caption>
+        <caption className="sr-only">Gastos por cuenta y tarjeta este mes</caption>
         <thead>
           <tr>
             <th scope="col">Fuente</th>

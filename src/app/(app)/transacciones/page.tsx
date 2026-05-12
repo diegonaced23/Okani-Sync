@@ -88,6 +88,12 @@ export default function TransaccionesPage() {
   const filtered: Doc<"transactions">[] = useMemo(() => {
     const all = transactions ?? [];
     if (filter === "all") return all;
+    // "Gastos" incluye gastos directos, pagos de tarjeta y pagos de deuda
+    if (filter === "gasto") return all.filter((t) =>
+      t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda"
+    );
+    // "Tarjeta" muestra toda transacción asociada a una tarjeta (gasto directo + pago de cuota)
+    if (filter === "pago_tarjeta") return all.filter((t) => !!t.cardId);
     return all.filter((t) => t.type === filter);
   }, [transactions, filter]);
 

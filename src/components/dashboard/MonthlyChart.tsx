@@ -35,7 +35,7 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
       </p>
       {/* Tabla de datos accesible para lectores de pantalla */}
       <table className="sr-only">
-        <caption>Resumen mensual — últimos 6 meses</caption>
+        <caption className="sr-only">Resumen mensual — últimos 6 meses</caption>
         <thead>
           <tr>
             <th scope="col">Mes</th>
