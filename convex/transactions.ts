@@ -237,6 +237,26 @@ export const monthlySummary = query({
   },
 });
 
+/** Gastos directos de una tarjeta — transacciones del flujo antiguo sin cronograma de cuotas. */
+export const listDirectByCard = query({
+  args: { cardId: v.id("cards") },
+  handler: async (ctx, { cardId }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const card = await ctx.db.get(cardId);
+    if (!card || card.userId !== clerkId) return [];
+
+    const all = await ctx.db
+      .query("transactions")
+      .withIndex("by_card", (q) => q.eq("cardId", cardId))
+      .order("desc")
+      .collect();
+
+    return all.filter(
+      (tx) => tx.type === "gasto" && tx.cardPurchaseId === undefined
+    );
+  },
+});
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export const create = mutation({

@@ -127,6 +127,7 @@ export default function CardDetailPage({
     cardId,
     status: "activa",
   });
+  const directTransactions = useQuery(api.transactions.listDirectByCard, { cardId });
   const monthInstallments = useQuery(api.cardInstallments.listByCardMonth, {
     cardId,
     month: currentMonth(),
@@ -290,6 +291,40 @@ export default function CardDetailPage({
           </div>
         )}
       </section>
+
+      {/* Gastos directos (flujo anterior sin cuotas) */}
+      {((directTransactions ?? []).length > 0 || directTransactions === undefined) && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Gastos directos ({directTransactions === undefined ? "…" : directTransactions.length})
+          </h2>
+
+          {directTransactions === undefined ? (
+            <div className="space-y-2">
+              {[1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
+            </div>
+          ) : (
+            <div className="rounded-xl bg-card border border-border overflow-hidden">
+              {directTransactions.map((tx) => (
+                <div
+                  key={tx._id}
+                  className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(tx.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold tabular-nums text-foreground shrink-0">
+                    {formatCents(tx.amount, tx.currency)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Diálogo de confirmación eliminar */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
