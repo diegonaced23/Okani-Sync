@@ -5,9 +5,14 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowLeft, Plus, ChevronDown, ChevronUp,
+  Pencil, Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppSheet } from "@/components/ui/app-sheet";
 import {
@@ -20,23 +25,138 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger,
+} from "@/components/ui/select";
 import { CardSummary } from "@/components/cards/CardSummary";
 import { CardForm } from "@/components/cards/CardForm";
 import { PurchaseForm } from "@/components/cards/PurchaseForm";
 import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
-import { formatCents, currentMonth } from "@/lib/money";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { formatCents, currentMonth, toCents, fromCents } from "@/lib/money";
 import { toast } from "sonner";
+
+// ─── Formulario inline para editar gastos directos ───────────────────────────
+
+function DirectTransactionEditForm({
+  tx,
+  onClose,
+}: {
+  tx: Doc<"transactions">;
+  onClose: () => void;
+}) {
+  const updateTx = useMutation(api.transactions.update);
+  const categories = useQuery(api.categories.list, { type: "gasto" });
+
+  const [description, setDescription] = useState(tx.description);
+  const [amount, setAmount] = useState(fromCents(tx.amount).toString());
+  const [date, setDate] = useState(new Date(tx.date).toISOString().substring(0, 10));
+  const [categoryId, setCategoryId] = useState(tx.categoryId ?? "");
+  const [notes, setNotes] = useState(tx.notes ?? "");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const amountCents = toCents(parseFloat(amount) || 0);
+    if (!description.trim() || amountCents <= 0) {
+      toast.error("Completa los campos obligatorios");
+      return;
+    }
+    setLoading(true);
+    try {
+      await updateTx({
+        transactionId: tx._id,
+        description: description.trim(),
+        amount: amountCents,
+        date: new Date(date).getTime(),
+        categoryId: categoryId ? (categoryId as Id<"categories">) : undefined,
+        notes: notes || undefined,
+      });
+      toast.success("Gasto actualizado");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al actualizar");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="dtx-desc">Descripción</Label>
+        <Input
+          id="dtx-desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          required
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="dtx-amount">Monto ({tx.currency})</Label>
+          <MoneyInput id="dtx-amount" value={amount} onChange={setAmount} required />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="dtx-date">Fecha</Label>
+          <DatePicker id="dtx-date" value={date} onChange={setDate} required />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Categoría (opcional)</Label>
+        <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+          <SelectTrigger>
+            <span className="flex-1 text-left text-sm truncate">
+              {categoryId
+                ? (categories ?? []).find((c) => c._id === categoryId)?.name ?? "Categoría"
+                : <span className="text-muted-foreground">Sin categoría</span>}
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Sin categoría</SelectItem>
+            {(categories ?? []).map((c) => (
+              <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="dtx-notes">Notas (opcional)</Label>
+        <Input
+          id="dtx-notes"
+          placeholder="Notas adicionales…"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </div>
+
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? "Guardando…" : "Guardar cambios"}
+      </Button>
+    </form>
+  );
+}
+
+// ─── Fila de compra expandible ────────────────────────────────────────────────
 
 function PurchaseRow({
   purchase,
   currency,
   onPay,
   paying,
+  onEdit,
+  onDelete,
 }: {
   purchase: Doc<"cardPurchases">;
   currency: string;
   onPay: (id: Id<"cardInstallments">) => void;
   paying: string;
+  onEdit: (p: Doc<"cardPurchases">) => void;
+  onDelete: (id: Id<"cardPurchases">) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const installments = useQuery(api.cardInstallments.listByPurchase, {
@@ -49,45 +169,68 @@ function PurchaseRow({
 
   return (
     <div className="border-b border-border last:border-0">
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-        aria-controls={`purchase-detail-${purchase._id}`}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
-      >
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">
-            {purchase.description}
-          </p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-accent rounded-full transition-all"
-                style={{ width: `${progress}%` }}
-              />
+      <div className="flex items-center gap-2 px-4 py-3 hover:bg-muted/40 transition-colors">
+        {/* Área expandible */}
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          aria-controls={`purchase-detail-${purchase._id}`}
+          className="flex-1 min-w-0 flex items-center gap-3 text-left"
+        >
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">
+              {purchase.description}
+            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-accent rounded-full transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {paidCount}/{totalCount}
+              </span>
             </div>
-            <span className="text-xs text-muted-foreground shrink-0">
-              {paidCount}/{totalCount}
-            </span>
           </div>
+          <div className="text-right shrink-0">
+            <p className="text-sm font-semibold text-foreground tabular-nums">
+              {formatCents(purchase.amountPerInstallment, currency)}/mes
+            </p>
+            {purchase.hasInterest && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                +interés
+              </Badge>
+            )}
+          </div>
+          {expanded
+            ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+            : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+        </button>
+
+        {/* Acciones */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            onClick={() => onEdit(purchase)}
+            aria-label="Editar compra"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-danger"
+            onClick={() => onDelete(purchase._id)}
+            aria-label="Eliminar compra"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
-        <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-foreground tabular-nums">
-            {formatCents(purchase.amountPerInstallment, currency)}/mes
-          </p>
-          {purchase.hasInterest && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-              +interés
-            </Badge>
-          )}
-        </div>
-        {expanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-        )}
-      </button>
+      </div>
 
       {expanded && (
         <div id={`purchase-detail-${purchase._id}`} className="px-4 pb-4">
@@ -107,6 +250,8 @@ function PurchaseRow({
   );
 }
 
+// ─── Página principal ─────────────────────────────────────────────────────────
+
 export default function CardDetailPage({
   params,
 }: {
@@ -116,11 +261,22 @@ export default function CardDetailPage({
   const cardId = id as Id<"cards">;
   const router = useRouter();
 
+  // Estado tarjeta
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [paying, setPaying] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Estado compras
+  const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
+  const [purchaseDeleteId, setPurchaseDeleteId] = useState<Id<"cardPurchases"> | null>(null);
+  const [purchaseDeleting, setPurchaseDeleting] = useState(false);
+
+  // Estado gastos directos
+  const [editingTx, setEditingTx] = useState<Doc<"transactions"> | null>(null);
+  const [txDeleteId, setTxDeleteId] = useState<Id<"transactions"> | null>(null);
+  const [txDeleting, setTxDeleting] = useState(false);
 
   const card = useQuery(api.cards.getById, { cardId });
   const purchases = useQuery(api.cardPurchases.listByCard, {
@@ -135,6 +291,8 @@ export default function CardDetailPage({
 
   const payInstallment = useMutation(api.cardPurchases.payInstallment);
   const removeCard = useMutation(api.cards.remove);
+  const deletePurchaseMut = useMutation(api.cardPurchases.deletePurchase);
+  const removeTx = useMutation(api.transactions.remove);
 
   async function handlePay(installmentId: Id<"cardInstallments">) {
     setPaying(installmentId);
@@ -148,11 +306,7 @@ export default function CardDetailPage({
     }
   }
 
-  function handleDelete() {
-    setDeleteOpen(true);
-  }
-
-  async function executeDelete() {
+  async function executeDeleteCard() {
     setDeleteOpen(false);
     setDeleting(true);
     try {
@@ -162,6 +316,34 @@ export default function CardDetailPage({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar");
       setDeleting(false);
+    }
+  }
+
+  async function executeDeletePurchase() {
+    if (!purchaseDeleteId) return;
+    setPurchaseDeleting(true);
+    try {
+      await deletePurchaseMut({ purchaseId: purchaseDeleteId });
+      toast.success("Compra eliminada");
+      setPurchaseDeleteId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+    } finally {
+      setPurchaseDeleting(false);
+    }
+  }
+
+  async function executeDeleteTx() {
+    if (!txDeleteId) return;
+    setTxDeleting(true);
+    try {
+      await removeTx({ transactionId: txDeleteId });
+      toast.success("Gasto eliminado");
+      setTxDeleteId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+    } finally {
+      setTxDeleting(false);
     }
   }
 
@@ -190,7 +372,7 @@ export default function CardDetailPage({
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      {/* Navegación + acciones */}
+      {/* Navegación + acciones tarjeta */}
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -214,7 +396,7 @@ export default function CardDetailPage({
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-muted-foreground hover:text-danger"
-            onClick={handleDelete}
+            onClick={() => setDeleteOpen(true)}
             disabled={deleting}
             aria-label="Eliminar tarjeta"
           >
@@ -223,13 +405,40 @@ export default function CardDetailPage({
         </div>
       </div>
 
-      {/* Sheet de edición */}
-      <AppSheet
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        title="Editar tarjeta"
-      >
+      {/* Sheet editar tarjeta */}
+      <AppSheet open={editOpen} onOpenChange={setEditOpen} title="Editar tarjeta">
         <CardForm card={card} onSuccess={() => setEditOpen(false)} />
+      </AppSheet>
+
+      {/* Sheet editar compra */}
+      <AppSheet
+        open={!!editingPurchase}
+        onOpenChange={(open) => { if (!open) setEditingPurchase(null); }}
+        title="Editar compra"
+      >
+        {editingPurchase && (
+          <PurchaseForm
+            cardId={cardId}
+            defaultInterestRate={card.interestRate}
+            currency={card.currency}
+            purchase={editingPurchase}
+            onSuccess={() => setEditingPurchase(null)}
+          />
+        )}
+      </AppSheet>
+
+      {/* Sheet editar gasto directo */}
+      <AppSheet
+        open={!!editingTx}
+        onOpenChange={(open) => { if (!open) setEditingTx(null); }}
+        title="Editar gasto"
+      >
+        {editingTx && (
+          <DirectTransactionEditForm
+            tx={editingTx}
+            onClose={() => setEditingTx(null)}
+          />
+        )}
       </AppSheet>
 
       {/* Resumen tarjeta */}
@@ -258,7 +467,11 @@ export default function CardDetailPage({
             open={purchaseOpen}
             onOpenChange={setPurchaseOpen}
             title={`Nueva compra — ${card.name}`}
-            trigger={<Button size="sm" variant="outline" className="gap-1.5 h-8"><Plus className="h-3.5 w-3.5" /> Nueva compra</Button>}
+            trigger={
+              <Button size="sm" variant="outline" className="gap-1.5 h-8">
+                <Plus className="h-3.5 w-3.5" /> Nueva compra
+              </Button>
+            }
           >
             <PurchaseForm
               cardId={cardId}
@@ -286,13 +499,15 @@ export default function CardDetailPage({
                 currency={card.currency}
                 onPay={handlePay}
                 paying={paying}
+                onEdit={setEditingPurchase}
+                onDelete={setPurchaseDeleteId}
               />
             ))}
           </div>
         )}
       </section>
 
-      {/* Gastos directos (flujo anterior sin cuotas) */}
+      {/* Gastos directos */}
       {((directTransactions ?? []).length > 0 || directTransactions === undefined) && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
@@ -313,12 +528,36 @@ export default function CardDetailPage({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(tx.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}
+                      {new Date(tx.date).toLocaleDateString("es-CO", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
                     </p>
                   </div>
                   <p className="text-sm font-semibold tabular-nums text-foreground shrink-0">
                     {formatCents(tx.amount, tx.currency)}
                   </p>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => setEditingTx(tx)}
+                      aria-label="Editar gasto"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-danger"
+                      onClick={() => setTxDeleteId(tx._id)}
+                      aria-label="Eliminar gasto"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -326,7 +565,7 @@ export default function CardDetailPage({
         </section>
       )}
 
-      {/* Diálogo de confirmación eliminar */}
+      {/* Diálogo eliminar tarjeta */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -339,7 +578,49 @@ export default function CardDetailPage({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel />
-            <AlertDialogAction onClick={executeDelete} disabled={deleting}>
+            <AlertDialogAction onClick={executeDeleteCard} disabled={deleting}>
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Diálogo eliminar compra */}
+      <AlertDialog
+        open={!!purchaseDeleteId}
+        onOpenChange={(open) => { if (!open) setPurchaseDeleteId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar compra</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminarán todas las cuotas pendientes y se revertirá la deuda correspondiente en la tarjeta. Los pagos ya realizados quedan en el historial. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={executeDeletePurchase} disabled={purchaseDeleting}>
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Diálogo eliminar gasto directo */}
+      <AlertDialog
+        open={!!txDeleteId}
+        onOpenChange={(open) => { if (!open) setTxDeleteId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar gasto</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={executeDeleteTx} disabled={txDeleting}>
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>

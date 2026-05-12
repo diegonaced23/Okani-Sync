@@ -218,3 +218,148 @@ export const payInstallment = mutation({
     return txId;
   },
 });
+
+export const updatePurchase = mutation({
+  args: {
+    purchaseId: v.id("cardPurchases"),
+    description: v.optional(v.string()),
+    categoryId: v.optional(v.id("categories")),
+    clearCategory: v.optional(v.boolean()),
+    notes: v.optional(v.string()),
+    // Financieros — solo cuando paidInstallments === 0
+    totalAmount: v.optional(v.number()),
+    totalInstallments: v.optional(v.number()),
+    hasInterest: v.optional(v.boolean()),
+    interestRate: v.optional(v.number()),
+    purchaseDate: v.optional(v.number()),
+    firstInstallmentDate: v.optional(v.number()),
+  },
+  handler: async (ctx, { purchaseId, clearCategory, ...fields }) => {
+    const user = await getCurrentUser(ctx);
+
+    const purchase = await ctx.db.get(purchaseId);
+    if (!purchase || purchase.userId !== user.clerkId) {
+      throw new Error("Compra no encontrada");
+    }
+
+    const now = Date.now();
+
+    const financialChanged =
+      (fields.totalAmount !== undefined && fields.totalAmount !== purchase.totalAmount) ||
+      (fields.totalInstallments !== undefined && fields.totalInstallments !== purchase.totalInstallments) ||
+      (fields.hasInterest !== undefined && fields.hasInterest !== purchase.hasInterest) ||
+      (fields.firstInstallmentDate !== undefined && fields.firstInstallmentDate !== purchase.firstInstallmentDate) ||
+      (fields.interestRate !== undefined &&
+        Math.abs(fields.interestRate - (purchase.interestRate ?? 0)) > 0.00001);
+
+    if (financialChanged && purchase.paidInstallments > 0) {
+      throw new Error(
+        "No se pueden modificar los datos financieros cuando ya hay cuotas pagadas"
+      );
+    }
+
+    if (financialChanged) {
+      const totalAmount = fields.totalAmount ?? purchase.totalAmount;
+      const totalInstallments = fields.totalInstallments ?? purchase.totalInstallments;
+      const hasInterest = fields.hasInterest ?? purchase.hasInterest;
+      const interestRate = hasInterest ? (fields.interestRate ?? purchase.interestRate ?? 0) : 0;
+      const firstInstallmentDate = fields.firstInstallmentDate ?? purchase.firstInstallmentDate;
+
+      const result = calculateInstallment(totalAmount, interestRate, totalInstallments);
+
+      const oldInstallments = await ctx.db
+        .query("cardInstallments")
+        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+        .collect();
+      await Promise.all(oldInstallments.map((i) => ctx.db.delete(i._id)));
+
+      for (const item of result.schedule) {
+        const dueDate = addMonths(firstInstallmentDate, item.installmentNumber - 1);
+        await ctx.db.insert("cardInstallments", {
+          userId: user.clerkId,
+          purchaseId,
+          cardId: purchase.cardId,
+          installmentNumber: item.installmentNumber,
+          amount: item.amount,
+          principalAmount: item.principalAmount,
+          interestAmount: item.interestAmount,
+          remainingPrincipal: item.remainingPrincipal,
+          dueDate,
+          month: toMonthString(dueDate),
+          paid: false,
+          createdAt: now,
+        });
+      }
+
+      const card = await ctx.db.get(purchase.cardId);
+      if (card) {
+        const diff = result.totalWithInterest - purchase.totalWithInterest;
+        const newBalance = Math.max(0, card.currentBalance + diff);
+        await ctx.db.patch(purchase.cardId, {
+          currentBalance: newBalance,
+          availableCredit: Math.max(0, card.creditLimit - newBalance),
+          updatedAt: now,
+        });
+      }
+
+      await ctx.db.patch(purchaseId, {
+        description: fields.description?.trim() ?? purchase.description,
+        categoryId: clearCategory ? undefined : (fields.categoryId ?? purchase.categoryId),
+        notes: fields.notes !== undefined ? fields.notes : purchase.notes,
+        totalAmount,
+        totalWithInterest: result.totalWithInterest,
+        totalInstallments,
+        paidInstallments: 0,
+        amountPerInstallment: result.amountPerInstallment,
+        hasInterest,
+        interestRate: hasInterest ? interestRate : undefined,
+        totalInterest: result.totalInterest,
+        purchaseDate: fields.purchaseDate ?? purchase.purchaseDate,
+        firstInstallmentDate,
+        updatedAt: now,
+      });
+    } else {
+      const patch: Record<string, unknown> = { updatedAt: now };
+      if (fields.description !== undefined) patch.description = fields.description.trim();
+      if (clearCategory) patch.categoryId = undefined;
+      else if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
+      if (fields.notes !== undefined) patch.notes = fields.notes;
+      await ctx.db.patch(purchaseId, patch);
+    }
+  },
+});
+
+export const deletePurchase = mutation({
+  args: { purchaseId: v.id("cardPurchases") },
+  handler: async (ctx, { purchaseId }) => {
+    const user = await getCurrentUser(ctx);
+
+    const purchase = await ctx.db.get(purchaseId);
+    if (!purchase || purchase.userId !== user.clerkId) {
+      throw new Error("Compra no encontrada");
+    }
+
+    const installments = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+      .collect();
+
+    const remainingDebt = installments
+      .filter((i) => !i.paid)
+      .reduce((sum, i) => sum + i.amount, 0);
+
+    await Promise.all(installments.map((i) => ctx.db.delete(i._id)));
+
+    const card = await ctx.db.get(purchase.cardId);
+    if (card) {
+      const newBalance = Math.max(0, card.currentBalance - remainingDebt);
+      await ctx.db.patch(purchase.cardId, {
+        currentBalance: newBalance,
+        availableCredit: card.creditLimit - newBalance,
+        updatedAt: Date.now(),
+      });
+    }
+
+    await ctx.db.delete(purchaseId);
+  },
+});

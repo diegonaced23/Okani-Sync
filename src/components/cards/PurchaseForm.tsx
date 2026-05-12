@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { toCents, formatCents, calculateInstallment } from "@/lib/money";
+import { toCents, fromCents, formatCents, calculateInstallment } from "@/lib/money";
 
 interface PurchaseFormProps {
   cardId: Id<"cards">;
-  defaultInterestRate?: number; // decimal
+  defaultInterestRate?: number;
   currency: string;
+  purchase?: Doc<"cardPurchases">;
   onSuccess?: () => void;
 }
 
@@ -28,35 +29,46 @@ export function PurchaseForm({
   cardId,
   defaultInterestRate,
   currency,
+  purchase,
   onSuccess,
 }: PurchaseFormProps) {
+  const isEdit = !!purchase;
+  const canEditFinancials = isEdit ? purchase.paidInstallments === 0 : true;
+
   const createPurchase = useMutation(api.cardPurchases.createPurchase);
+  const updatePurchase = useMutation(api.cardPurchases.updatePurchase);
   const categories = useQuery(api.categories.list, { type: "gasto" });
 
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [installments, setInstallments] = useState("1");
-  const [hasInterest, setHasInterest] = useState(false);
-  const [interestRatePct, setInterestRatePct] = useState(
-    defaultInterestRate ? (defaultInterestRate * 100).toFixed(2) : ""
+  const [description, setDescription] = useState(purchase?.description ?? "");
+  const [amount, setAmount] = useState(
+    purchase ? fromCents(purchase.totalAmount).toString() : ""
   );
-  const [categoryId, setCategoryId] = useState("");
-  const [purchaseDate, setPurchaseDate] = useState(
-    () => new Date().toISOString().substring(0, 10)
+  const [installments, setInstallments] = useState(
+    purchase ? purchase.totalInstallments.toString() : "1"
   );
+  const [hasInterest, setHasInterest] = useState(purchase?.hasInterest ?? false);
+  const [interestRatePct, setInterestRatePct] = useState(() => {
+    if (purchase?.interestRate) return (purchase.interestRate * 100).toFixed(2);
+    if (defaultInterestRate) return (defaultInterestRate * 100).toFixed(2);
+    return "";
+  });
+  const [categoryId, setCategoryId] = useState(purchase?.categoryId ?? "");
+  const [purchaseDate, setPurchaseDate] = useState(() => {
+    const ts = purchase?.purchaseDate ?? Date.now();
+    return new Date(ts).toISOString().substring(0, 10);
+  });
+  const [notes, setNotes] = useState(purchase?.notes ?? "");
   const [loading, setLoading] = useState(false);
 
   const amountCents = toCents(parseFloat(amount) || 0);
   const nInstallments = parseInt(installments) || 1;
   const rate = hasInterest ? (parseFloat(interestRatePct) || 0) / 100 : 0;
 
-  // Preview en tiempo real
   const preview = useMemo(() => {
-    if (amountCents <= 0 || nInstallments <= 0) return null;
+    if (!canEditFinancials || amountCents <= 0 || nInstallments <= 0) return null;
     return calculateInstallment(amountCents, rate, nInstallments);
-  }, [amountCents, rate, nInstallments]);
+  }, [canEditFinancials, amountCents, rate, nInstallments]);
 
-  // Fecha primera cuota = mes siguiente a la compra
   const firstInstallmentDate = useMemo(() => {
     const d = new Date(purchaseDate);
     d.setMonth(d.getMonth() + 1);
@@ -69,28 +81,48 @@ export function PurchaseForm({
       toast.error("Completa los campos obligatorios");
       return;
     }
-    if (hasInterest && !rate) {
+    if (canEditFinancials && hasInterest && !rate) {
       toast.error("Ingresa la tasa de interés");
       return;
     }
 
     setLoading(true);
     try {
-      await createPurchase({
-        cardId,
-        categoryId: categoryId ? (categoryId as Id<"categories">) : undefined,
-        description: description.trim(),
-        totalAmount: amountCents,
-        totalInstallments: nInstallments,
-        hasInterest,
-        interestRate: hasInterest ? rate : undefined,
-        purchaseDate: new Date(purchaseDate).getTime(),
-        firstInstallmentDate,
-      });
-      toast.success("Compra registrada y cronograma generado");
+      if (isEdit) {
+        await updatePurchase({
+          purchaseId: purchase._id,
+          description: description.trim(),
+          clearCategory: !categoryId,
+          categoryId: categoryId ? (categoryId as Id<"categories">) : undefined,
+          notes: notes || undefined,
+          ...(canEditFinancials && {
+            totalAmount: amountCents,
+            totalInstallments: nInstallments,
+            hasInterest,
+            interestRate: hasInterest ? rate : undefined,
+            purchaseDate: new Date(purchaseDate).getTime(),
+            firstInstallmentDate,
+          }),
+        });
+        toast.success("Compra actualizada");
+      } else {
+        await createPurchase({
+          cardId,
+          categoryId: categoryId ? (categoryId as Id<"categories">) : undefined,
+          description: description.trim(),
+          totalAmount: amountCents,
+          totalInstallments: nInstallments,
+          hasInterest,
+          interestRate: hasInterest ? rate : undefined,
+          purchaseDate: new Date(purchaseDate).getTime(),
+          firstInstallmentDate,
+          notes: notes || undefined,
+        });
+        toast.success("Compra registrada y cronograma generado");
+      }
       onSuccess?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al registrar compra");
+      toast.error(err instanceof Error ? err.message : "Error al guardar");
     } finally {
       setLoading(false);
     }
@@ -98,47 +130,79 @@ export function PurchaseForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Descripción */}
+      {isEdit && !canEditFinancials && (
+        <div className="rounded-lg bg-muted/50 border border-border p-3 text-sm text-muted-foreground">
+          Esta compra tiene {purchase.paidInstallments} cuota{purchase.paidInstallments !== 1 ? "s" : ""} pagada{purchase.paidInstallments !== 1 ? "s" : ""}. Solo puedes editar la descripción, categoría y notas.
+        </div>
+      )}
+
       <div className="space-y-1.5">
         <Label htmlFor="pu-desc">Descripción</Label>
-        <Input id="pu-desc" placeholder="Ej: iPhone 16, Nevera Samsung…"
-          value={description} onChange={(e) => setDescription(e.target.value)} required />
+        <Input
+          id="pu-desc"
+          placeholder="Ej: iPhone 16, Nevera Samsung…"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          required
+        />
       </div>
 
-      {/* Monto y cuotas */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="pu-amount">Monto ({currency})</Label>
-          <MoneyInput id="pu-amount" placeholder="0"
-            value={amount} onChange={setAmount} required />
+          <MoneyInput
+            id="pu-amount"
+            placeholder="0"
+            value={amount}
+            onChange={setAmount}
+            required
+            disabled={!canEditFinancials}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pu-inst">Número de cuotas</Label>
-          <Input id="pu-inst" type="number" min="1" max="60"
-            value={installments} onChange={(e) => setInstallments(e.target.value)} />
+          <Input
+            id="pu-inst"
+            type="number"
+            min="1"
+            max="60"
+            value={installments}
+            onChange={(e) => setInstallments(e.target.value)}
+            disabled={!canEditFinancials}
+          />
         </div>
       </div>
 
-      {/* Toggle interés */}
-      <div className="flex items-center justify-between rounded-lg border border-border p-3">
+      <div className={`flex items-center justify-between rounded-lg border border-border p-3 ${!canEditFinancials ? "opacity-50" : ""}`}>
         <div>
           <p className="text-sm font-medium text-foreground">¿Genera intereses?</p>
           <p className="text-xs text-muted-foreground">Activa para calcular con interés compuesto</p>
         </div>
-        <Switch checked={hasInterest} onCheckedChange={setHasInterest} />
+        <Switch
+          checked={hasInterest}
+          onCheckedChange={setHasInterest}
+          disabled={!canEditFinancials}
+        />
       </div>
 
-      {/* Tasa */}
       {hasInterest && (
         <div className="space-y-1.5">
           <Label htmlFor="pu-rate">Tasa mensual % (m.v.)</Label>
-          <Input id="pu-rate" type="number" min="0.001" max="100" step="0.001"
-            placeholder={defaultInterestRate ? (defaultInterestRate * 100).toFixed(2) : "Ej: 2.5"}
-            value={interestRatePct} onChange={(e) => setInterestRatePct(e.target.value)} required />
+          <Input
+            id="pu-rate"
+            type="number"
+            min="0.001"
+            max="100"
+            step="0.001"
+            placeholder="Ej: 2.5"
+            value={interestRatePct}
+            onChange={(e) => setInterestRatePct(e.target.value)}
+            required
+            disabled={!canEditFinancials}
+          />
         </div>
       )}
 
-      {/* Categoría y fecha */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Categoría (opcional)</Label>
@@ -146,7 +210,7 @@ export function PurchaseForm({
             <SelectTrigger>
               <span className="flex-1 text-left text-sm truncate">
                 {categoryId
-                  ? (categories ?? []).find(c => c._id === categoryId)?.name ?? "Categoría"
+                  ? (categories ?? []).find((c) => c._id === categoryId)?.name ?? "Categoría"
                   : <span className="text-muted-foreground">Sin categoría</span>}
               </span>
             </SelectTrigger>
@@ -160,12 +224,30 @@ export function PurchaseForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="pu-date">Fecha de compra</Label>
-          <DatePicker id="pu-date" value={purchaseDate}
-            onChange={setPurchaseDate} required />
+          {canEditFinancials ? (
+            <DatePicker id="pu-date" value={purchaseDate} onChange={setPurchaseDate} required />
+          ) : (
+            <Input
+              id="pu-date"
+              type="date"
+              value={purchaseDate}
+              disabled
+              className="opacity-50"
+            />
+          )}
         </div>
       </div>
 
-      {/* Preview del cronograma */}
+      <div className="space-y-1.5">
+        <Label htmlFor="pu-notes">Notas (opcional)</Label>
+        <Input
+          id="pu-notes"
+          placeholder="Notas adicionales…"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </div>
+
       {preview && amountCents > 0 && (
         <>
           <Separator />
@@ -194,7 +276,6 @@ export function PurchaseForm({
               </div>
             </div>
 
-            {/* Mini tabla de cuotas */}
             <div className="rounded-lg border border-border overflow-hidden text-xs">
               <div className="grid grid-cols-4 px-3 py-1.5 bg-muted/50 text-muted-foreground font-medium">
                 <span>#</span><span>Capital</span><span>Interés</span><span className="text-right">Cuota</span>
@@ -203,8 +284,7 @@ export function PurchaseForm({
                 const dueTs = new Date(purchaseDate);
                 dueTs.setMonth(dueTs.getMonth() + s.installmentNumber);
                 return (
-                  <div key={s.installmentNumber}
-                    className="grid grid-cols-4 px-3 py-1.5 border-t border-border">
+                  <div key={s.installmentNumber} className="grid grid-cols-4 px-3 py-1.5 border-t border-border">
                     <span className="text-muted-foreground">{s.installmentNumber}</span>
                     <span className="text-accent">{formatCents(s.principalAmount, currency)}</span>
                     <span className="text-warning">{formatCents(s.interestAmount, currency)}</span>
@@ -223,7 +303,9 @@ export function PurchaseForm({
       )}
 
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Registrando…" : "Registrar compra"}
+        {loading
+          ? (isEdit ? "Guardando…" : "Registrando…")
+          : (isEdit ? "Guardar cambios" : "Registrar compra")}
       </Button>
     </form>
   );
