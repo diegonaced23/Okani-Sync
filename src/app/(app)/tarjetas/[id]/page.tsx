@@ -146,6 +146,7 @@ function DirectTransactionEditForm({
 function PurchaseRow({
   purchase,
   currency,
+  categoryName,
   onPay,
   paying,
   onEdit,
@@ -153,6 +154,7 @@ function PurchaseRow({
 }: {
   purchase: Doc<"cardPurchases">;
   currency: string;
+  categoryName?: string;
   onPay: (id: Id<"cardInstallments">) => void;
   paying: string;
   onEdit: (p: Doc<"cardPurchases">) => void;
@@ -182,7 +184,19 @@ function PurchaseRow({
             <p className="text-sm font-medium text-foreground truncate">
               {purchase.description}
             </p>
-            <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-muted-foreground truncate mt-0.5">
+              {[
+                categoryName,
+                new Date(purchase.purchaseDate).toLocaleDateString("es-CO", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                }),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            <div className="flex items-center gap-2 mt-1">
               <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
                 <div
                   className="h-full bg-accent rounded-full transition-all"
@@ -288,6 +302,7 @@ export default function CardDetailPage({
     cardId,
     month: currentMonth(),
   });
+  const categories = useQuery(api.categories.list, { type: "gasto" });
 
   const payInstallment = useMutation(api.cardPurchases.payInstallment);
   const removeCard = useMutation(api.cards.remove);
@@ -346,6 +361,18 @@ export default function CardDetailPage({
       setTxDeleting(false);
     }
   }
+
+  const categoryMap = Object.fromEntries(
+    (categories ?? []).map((c) => [c._id, c.name])
+  );
+
+  const sortedPurchases = [...(purchases ?? [])].sort(
+    (a, b) => b.purchaseDate - a.purchaseDate
+  );
+
+  const sortedTxs = [...(directTransactions ?? [])].sort(
+    (a, b) => b.date - a.date
+  );
 
   if (card === undefined) {
     return (
@@ -461,7 +488,7 @@ export default function CardDetailPage({
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Compras activas ({(purchases ?? []).length})
+            Compras activas ({sortedPurchases.length})
           </h2>
           <AppSheet
             open={purchaseOpen}
@@ -486,17 +513,18 @@ export default function CardDetailPage({
           <div className="space-y-2">
             {[1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
           </div>
-        ) : purchases.length === 0 ? (
+        ) : sortedPurchases.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center rounded-xl bg-card border border-border">
             No hay compras activas en esta tarjeta.
           </p>
         ) : (
           <div className="rounded-xl bg-card border border-border overflow-hidden">
-            {purchases.map((purchase) => (
+            {sortedPurchases.map((purchase) => (
               <PurchaseRow
                 key={purchase._id}
                 purchase={purchase}
                 currency={card.currency}
+                categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
                 onPay={handlePay}
                 paying={paying}
                 onEdit={setEditingPurchase}
@@ -508,10 +536,10 @@ export default function CardDetailPage({
       </section>
 
       {/* Gastos directos */}
-      {((directTransactions ?? []).length > 0 || directTransactions === undefined) && (
+      {(sortedTxs.length > 0 || directTransactions === undefined) && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Gastos directos ({directTransactions === undefined ? "…" : directTransactions.length})
+            Gastos directos ({directTransactions === undefined ? "…" : sortedTxs.length})
           </h2>
 
           {directTransactions === undefined ? (
@@ -520,19 +548,24 @@ export default function CardDetailPage({
             </div>
           ) : (
             <div className="rounded-xl bg-card border border-border overflow-hidden">
-              {directTransactions.map((tx) => (
+              {sortedTxs.map((tx) => (
                 <div
                   key={tx._id}
                   className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(tx.date).toLocaleDateString("es-CO", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[
+                        tx.categoryId ? categoryMap[tx.categoryId] : undefined,
+                        new Date(tx.date).toLocaleDateString("es-CO", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        }),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <p className="text-sm font-semibold tabular-nums text-foreground shrink-0">
