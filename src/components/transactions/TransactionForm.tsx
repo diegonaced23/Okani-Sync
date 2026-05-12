@@ -5,11 +5,12 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { MoneyInput } from "@/components/ui/money-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel,
-  SelectSeparator, SelectTrigger, SelectValue,
+  SelectSeparator, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents } from "@/lib/money";
@@ -27,6 +28,7 @@ interface TransactionFormProps {
 
 export function TransactionForm({ defaultType = "gasto", onSuccess }: TransactionFormProps) {
   const createTransaction = useMutation(api.transactions.create);
+  const createPurchase    = useMutation(api.cardPurchases.createPurchase);
   const accounts   = useQuery(api.accounts.list);
   const cards      = useQuery(api.cards.list);
   const categories = useQuery(api.categories.list, {});
@@ -39,6 +41,11 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
   const [categoryId, setCategoryId]   = useState<string>("");
   const [date, setDate]               = useState(() => new Date().toISOString().substring(0, 10));
   const [loading, setLoading]         = useState(false);
+
+  // Campos específicos de tarjeta de crédito
+  const [installments, setInstallments]       = useState("1");
+  const [hasInterest, setHasInterest]         = useState(false);
+  const [interestRatePct, setInterestRatePct] = useState("");
 
   const accountList = accounts ?? [];
   const cardList    = cards ?? [];
@@ -65,6 +72,49 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
       return;
     }
 
+    const isCard = sourceKind === "card" && !!sourceRawId;
+
+    if (isCard) {
+      const nInstallments = parseInt(installments) || 1;
+      if (nInstallments < 1) {
+        toast.error("El número de cuotas debe ser al menos 1");
+        return;
+      }
+      const rate = hasInterest ? (parseFloat(interestRatePct) || 0) / 100 : 0;
+      if (hasInterest && rate <= 0) {
+        toast.error("Ingresa la tasa de interés");
+        return;
+      }
+
+      const purchaseDate = new Date(date).getTime();
+      const firstInstallmentDate = new Date(date);
+      firstInstallmentDate.setMonth(firstInstallmentDate.getMonth() + 1);
+
+      setLoading(true);
+      try {
+        await createPurchase({
+          cardId: sourceRawId as Parameters<typeof createPurchase>[0]["cardId"],
+          categoryId: categoryId
+            ? (categoryId as Parameters<typeof createPurchase>[0]["categoryId"])
+            : undefined,
+          description: description.trim(),
+          totalAmount: toCents(amountNum),
+          totalInstallments: nInstallments,
+          hasInterest,
+          interestRate: hasInterest ? rate : undefined,
+          purchaseDate,
+          firstInstallmentDate: firstInstallmentDate.getTime(),
+        });
+        toast.success("Compra registrada y cronograma generado");
+        onSuccess?.();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error al registrar compra");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     setLoading(true);
     try {
       await createTransaction({
@@ -75,9 +125,6 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         currency,
         accountId: sourceKind === "account" && sourceRawId
           ? (sourceRawId as Parameters<typeof createTransaction>[0]["accountId"])
-          : undefined,
-        cardId: sourceKind === "card" && sourceRawId
-          ? (sourceRawId as Parameters<typeof createTransaction>[0]["cardId"])
           : undefined,
         categoryId: categoryId
           ? (categoryId as Parameters<typeof createTransaction>[0]["categoryId"])
@@ -142,7 +189,19 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         <Label htmlFor="tx-source" className="text-[12px] font-semibold text-foreground mb-2 block">
           {type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
         </Label>
-        <Select value={sourceId} onValueChange={(v) => setSourceId(v ?? "")}>
+        <Select
+          value={sourceId}
+          onValueChange={(v) => {
+            setSourceId(v ?? "");
+            // Resetear campos de tarjeta si cambia la fuente
+            const [kind] = (v ?? "").includes(":") ? (v ?? "").split(":") : [""];
+            if (kind !== "card") {
+              setInstallments("1");
+              setHasInterest(false);
+              setInterestRatePct("");
+            }
+          }}
+        >
           <SelectTrigger id="tx-source" className="w-full" style={{ background: "var(--surface-2)" }}>
             <span className="flex-1 text-left text-sm truncate">
               {selectedAccount ? (
@@ -182,6 +241,72 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
           </SelectContent>
         </Select>
       </div>
+
+      {/* ── Campos de tarjeta de crédito ──────────────────────────────────── */}
+      {sourceKind === "card" && sourceRawId && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="tx-installments" className="text-[12px] font-semibold text-foreground mb-2 block">
+                Cuotas <span aria-hidden="true" className="text-danger">*</span>
+              </Label>
+              <Input
+                id="tx-installments"
+                type="number"
+                min="1"
+                max="60"
+                value={installments}
+                onChange={(e) => setInstallments(e.target.value)}
+                required
+                aria-required="true"
+                style={{ background: "var(--surface-2)" }}
+              />
+            </div>
+            <div className="flex items-end pb-0.5">
+              <div
+                className="flex items-center justify-between rounded-xl w-full px-3 py-2.5"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+              >
+                <span className="text-[12px] font-semibold text-foreground">¿Con interés?</span>
+                <Switch
+                  checked={hasInterest}
+                  onCheckedChange={(v) => {
+                    setHasInterest(v);
+                    if (!v) setInterestRatePct("");
+                    else if (selectedCard?.interestRate)
+                      setInterestRatePct((selectedCard.interestRate * 100).toFixed(2));
+                  }}
+                  aria-label="Aplicar interés"
+                />
+              </div>
+            </div>
+          </div>
+
+          {hasInterest && (
+            <div>
+              <Label htmlFor="tx-interest" className="text-[12px] font-semibold text-foreground mb-2 block">
+                Tasa mensual % <span className="text-muted-foreground font-normal">(m.v.)</span>{" "}
+                <span aria-hidden="true" className="text-danger">*</span>
+              </Label>
+              <Input
+                id="tx-interest"
+                type="number"
+                min="0.001"
+                max="100"
+                step="0.001"
+                placeholder={selectedCard?.interestRate
+                  ? (selectedCard.interestRate * 100).toFixed(2)
+                  : "Ej: 2.5"}
+                value={interestRatePct}
+                onChange={(e) => setInterestRatePct(e.target.value)}
+                required
+                aria-required="true"
+                style={{ background: "var(--surface-2)" }}
+              />
+            </div>
+          )}
+        </>
+      )}
 
       {/* ── Fecha ──────────────────────────────────────────────────────────── */}
       <div>
