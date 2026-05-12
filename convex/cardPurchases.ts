@@ -369,6 +369,7 @@ export const payMinimum = mutation({
     cardId: v.id("cards"),
     fromAccountId: v.id("accounts"),
     paymentDate: v.optional(v.number()),
+    targetMonth: v.optional(v.string()), // "YYYY-MM"; por defecto el mes actual
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUser(ctx);
@@ -383,13 +384,13 @@ export const payMinimum = mutation({
     }
 
     const paymentDate = args.paymentDate ?? Date.now();
-    const currentMonthStr = toMonthString(Date.now());
+    const targetMonth = args.targetMonth ?? toMonthString(Date.now());
     const now = Date.now();
 
     const monthInstallments = await ctx.db
       .query("cardInstallments")
       .withIndex("by_card_month", (q) =>
-        q.eq("cardId", args.cardId).eq("month", currentMonthStr)
+        q.eq("cardId", args.cardId).eq("month", targetMonth)
       )
       .collect();
 

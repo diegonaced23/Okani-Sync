@@ -18,6 +18,7 @@ interface PayCardFormProps {
   currency: string;
   mode: "minimo" | "total";
   amount: number;
+  targetMonth?: string; // "YYYY-MM" — solo para mode="minimo"
   onSuccess: () => void;
 }
 
@@ -26,6 +27,7 @@ export function PayCardForm({
   currency,
   mode,
   amount,
+  targetMonth,
   onSuccess,
 }: PayCardFormProps) {
   const payMinimum = useMutation(api.cardPurchases.payMinimum);
@@ -55,15 +57,18 @@ export function PayCardForm({
     setLoading(true);
     try {
       const paymentTs = new Date(paymentDate).getTime();
-      const args = {
-        cardId,
-        fromAccountId: fromAccountId as Id<"accounts">,
-        paymentDate: paymentTs,
-      };
-
       const result = mode === "minimo"
-        ? await payMinimum(args)
-        : await payTotal(args);
+        ? await payMinimum({
+            cardId,
+            fromAccountId: fromAccountId as Id<"accounts">,
+            paymentDate: paymentTs,
+            targetMonth,
+          })
+        : await payTotal({
+            cardId,
+            fromAccountId: fromAccountId as Id<"accounts">,
+            paymentDate: paymentTs,
+          });
 
       const label = mode === "minimo" ? "Pago mínimo" : "Pago total";
       toast.success(`${label} realizado — ${result.paidCount} cuota${result.paidCount !== 1 ? "s" : ""} pagada${result.paidCount !== 1 ? "s" : ""}`);
