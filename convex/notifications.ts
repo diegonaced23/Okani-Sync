@@ -81,6 +81,8 @@ export const createInternal = internalMutation({
       v.literal("cuota_proxima"),
       v.literal("deuda_vencida"),
       v.literal("deuda_proxima"),
+      v.literal("prestamo_vencido"),
+      v.literal("prestamo_proximo"),
       v.literal("recordatorio_registro"),
       v.literal("transaccion_recurrente"),
       v.literal("resumen_semanal"),
