@@ -321,7 +321,6 @@ export default function TransaccionesPage() {
           setDetailOpen(o);
           if (!o) setSelectedTx(null);
         }}
-        categoryName={selectedTx?.categoryId ? catMap[selectedTx.categoryId]?.name : undefined}
         categories={categories ?? []}
       />
 

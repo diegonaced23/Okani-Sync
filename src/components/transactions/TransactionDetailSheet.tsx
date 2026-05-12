@@ -26,44 +26,12 @@ import { Check, Pencil, Trash2, X, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight,
-  BookOpen, Briefcase, Car, CircleDollarSign, Coffee,
-  CreditCard, Gift, HandCoins, Heart, HeartPulse,
-  Home, Laptop, MoreHorizontal, Music, Scale, Shirt,
-  ShoppingCart, Tv, TrendingUp, UtensilsCrossed, Wallet, Zap,
+  CreditCard, HandCoins, Scale,
 } from "lucide-react";
 import type { LucideProps } from "lucide-react";
-
-// ── Icon map para categorías ───────────────────────────────────────────────────
+import { CategoryIcon } from "@/components/ui/category-icon";
 
 type LucideIcon = React.ComponentType<LucideProps>;
-
-const ICON_MAP: Record<string, LucideIcon> = {
-  "utensils":        UtensilsCrossed,
-  "car":             Car,
-  "home":            Home,
-  "zap":             Zap,
-  "heart-pulse":     HeartPulse,
-  "music":           Music,
-  "book-open":       BookOpen,
-  "shirt":           Shirt,
-  "circle-ellipsis": MoreHorizontal,
-  "briefcase":       Briefcase,
-  "laptop":          Laptop,
-  "trending-up":     TrendingUp,
-  "gift":            Gift,
-  "cart":            ShoppingCart,
-  "credit-card":     CreditCard,
-  "heart":           Heart,
-  "tv":              Tv,
-  "coffee":          Coffee,
-  "wallet":          Wallet,
-  "home2":           Home,
-};
-
-function CategoryIcon({ name, ...props }: { name: string } & LucideProps) {
-  const Icon = ICON_MAP[name] ?? CircleDollarSign;
-  return <Icon {...props} />;
-}
 
 // ── Config visual por tipo ─────────────────────────────────────────────────────
 
@@ -133,7 +101,6 @@ interface TransactionDetailSheetProps {
   transaction: Doc<"transactions"> | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  categoryName?: string;
   categories: Doc<"categories">[];
 }
 
@@ -141,7 +108,6 @@ export function TransactionDetailSheet({
   transaction: tx,
   open,
   onOpenChange,
-  categoryName,
   categories,
 }: TransactionDetailSheetProps) {
   const updateTx = useMutation(api.transactions.update);
@@ -150,6 +116,7 @@ export function TransactionDetailSheet({
   const cards    = useQuery(api.cards.list);
 
   const accountMap = Object.fromEntries((accounts ?? []).map((a) => [a._id, a.name]));
+  const cardMap    = Object.fromEntries((cards    ?? []).map((c) => [c._id, { name: c.name, lastFourDigits: c.lastFourDigits }]));
 
   const [editing, setEditing]       = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -193,6 +160,15 @@ export function TransactionDetailSheet({
   const config = TYPE_CONFIG[currentTx.type] ?? TYPE_CONFIG.gasto;
   const Icon = config.icon;
   const canEdit = EDITABLE_TYPES.has(currentTx.type);
+
+  const fullCat = currentTx.categoryId
+    ? categories.find((c) => c._id === currentTx.categoryId)
+    : undefined;
+  const catIconBg    = fullCat ? `color-mix(in oklch, ${fullCat.color} 18%, transparent)` : config.iconBg;
+  const catIconColor = fullCat ? fullCat.color : config.iconColor;
+
+  const sourceAccount = currentTx.accountId ? accountMap[currentTx.accountId] : undefined;
+  const sourceCard    = currentTx.cardId    ? cardMap[currentTx.cardId]        : undefined;
 
   // Decodificar sourceId para el Select
   const [sourceKind, sourceRawId] = sourceId.includes(":") ? sourceId.split(":") : ["", ""];
@@ -287,28 +263,20 @@ export function TransactionDetailSheet({
             <div className="flex items-center gap-4 pb-1">
               <span
                 className="flex shrink-0 items-center justify-center"
-                style={{
-                  width: 52, height: 52,
-                  borderRadius: 16,
-                  background: config.iconBg,
-                  color: config.iconColor,
-                }}
+                style={{ width: 52, height: 52, borderRadius: 16, background: catIconBg, color: catIconColor }}
               >
-                <Icon className="h-[22px] w-[22px]" aria-hidden="true" />
+                {fullCat
+                  ? <CategoryIcon name={fullCat.icon} className="h-[22px] w-[22px]" aria-hidden="true" />
+                  : <Icon className="h-[22px] w-[22px]" aria-hidden="true" />}
               </span>
               <div>
                 <p
                   className="font-mono-num"
-                  style={{
-                    fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em",
-                    color: config.amountColor, lineHeight: 1,
-                  }}
+                  style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", color: config.amountColor, lineHeight: 1 }}
                 >
                   {config.sign}{formatCents(currentTx.amount, currentTx.currency)}
                 </p>
-                <p className="text-xs font-semibold text-muted-foreground mt-1">
-                  {config.label}
-                </p>
+                <p className="text-xs font-semibold text-muted-foreground mt-1">{config.label}</p>
               </div>
             </div>
           )}
@@ -519,18 +487,99 @@ export function TransactionDetailSheet({
 
               <dl
                 className="rounded-xl divide-y"
-                style={{
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--border)",
-                  overflow: "hidden",
-                }}
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", overflow: "hidden" }}
               >
+                {/* Descripción */}
                 <DetailRow label="Descripción" value={currentTx.description} />
+
+                {/* Fecha */}
                 <DetailRow label="Fecha" value={formatDate(currentTx.date)} />
-                {categoryName && <DetailRow label="Categoría" value={categoryName} />}
-                {currentTx.notes && <DetailRow label="Notas" value={currentTx.notes} />}
-                {currentTx.currency && (
-                  <DetailRow label="Moneda" value={currentTx.currency} />
+
+                {/* Categoría con ícono */}
+                {fullCat && (
+                  <DetailRow label="Categoría">
+                    <span className="flex items-center justify-end gap-1.5">
+                      <CategoryIcon
+                        name={fullCat.icon}
+                        className="h-3.5 w-3.5 shrink-0"
+                        style={{ color: fullCat.color }}
+                        strokeWidth={1.8}
+                        aria-hidden
+                      />
+                      <span>{fullCat.name}</span>
+                    </span>
+                  </DetailRow>
+                )}
+
+                {/* Cuenta origen (para gastos, ingresos, pago_deuda) */}
+                {sourceAccount && currentTx.type !== "transferencia" && currentTx.type !== "pago_tarjeta" && (
+                  <DetailRow
+                    label={currentTx.type === "ingreso" ? "Cuenta destino" : "Cuenta"}
+                    value={sourceAccount}
+                  />
+                )}
+
+                {/* Para pago_tarjeta: tarjeta cargada + cuenta con la que se pagó */}
+                {currentTx.type === "pago_tarjeta" && (
+                  <>
+                    {sourceCard && (
+                      <DetailRow
+                        label="Tarjeta"
+                        value={`${sourceCard.name} ···${sourceCard.lastFourDigits}`}
+                      />
+                    )}
+                    {sourceAccount && (
+                      <DetailRow label="Pagado con" value={sourceAccount} />
+                    )}
+                  </>
+                )}
+
+                {/* Tarjeta para gastos directos en tarjeta */}
+                {currentTx.type === "gasto" && sourceCard && (
+                  <DetailRow
+                    label="Tarjeta"
+                    value={`${sourceCard.name} ···${sourceCard.lastFourDigits}`}
+                  />
+                )}
+
+                {/* Estado */}
+                <DetailRow
+                  label="Estado"
+                  value={
+                    currentTx.status === "completada" ? "Completada"
+                    : currentTx.status === "pendiente" ? "Pendiente"
+                    : "Cancelada"
+                  }
+                />
+
+                {/* Moneda */}
+                <DetailRow label="Moneda" value={currentTx.currency} />
+
+                {/* Recurrente */}
+                {currentTx.isRecurring && (
+                  <DetailRow label="Recurrente" value="Sí" />
+                )}
+
+                {/* Tags */}
+                {currentTx.tags && currentTx.tags.length > 0 && (
+                  <DetailRow label="Etiquetas">
+                    <span className="flex flex-wrap justify-end gap-1">
+                      {currentTx.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                          style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </span>
+                  </DetailRow>
+                )}
+
+                {/* Notas */}
+                {currentTx.notes && (
+                  <DetailRow label="Notas" value={currentTx.notes} />
                 )}
               </dl>
             </div>
@@ -622,11 +671,13 @@ export function TransactionDetailSheet({
 
 // ── Sub-componente de fila de detalle ──────────────────────────────────────────
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 px-4 py-3">
       <dt className="text-xs font-semibold text-muted-foreground shrink-0 pt-px">{label}</dt>
-      <dd className="text-sm text-right text-foreground">{value}</dd>
+      <dd className="text-sm text-right text-foreground min-w-0">
+        {children ?? value}
+      </dd>
     </div>
   );
 }

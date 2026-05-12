@@ -4,6 +4,7 @@ import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
 import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins, Scale } from "lucide-react";
 import type { Doc } from "../../../convex/_generated/dataModel";
+import { CategoryIcon } from "@/components/ui/category-icon";
 
 interface CategoryInfo {
   name: string;
@@ -149,11 +150,10 @@ export function TransactionItem({
           borderRadius: 13,
           background: iconBg,
           color: iconColor,
-          fontSize: hasCategory ? 18 : undefined,
         }}
       >
         {hasCategory
-          ? <span aria-hidden="true">{category.icon}</span>
+          ? <CategoryIcon name={category.icon} className="h-[18px] w-[18px]" aria-hidden="true" />
           : <Icon className="h-[18px] w-[18px]" aria-hidden="true" />}
       </span>
 
