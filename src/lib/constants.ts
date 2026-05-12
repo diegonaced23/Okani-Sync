@@ -213,6 +213,11 @@ export const DEBT_ICONS = [
   "graduation-cap", "credit-card", "circle-ellipsis",
 ] as const;
 
+export const LOAN_ICONS = [
+  "hand-coins", "user-round", "users", "handshake",
+  "calendar-clock", "wallet", "banknote",
+] as const;
+
 // ─── Íconos disponibles para categorías ──────────────────────────────────────
 
 export const CATEGORY_ICONS = [

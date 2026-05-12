@@ -19,6 +19,7 @@ const USER_NAV_SECTIONS = [
       { href: "/cuentas",       icon: Landmark,        label: "Cuentas",        prefetch: true },
       { href: "/tarjetas",      icon: CreditCard,      label: "Tarjetas",       prefetch: true },
       { href: "/deudas",        icon: HandCoins,       label: "Deudas",         prefetch: true },
+      { href: "/prestamos",     icon: HandCoins,       label: "Préstamos",      prefetch: true },
       { href: "/recurrentes",   icon: Repeat,          label: "Recurrentes",    prefetch: true },
     ],
   },

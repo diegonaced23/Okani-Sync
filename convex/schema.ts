@@ -381,6 +381,7 @@ export default defineSchema({
     cardPurchaseId: v.optional(v.id("cardPurchases")),
     cardInstallmentId: v.optional(v.id("cardInstallments")),
     debtId: v.optional(v.id("debts")),
+    loanId: v.optional(v.id("loans")),
 
     receiptStorageId: v.optional(v.id("_storage")),
     receiptUrl: v.optional(v.string()),
@@ -510,6 +511,8 @@ export default defineSchema({
       v.literal("cuota_proxima"),
       v.literal("deuda_vencida"),
       v.literal("deuda_proxima"),
+      v.literal("prestamo_vencido"),
+      v.literal("prestamo_proximo"),
       v.literal("recordatorio_registro"),
       v.literal("transaccion_recurrente"),
       v.literal("resumen_semanal"),
@@ -530,4 +533,50 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_read", ["userId", "read"])
     .index("by_user_push_sent", ["userId", "pushSent"]),
+
+  // ============================================================
+  // PRÉSTAMOS — Dinero que el usuario prestó a otras personas
+  // ============================================================
+  loans: defineTable({
+    userId: v.string(),
+    name: v.string(),                      // descripción corta del préstamo
+    borrower: v.string(),                  // a quién se le prestó
+    originalAmount: v.number(),            // monto original en centavos
+    currentBalance: v.number(),            // saldo pendiente de cobro en centavos
+    currency: v.string(),
+    startDate: v.number(),                 // fecha en que se hizo el préstamo
+    dueDate: v.optional(v.number()),       // fecha esperada de devolución
+    status: v.union(
+      v.literal("activa"),
+      v.literal("pagada"),
+      v.literal("vencida"),
+    ),
+    color: v.string(),
+    icon: v.string(),
+    archived: v.boolean(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_user_archived", ["userId", "archived"])
+    .index("by_status_dueDate", ["status", "dueDate"]),
+
+  // ============================================================
+  // ABONOS DE PRÉSTAMOS — Historial de pagos recibidos
+  // ============================================================
+  loanRepayments: defineTable({
+    userId: v.string(),
+    loanId: v.id("loans"),
+    amount: v.number(),                    // centavos
+    currency: v.string(),
+    date: v.number(),
+    month: v.string(),                     // "YYYY-MM"
+    transactionId: v.optional(v.id("transactions")),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_loan", ["loanId"])
+    .index("by_user_month", ["userId", "month"]),
 });

@@ -10,7 +10,8 @@ import { Separator } from "@/components/ui/separator";
 
 const MAIN_LINKS = [
   { href: "/tarjetas",   icon: CreditCard,  label: "Tarjetas de crédito", desc: "Cuotas e interés compuesto" },
-  { href: "/deudas",       icon: HandCoins, label: "Deudas",                    desc: "Préstamos y abonos" },
+  { href: "/deudas",       icon: HandCoins, label: "Deudas",    desc: "Dinero que debes a otros" },
+  { href: "/prestamos",    icon: HandCoins, label: "Préstamos", desc: "Dinero que te deben a ti" },
   { href: "/recurrentes", icon: Repeat,    label: "Movimientos recurrentes", desc: "Gastos automáticos cada mes" },
   { href: "/categorias", icon: Tags,        label: "Categorías",           desc: "Organiza tus movimientos" },
   { href: "/presupuestos",icon: PieChart,   label: "Presupuestos",         desc: "Control por categoría y mes" },

@@ -22,6 +22,12 @@ export const run = internalAction({
     // 4. Deudas próximas a vencer (en ≤ 7 días)
     await checkUpcomingDebts7Days(ctx, now);
 
+    // 5. Préstamos vencidos
+    await checkOverdueLoans(ctx, now);
+
+    // 6. Préstamos próximos a vencer (en ≤ 7 días)
+    await checkUpcomingLoans7Days(ctx, now);
+
     console.log("sendAlerts: ciclo completado", new Date(now).toISOString());
   },
 });
@@ -162,6 +168,58 @@ async function checkUpcomingDebts7Days(ctx: ActionCtx, now: number) {
       title: "⚠️ Deuda próxima a vencer",
       body: `"${debt.name}" vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
       url: "/deudas",
+      notificationId: notifId,
+    });
+  }
+}
+
+async function checkOverdueLoans(ctx: ActionCtx, now: number) {
+  const overdueLoans = await ctx.runQuery(internal.loans.listOverdue, { now });
+
+  for (const loan of overdueLoans) {
+    await ctx.runMutation(internal.loans.markOverdueInternal, { loanId: loan._id });
+
+    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+      userId: loan.userId,
+      type: "prestamo_vencido",
+      title: "Préstamo vencido",
+      message: `El préstamo a ${loan.borrower} "${loan.name}" ha vencido.`,
+      actionUrl: `/prestamos/${loan._id}`,
+      relatedEntityId: loan._id,
+    });
+
+    await ctx.runAction(internal.actions.sendPushNotification.run, {
+      userId: loan.userId,
+      title: "💸 Préstamo vencido",
+      body: `${loan.borrower} no ha devuelto "${loan.name}".`,
+      url: `/prestamos/${loan._id}`,
+      notificationId: notifId,
+    });
+  }
+}
+
+async function checkUpcomingLoans7Days(ctx: ActionCtx, now: number) {
+  const beforeTs = now + SEVEN_DAYS_MS;
+  const dueSoon = await ctx.runQuery(internal.loans.listDueSoon, { now, beforeTs });
+
+  for (const loan of dueSoon) {
+    if (!loan.dueDate) continue;
+    const daysLeft = Math.ceil((loan.dueDate - now) / (24 * 60 * 60 * 1000));
+
+    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+      userId: loan.userId,
+      type: "prestamo_proximo",
+      title: "Préstamo próximo a vencer",
+      message: `El préstamo a ${loan.borrower} vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
+      actionUrl: `/prestamos/${loan._id}`,
+      relatedEntityId: loan._id,
+    });
+
+    await ctx.runAction(internal.actions.sendPushNotification.run, {
+      userId: loan.userId,
+      title: "⏰ Préstamo próximo a vencer",
+      body: `${loan.borrower} debe devolver "${loan.name}" en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
+      url: `/prestamos/${loan._id}`,
       notificationId: notifId,
     });
   }
