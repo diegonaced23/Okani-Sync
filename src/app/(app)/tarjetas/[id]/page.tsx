@@ -3,11 +3,11 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
-import { use, useState } from "react";
+import { use, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Plus, ChevronDown, ChevronUp,
-  Pencil, Trash2,
+  Pencil, Trash2, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -281,6 +281,8 @@ export default function CardDetailPage({
   const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
   const [purchaseDeleteId, setPurchaseDeleteId] = useState<Id<"cardPurchases"> | null>(null);
   const [purchaseDeleting, setPurchaseDeleting] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [catFilter, setCatFilter] = useState("");
 
   // Estado gastos directos
   const [editingTx, setEditingTx] = useState<Doc<"transactions"> | null>(null);
@@ -353,6 +355,39 @@ export default function CardDetailPage({
   const sortedPurchases = [...(purchases ?? [])].sort(
     (a, b) => b.purchaseDate - a.purchaseDate
   );
+
+  // Mes de la próxima cuota impaga (para agrupar y dar legibilidad al usuario)
+  function nextInstallmentMonth(p: Doc<"cardPurchases">): string {
+    const totalMonths = new Date(p.firstInstallmentDate).getMonth() + p.paidInstallments;
+    const year  = new Date(p.firstInstallmentDate).getFullYear() + Math.floor(totalMonths / 12);
+    const month = ((totalMonths % 12) + 12) % 12;
+    return `${year}-${String(month + 1).padStart(2, "0")}`;
+  }
+
+  function groupLabel(monthStr: string): { text: string; variant: "overdue" | "current" | "future" } {
+    if (monthStr < currMonthStr) return { text: "Vencidas", variant: "overdue" };
+    if (monthStr === currMonthStr) return { text: "Este mes", variant: "current" };
+    const [y, m] = monthStr.split("-").map(Number);
+    const d = new Date(y, m - 1, 1);
+    const name = d.toLocaleDateString("es-CO", { month: "long" })
+      .replace(/^\w/, (c) => c.toUpperCase());
+    return { text: y === new Date().getFullYear() ? name : `${name} ${y}`, variant: "future" };
+  }
+
+  const purchaseGroups = useMemo(() => {
+    const filtered = sortedPurchases
+      .filter((p) => !searchText || p.description.toLowerCase().includes(searchText.toLowerCase()))
+      .filter((p) => !catFilter || p.categoryId === catFilter);
+
+    const map = new Map<string, Doc<"cardPurchases">[]>();
+    for (const p of filtered) {
+      const key = nextInstallmentMonth(p);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    // Ordenar grupos cronológicamente (vencidos primero, luego mes actual, luego futuros)
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [sortedPurchases, searchText, catFilter]);
 
   const sortedTxs = [...(directTransactions ?? [])].sort(
     (a, b) => b.date - a.date
@@ -518,7 +553,9 @@ export default function CardDetailPage({
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Compras activas ({sortedPurchases.length})
+            Compras activas
+            {" "}({purchaseGroups.reduce((s, [, g]) => s + g.length, 0)}
+            {(searchText || catFilter) && sortedPurchases.length > 0 && ` de ${sortedPurchases.length}`})
           </h2>
           <AppSheet
             open={purchaseOpen}
@@ -539,6 +576,36 @@ export default function CardDetailPage({
           </AppSheet>
         </div>
 
+        {/* Filtros */}
+        {purchases !== undefined && sortedPurchases.length > 0 && (
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Buscar compra…"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+            <Select value={catFilter} onValueChange={(v) => setCatFilter(v ?? "")}>
+              <SelectTrigger className="h-8 w-[160px] text-sm shrink-0">
+                <span className="truncate text-left">
+                  {catFilter
+                    ? (categories ?? []).find((c) => c._id === catFilter)?.name ?? "Categoría"
+                    : <span className="text-muted-foreground">Categoría</span>}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Todas</SelectItem>
+                {(categories ?? []).map((c) => (
+                  <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {purchases === undefined ? (
           <div className="space-y-2">
             {[1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
@@ -547,18 +614,48 @@ export default function CardDetailPage({
           <p className="text-sm text-muted-foreground py-6 text-center rounded-xl bg-card border border-border">
             No hay compras activas en esta tarjeta.
           </p>
+        ) : purchaseGroups.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center rounded-xl bg-card border border-border">
+            Sin resultados para los filtros aplicados.
+          </p>
         ) : (
-          <div className="rounded-xl bg-card border border-border overflow-hidden">
-            {sortedPurchases.map((purchase) => (
-              <PurchaseRow
-                key={purchase._id}
-                purchase={purchase}
-                currency={card.currency}
-                categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
-                onEdit={setEditingPurchase}
-                onDelete={setPurchaseDeleteId}
-              />
-            ))}
+          <div className="space-y-3">
+            {purchaseGroups.map(([monthKey, group]) => {
+              const { text, variant } = groupLabel(monthKey);
+              return (
+                <div key={monthKey} className="space-y-1">
+                  {/* Cabecera de grupo */}
+                  <div className="flex items-center gap-2 px-1">
+                    <span
+                      className="text-[11px] font-bold uppercase tracking-widest"
+                      style={{
+                        color: variant === "overdue" ? "var(--os-magenta)"
+                             : variant === "current" ? "var(--os-lime)"
+                             : "var(--muted-foreground)",
+                      }}
+                    >
+                      {text}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      ({group.length} compra{group.length !== 1 ? "s" : ""})
+                    </span>
+                  </div>
+                  {/* Filas del grupo */}
+                  <div className="rounded-xl bg-card border border-border overflow-hidden">
+                    {group.map((purchase) => (
+                      <PurchaseRow
+                        key={purchase._id}
+                        purchase={purchase}
+                        currency={card.currency}
+                        categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
+                        onEdit={setEditingPurchase}
+                        onDelete={setPurchaseDeleteId}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
