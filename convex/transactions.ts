@@ -114,12 +114,22 @@ export const spendingByCategory = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
     const clerkId = await getCurrentUserId(ctx);
-    const txs = await ctx.db
+    const gastos = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
         q.eq("userId", clerkId).eq("type", "gasto").eq("month", month)
       )
       .collect();
+
+    // Incluir pagos de tarjeta que tengan categoría (heredada del cardPurchase)
+    const pagosTarjeta = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", clerkId).eq("type", "pago_tarjeta").eq("month", month)
+      )
+      .collect();
+
+    const txs = [...gastos, ...pagosTarjeta.filter((t) => !!t.categoryId)];
 
     const grouped = new Map<string, { amount: number; categoryId: string | null }>();
     for (const tx of txs) {
@@ -153,12 +163,36 @@ export const spendingBySource = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
     const clerkId = await getCurrentUserId(ctx);
-    const txs = await ctx.db
+    const gastos = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
         q.eq("userId", clerkId).eq("type", "gasto").eq("month", month)
       )
       .collect();
+
+    // Pagos de tarjeta: el efectivo sale de la cuenta (accountId)
+    const pagosTarjeta = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", clerkId).eq("type", "pago_tarjeta").eq("month", month)
+      )
+      .collect();
+
+    // Pagos de deuda: el efectivo sale de la cuenta (accountId)
+    const pagosDeuda = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", clerkId).eq("type", "pago_deuda").eq("month", month)
+      )
+      .collect();
+
+    // Para pago_tarjeta y pago_deuda la fuente es la cuenta debitada (accountId),
+    // no la tarjeta destino
+    const txs = [
+      ...gastos,
+      ...pagosTarjeta.map((t) => ({ ...t, cardId: undefined })), // agrupar por accountId
+      ...pagosDeuda.map((t) => ({ ...t, cardId: undefined })),
+    ];
 
     // Agrupa por accountId o cardId
     const grouped = new Map<string, {

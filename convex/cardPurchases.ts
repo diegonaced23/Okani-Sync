@@ -210,6 +210,7 @@ export const payInstallment = mutation({
       cardId: installment.cardId,
       cardInstallmentId: installment._id,
       cardPurchaseId: installment.purchaseId,
+      categoryId: purchase.categoryId,
       status: "completada",
       isRecurring: false,
       createdAt: now,
@@ -489,6 +490,7 @@ export const payMinimum = mutation({
         cardId: args.cardId,
         cardInstallmentId: inst._id,
         cardPurchaseId: inst.purchaseId,
+        categoryId: purchase.categoryId,
         status: "completada",
         isRecurring: false,
         createdAt: now,
@@ -559,7 +561,7 @@ export const payTotal = mutation({
     // Agrupar por compra para actualizar paidInstallments en una sola pasada
     const purchaseMap = new Map<
       Id<"cardPurchases">,
-      { paidInstallments: number; totalInstallments: number; description: string; installments: typeof unpaidForCard }
+      { paidInstallments: number; totalInstallments: number; description: string; categoryId: Id<"categories"> | undefined; installments: typeof unpaidForCard }
     >();
 
     for (const inst of unpaidForCard) {
@@ -570,6 +572,7 @@ export const payTotal = mutation({
           paidInstallments: purchase.paidInstallments,
           totalInstallments: purchase.totalInstallments,
           description: purchase.description,
+          categoryId: purchase.categoryId,
           installments: [],
         });
       }
@@ -592,6 +595,7 @@ export const payTotal = mutation({
           cardId: args.cardId,
           cardInstallmentId: inst._id,
           cardPurchaseId: purchaseId,
+          categoryId: entry.categoryId,
           status: "completada",
           isRecurring: false,
           createdAt: now,
