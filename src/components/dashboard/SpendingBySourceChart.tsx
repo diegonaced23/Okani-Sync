@@ -1,6 +1,6 @@
 "use client";
 
-import { fromCents, formatCents } from "@/lib/money";
+import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SpendingBySourceChartProps {
@@ -17,13 +17,6 @@ const CHART_COLORS: [string, string][] = [
   ["oklch(0.65 0.18 300)", "oklch(0.75 0.14 300)"],  // violeta
   ["oklch(0.72 0.16 180)", "oklch(0.82 0.12 180)"],  // esmeralda
 ];
-
-function tickFormatter(cents: number): string {
-  const v = fromCents(cents);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}k`;
-  return String(v);
-}
 
 function truncate(s: string, max = 18): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
@@ -73,7 +66,7 @@ export function SpendingBySourceChart({ data, currency }: SpendingBySourceChartP
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-xs tabular-nums font-semibold text-foreground">
-                    {tickFormatter(d.amount)}
+                    {formatCents(d.amount, currency)}
                   </span>
                   <span
                     className="text-[10px] tabular-nums rounded-full px-1.5 py-0.5 font-medium"
