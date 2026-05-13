@@ -3,49 +3,43 @@
 import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
+import { MoneyInput } from "@/components/ui/money-input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
-import { formatCents } from "@/lib/money";
+import { formatCents, toCents, fromCents } from "@/lib/money";
 import { toast } from "sonner";
 
 interface PayCardFormProps {
-  cardId: Id<"cards">;
-  currency: string;
-  mode: "minimo" | "total";
-  amount: number;
-  targetMonth?: string; // "YYYY-MM" — solo para mode="minimo"
+  card: Doc<"cards">;
   onSuccess: () => void;
 }
 
-export function PayCardForm({
-  cardId,
-  currency,
-  mode,
-  amount,
-  targetMonth,
-  onSuccess,
-}: PayCardFormProps) {
-  const payMinimum = useMutation(api.cardPurchases.payMinimum);
-  const payTotal = useMutation(api.cardPurchases.payTotal);
+export function PayCardForm({ card, onSuccess }: PayCardFormProps) {
+  const payCard = useMutation(api.cards.payCard);
   const accounts = useQuery(api.accounts.list, {});
 
   const [fromAccountId, setFromAccountId] = useState("");
+  const [amountStr, setAmountStr] = useState(
+    () => String(fromCents(card.currentBalance))
+  );
   const [paymentDate, setPaymentDate] = useState(
     () => new Date().toISOString().substring(0, 10)
   );
   const [loading, setLoading] = useState(false);
 
   const validAccounts = useMemo(
-    () => (accounts ?? []).filter((a) => a.currency === currency),
-    [accounts, currency]
+    () => (accounts ?? []).filter((a) => a.currency === card.currency),
+    [accounts, card.currency]
   );
 
   const selectedAccount = validAccounts.find((a) => a._id === fromAccountId);
+  const amountCents = toCents(parseFloat(amountStr) || 0);
+  const isOverBalance = amountCents > card.currentBalance;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,25 +47,21 @@ export function PayCardForm({
       toast.error("Selecciona una cuenta de origen");
       return;
     }
+    if (amountCents <= 0) {
+      toast.error("El monto debe ser mayor que cero");
+      return;
+    }
 
     setLoading(true);
     try {
-      const paymentTs = new Date(paymentDate).getTime();
-      const result = mode === "minimo"
-        ? await payMinimum({
-            cardId,
-            fromAccountId: fromAccountId as Id<"accounts">,
-            paymentDate: paymentTs,
-            targetMonth,
-          })
-        : await payTotal({
-            cardId,
-            fromAccountId: fromAccountId as Id<"accounts">,
-            paymentDate: paymentTs,
-          });
-
-      const label = mode === "minimo" ? "Pago mínimo" : "Pago total";
-      toast.success(`${label} realizado — ${result.paidCount} cuota${result.paidCount !== 1 ? "s" : ""} pagada${result.paidCount !== 1 ? "s" : ""}`);
+      const paymentTs = new Date(paymentDate + "T12:00:00").getTime();
+      await payCard({
+        cardId: card._id,
+        fromAccountId: fromAccountId as Id<"accounts">,
+        amount: amountCents,
+        paymentDate: paymentTs,
+      });
+      toast.success(`Pago de ${formatCents(amountCents, card.currency)} registrado`);
       onSuccess();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al realizar el pago");
@@ -82,14 +72,38 @@ export function PayCardForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Monto a pagar */}
+      {/* Resumen de deuda */}
       <div className="rounded-xl bg-muted/50 border border-border p-4 text-center space-y-1">
         <p className="text-xs text-muted-foreground uppercase tracking-wider">
-          {mode === "minimo" ? "Pago mínimo (cuotas del mes)" : "Pago total (saldo completo)"}
+          Saldo pendiente
         </p>
         <p className="text-3xl font-bold tabular-nums text-foreground">
-          {formatCents(amount, currency)}
+          {formatCents(card.currentBalance, card.currency)}
         </p>
+      </div>
+
+      {/* Monto a pagar */}
+      <div className="space-y-1.5">
+        <Label>Monto a pagar</Label>
+        <MoneyInput
+          value={amountStr}
+          onChange={setAmountStr}
+          placeholder="0"
+        />
+        <div className="flex gap-2 mt-1">
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-2"
+            onClick={() => setAmountStr(String(fromCents(card.currentBalance)))}
+          >
+            Pagar todo ({formatCents(card.currentBalance, card.currency)})
+          </button>
+        </div>
+        {isOverBalance && (
+          <p className="text-xs text-amber-500">
+            El monto supera el saldo. Se aplicará el máximo disponible ({formatCents(card.currentBalance, card.currency)}).
+          </p>
+        )}
       </div>
 
       {/* Cuenta de origen */}
@@ -97,7 +111,7 @@ export function PayCardForm({
         <Label>Cuenta de origen</Label>
         {validAccounts.length === 0 ? (
           <p className="text-sm text-muted-foreground rounded-lg border border-border px-3 py-2">
-            No tienes cuentas en {currency}. Crea una cuenta en esa moneda primero.
+            No tienes cuentas en {card.currency}. Crea una cuenta en esa moneda primero.
           </p>
         ) : (
           <Select value={fromAccountId} onValueChange={(v) => setFromAccountId(v ?? "")}>
@@ -133,7 +147,7 @@ export function PayCardForm({
       <Button
         type="submit"
         className="w-full"
-        disabled={loading || validAccounts.length === 0 || !fromAccountId}
+        disabled={loading || validAccounts.length === 0 || !fromAccountId || amountCents <= 0}
       >
         {loading ? "Procesando…" : "Confirmar pago"}
       </Button>

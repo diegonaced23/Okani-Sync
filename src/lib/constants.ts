@@ -31,6 +31,7 @@ export interface DefaultCategory {
   type: "ingreso" | "gasto";
   color: string;
   icon: string;
+  isSystem?: boolean;
 }
 
 export const DEFAULT_CATEGORIES: DefaultCategory[] = [
@@ -50,6 +51,12 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
   { name: "Inversiones", type: "ingreso", color: "#A78BFA", icon: "trending-up" },
   { name: "Regalos", type: "ingreso", color: "#FCD34D", icon: "gift" },
   { name: "Otros ingresos", type: "ingreso", color: "#6B7280", icon: "circle-ellipsis" },
+];
+
+export const SYSTEM_CATEGORY_PAYMENT_NAME = "Pago de tarjeta";
+
+export const SYSTEM_CATEGORIES: DefaultCategory[] = [
+  { name: SYSTEM_CATEGORY_PAYMENT_NAME, type: "gasto", color: "#F97316", icon: "credit-card", isSystem: true },
 ];
 
 // ─── Colores de categorías / deudas (sólidos) ────────────────────────────────

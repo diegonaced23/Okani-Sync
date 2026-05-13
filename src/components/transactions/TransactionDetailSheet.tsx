@@ -75,6 +75,14 @@ const TYPE_CONFIG: Record<string, {
     sign: "−",
     label: "Pago de tarjeta",
   },
+  gasto_tarjeta: {
+    icon: CreditCard,
+    iconColor: "var(--os-cyan)",
+    iconBg: "color-mix(in oklch, var(--os-cyan) 18%, transparent)",
+    amountColor: "var(--muted-foreground)",
+    sign: "·",
+    label: "Gasto con tarjeta",
+  },
   pago_deuda: {
     icon: HandCoins,
     iconColor: "var(--os-orange)",
@@ -93,7 +101,7 @@ const TYPE_CONFIG: Record<string, {
   },
 };
 
-const EDITABLE_TYPES = new Set(["ingreso", "gasto", "transferencia"]);
+const EDITABLE_TYPES = new Set(["ingreso", "gasto", "transferencia", "gasto_tarjeta"]);
 
 // ── Componente ────────────────────────────────────────────────────────────────
 

@@ -14,14 +14,14 @@ import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
 // ─── Tipos de filtro ───────────────────────────────────────────────────────────
 
-type TxFilter = "all" | "ingreso" | "gasto" | "transferencia" | "pago_tarjeta";
+type TxFilter = "all" | "ingreso" | "gasto" | "gasto_tarjeta" | "transferencia";
 
 const FILTER_PILLS: { key: TxFilter; label: string }[] = [
   { key: "all",            label: "Todos" },
   { key: "ingreso",        label: "Ingresos" },
   { key: "gasto",          label: "Gastos" },
+  { key: "gasto_tarjeta",  label: "Tarjeta" },
   { key: "transferencia",  label: "Transfer." },
-  { key: "pago_tarjeta",   label: "Tarjeta" },
 ];
 
 // ─── Utilidades ────────────────────────────────────────────────────────────────
@@ -98,12 +98,12 @@ export default function TransaccionesPage() {
   const filtered: Doc<"transactions">[] = useMemo(() => {
     const all = transactions ?? [];
     if (filter === "all") return all;
-    // "Gastos" incluye gastos directos, pagos de tarjeta y pagos de deuda
+    // "Gastos" = salidas reales de cuenta (gastos directos, pagos de tarjeta, pagos de deuda)
     if (filter === "gasto") return all.filter((t) =>
       t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda"
     );
-    // "Tarjeta" muestra toda transacción asociada a una tarjeta (gasto directo + pago de cuota)
-    if (filter === "pago_tarjeta") return all.filter((t) => !!t.cardId);
+    // "Tarjeta" = movimientos de tarjeta de crédito (gastos registrados, sin salida de cuenta)
+    if (filter === "gasto_tarjeta") return all.filter((t) => t.type === "gasto_tarjeta");
     return all.filter((t) => t.type === filter);
   }, [transactions, filter]);
 

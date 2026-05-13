@@ -308,6 +308,7 @@ export default defineSchema({
     icon: v.string(),
     parentId: v.optional(v.id("categories")),
     isDefault: v.boolean(),
+    isSystem: v.optional(v.boolean()),  // categorías protegidas del sistema (no editables por el usuario)
     archived: v.boolean(),
     order: v.optional(v.number()),
     createdAt: v.number(),
@@ -356,6 +357,7 @@ export default defineSchema({
       v.literal("transferencia"),   // mantener para backward compat / display
       v.literal("pago_tarjeta"),
       v.literal("pago_deuda"),
+      v.literal("gasto_tarjeta"),   // gasto con tarjeta de crédito (no descuenta cuenta)
       v.literal("ajuste")            // reasignación manual de saldo
     ),
     amount: v.number(),             // en centavos

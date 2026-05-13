@@ -48,18 +48,30 @@ export const run = internalAction({
       }
 
       try {
-        await ctx.runMutation(internal.transactions.createInternal, {
-          userId: rec.userId,
-          type: rec.type as "ingreso" | "gasto",
-          amount: rec.amount,
-          description: rec.description,
-          date: now,
-          currency: rec.currency,
-          accountId: rec.accountId,
-          cardId: rec.cardId,
-          categoryId: rec.categoryId,
-          recurringId: rec._id,
-        });
+        if (rec.cardId && rec.type === "gasto") {
+          // Gastos con tarjeta: crear vía cardPurchases para generar gasto_tarjeta visible
+          await ctx.runMutation(internal.cardPurchases.createFromRecurring, {
+            userId: rec.userId,
+            cardId: rec.cardId,
+            categoryId: rec.categoryId,
+            description: rec.description,
+            amount: rec.amount,
+            date: now,
+            recurringId: rec._id,
+          });
+        } else {
+          await ctx.runMutation(internal.transactions.createInternal, {
+            userId: rec.userId,
+            type: rec.type as "ingreso" | "gasto" | "pago_tarjeta" | "pago_deuda",
+            amount: rec.amount,
+            description: rec.description,
+            date: now,
+            currency: rec.currency,
+            accountId: rec.accountId,
+            categoryId: rec.categoryId,
+            recurringId: rec._id,
+          });
+        }
 
         const next = nextOccurrenceAfter(rec.frequency, now, rec.dayOfMonth);
         await ctx.runMutation(internal.transactions.updateNextOccurrence, {

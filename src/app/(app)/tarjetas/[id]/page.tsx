@@ -275,7 +275,7 @@ export default function CardDetailPage({
   const [editOpen, setEditOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [payMode, setPayMode] = useState<"minimo" | "total" | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
 
   // Estado compras
   const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
@@ -490,20 +490,16 @@ export default function CardDetailPage({
       {/* Resumen tarjeta */}
       <CardSummary card={card} />
 
-      {/* Sheet pago mínimo / total */}
+      {/* Sheet pago de tarjeta */}
       <AppSheet
-        open={!!payMode}
-        onOpenChange={(open) => { if (!open) setPayMode(null); }}
-        title={payMode === "minimo" ? "Pagar mínimo" : "Pagar total"}
+        open={payOpen}
+        onOpenChange={(open) => { if (!open) setPayOpen(false); }}
+        title={`Pagar tarjeta — ${card.name}`}
       >
-        {payMode && (
+        {payOpen && (
           <PayCardForm
-            cardId={cardId}
-            currency={card.currency}
-            mode={payMode}
-            amount={payMode === "minimo" ? monthlyDue : card.currentBalance}
-            targetMonth={payMode === "minimo" ? currMonthStr : undefined}
-            onSuccess={() => setPayMode(null)}
+            card={card}
+            onSuccess={() => setPayOpen(false)}
           />
         )}
       </AppSheet>
@@ -511,41 +507,24 @@ export default function CardDetailPage({
       {/* Bloque de pago */}
       {card.currentBalance > 0 && (
         <div className="rounded-xl bg-card border border-border p-4 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pago mínimo</p>
-              <p className="text-xl font-bold tabular-nums text-foreground">
-                {formatCents(monthlyDue, card.currency)}
-              </p>
+          <div className="space-y-0.5">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Saldo pendiente</p>
+            <p className="text-2xl font-bold tabular-nums text-foreground">
+              {formatCents(card.currentBalance, card.currency)}
+            </p>
+            {unpaidThisMonth.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {unpaidThisMonth.length} cuota{unpaidThisMonth.length !== 1 ? "s" : ""} de este mes
+                {unpaidThisMonth.length} cuota{unpaidThisMonth.length !== 1 ? "s" : ""} pendiente{unpaidThisMonth.length !== 1 ? "s" : ""} este mes
+                {" · "}{formatCents(monthlyDue, card.currency)}
               </p>
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Pago total</p>
-              <p className="text-xl font-bold tabular-nums text-foreground">
-                {formatCents(card.currentBalance, card.currency)}
-              </p>
-              <p className="text-xs text-muted-foreground">Saldo total de la tarjeta</p>
-            </div>
+            )}
           </div>
-          <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              disabled={unpaidThisMonth.length === 0}
-              onClick={() => setPayMode("minimo")}
-            >
-              Pagar mínimo
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1"
-              disabled={card.currentBalance <= 0}
-              onClick={() => setPayMode("total")}
-            >
-              Pagar total
-            </Button>
-          </div>
+          <Button
+            className="w-full"
+            onClick={() => setPayOpen(true)}
+          >
+            Pagar tarjeta
+          </Button>
         </div>
       )}
 

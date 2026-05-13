@@ -55,6 +55,13 @@ const TYPE_CONFIG = {
     amountColor: "var(--foreground)",
     sign: "-",
   },
+  gasto_tarjeta: {
+    icon: CreditCard,
+    iconColor: "var(--os-cyan)",
+    iconBg: "color-mix(in oklch, var(--os-cyan) 18%, transparent)",
+    amountColor: "var(--muted-foreground)",
+    sign: "·",
+  },
   pago_deuda: {
     icon: HandCoins,
     iconColor: "var(--os-orange)",

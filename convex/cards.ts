@@ -1,6 +1,8 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
+import { toMonthString, getSystemPaymentCategoryId } from "./lib/utils";
+import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
 
 export const list = query({
   args: {},
@@ -126,6 +128,83 @@ export const archive = mutation({
     const card = await ctx.db.get(cardId);
     if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
     await ctx.db.patch(cardId, { archived: true, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Registra un pago de tarjeta de crédito.
+ * Descuenta de la cuenta de origen, reduce la deuda de la tarjeta,
+ * y genera una tx `pago_tarjeta` con categoría sistema "Pago de tarjeta".
+ */
+export const payCard = mutation({
+  args: {
+    cardId: v.id("cards"),
+    fromAccountId: v.id("accounts"),
+    amount: v.number(),          // en centavos
+    paymentDate: v.optional(v.number()),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.amount <= 0 || !Number.isFinite(args.amount)) {
+      throw new Error("El monto debe ser mayor que cero");
+    }
+    if (args.notes !== undefined && args.notes.length > 500) {
+      throw new Error("Las notas no pueden superar 500 caracteres");
+    }
+
+    const user = await getCurrentUser(ctx);
+
+    const card = await ctx.db.get(args.cardId);
+    if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+    if (card.currentBalance <= 0) throw new Error("La tarjeta no tiene deuda pendiente");
+
+    const account = await ctx.db.get(args.fromAccountId);
+    if (!account) throw new Error("Cuenta no encontrada");
+    if (account.currency !== card.currency) {
+      throw new Error(`La cuenta usa ${account.currency} pero la tarjeta es en ${card.currency}`);
+    }
+
+    const paymentAmount = Math.min(args.amount, card.currentBalance);
+    const paymentDate = args.paymentDate ?? Date.now();
+    const month = toMonthString(paymentDate);
+    const now = Date.now();
+
+    const categoryId = await getSystemPaymentCategoryId(ctx, user.clerkId);
+
+    await ctx.db.insert("transactions", {
+      userId: user.clerkId,
+      type: "pago_tarjeta",
+      amount: paymentAmount,
+      description: `Pago de ${card.name} ····${card.lastFourDigits}`,
+      date: paymentDate,
+      month,
+      currency: card.currency,
+      accountId: args.fromAccountId,
+      cardId: args.cardId,
+      categoryId,
+      notes: args.notes,
+      status: "completada",
+      isRecurring: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Descontar de la cuenta
+    await ctx.db.patch(args.fromAccountId, {
+      balance: account.balance - paymentAmount,
+      updatedAt: now,
+    });
+
+    // Reducir deuda de la tarjeta
+    const newBalance = Math.max(0, card.currentBalance - paymentAmount);
+    await ctx.db.patch(args.cardId, {
+      currentBalance: newBalance,
+      availableCredit: Math.min(card.creditLimit, card.availableCredit + paymentAmount),
+      updatedAt: now,
+    });
+
+    // Recalcular estado de cuotas FIFO
+    await recomputeInstallmentsPaid(ctx, args.cardId);
   },
 });
 

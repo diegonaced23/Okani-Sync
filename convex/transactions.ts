@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanRead, assertCanWrite } from "./lib/permissions";
 import { toMonthString, generateId } from "./lib/utils";
+import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
@@ -121,15 +122,15 @@ export const spendingByCategory = query({
       )
       .collect();
 
-    // Incluir pagos de tarjeta que tengan categoría (heredada del cardPurchase)
-    const pagosTarjeta = await ctx.db
+    // Incluir gastos con tarjeta del mes (cuotas vencidas en el mes)
+    const gastosTarjeta = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", clerkId).eq("type", "pago_tarjeta").eq("month", month)
+        q.eq("userId", clerkId).eq("type", "gasto_tarjeta").eq("month", month)
       )
       .collect();
 
-    const txs = [...gastos, ...pagosTarjeta.filter((t) => !!t.categoryId)];
+    const txs = [...gastos, ...gastosTarjeta.filter((t) => !!t.categoryId)];
 
     const grouped = new Map<string, { amount: number; categoryId: string | null }>();
     for (const tx of txs) {
@@ -271,7 +272,7 @@ export const monthlySummary = query({
   },
 });
 
-/** Gastos directos de una tarjeta — transacciones del flujo antiguo sin cronograma de cuotas. */
+/** Gastos con tarjeta — todas las txs gasto_tarjeta de una tarjeta, ordenadas desc. */
 export const listDirectByCard = query({
   args: { cardId: v.id("cards") },
   handler: async (ctx, { cardId }) => {
@@ -285,9 +286,7 @@ export const listDirectByCard = query({
       .order("desc")
       .collect();
 
-    return all.filter(
-      (tx) => tx.type === "gasto" && tx.cardPurchaseId === undefined
-    );
+    return all.filter((tx) => tx.type === "gasto_tarjeta");
   },
 });
 
@@ -319,6 +318,7 @@ export const create = mutation({
     if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
     if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
     if (args.accountId && args.cardId) throw new Error("Una transacción no puede asociarse a cuenta y tarjeta al mismo tiempo");
+    if (args.cardId && args.type === "gasto") throw new Error("Los gastos con tarjeta de crédito se registran vía cardPurchases.createPurchase");
 
     // Validación nominal de MIME type del comprobante (el contentType es declarado por el cliente,
     // no verificado por magic bytes — defensa-en-profundidad, no garantía de contenido)
@@ -378,11 +378,6 @@ export const create = mutation({
     if (args.accountId) {
       const delta = args.type === "ingreso" ? args.amount : -args.amount;
       await applyAccountDelta(ctx, args.accountId, delta);
-    }
-
-    // Actualizar balance de la tarjeta (solo gastos)
-    if (args.cardId && args.type === "gasto") {
-      await applyCardDelta(ctx, args.cardId, args.amount);
     }
 
     // Recalcular budget.spent si es gasto con categoría
@@ -449,6 +444,13 @@ export const update = mutation({
       return;
     }
 
+    // gasto_tarjeta vinculado a cuota: solo editar descripción, categoría y notas
+    if (tx.type === "gasto_tarjeta" && tx.cardInstallmentId) {
+      if (fields.amount !== undefined || fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined) {
+        throw new Error("Los gastos con tarjeta vinculados a una cuota solo permiten editar la descripción, categoría y notas. Para cambiar datos financieros, edita la compra directamente.");
+      }
+    }
+
     // Derivar nueva fuente (exclusión mutua: si llega uno, el otro se borra)
     const changingToAccount = fields.accountId !== undefined;
     const changingToCard    = fields.cardId    !== undefined;
@@ -512,7 +514,7 @@ export const update = mutation({
     }
 
     // Recalcular budget.spent: revertir vieja contribución y aplicar nueva
-    if (tx.type === "gasto") {
+    if (tx.type === "gasto" || tx.type === "gasto_tarjeta") {
       const categoryChanged = newCategory !== tx.categoryId;
       const monthChanged    = newMonth    !== tx.month;
 
@@ -524,6 +526,12 @@ export const update = mutation({
           await applyBudgetDelta(ctx, tx.userId, newCategory, newMonth, newAmount);
         }
       }
+    }
+
+    // Para gasto_tarjeta: también ajustar card.currentBalance si cambió el monto
+    if (tx.type === "gasto_tarjeta" && tx.cardId && amountChanged) {
+      const diff = newAmount - tx.amount;
+      await applyCardDelta(ctx, tx.cardId, diff);
     }
 
     await ctx.db.patch(transactionId, patch);
@@ -563,18 +571,45 @@ export const remove = mutation({
 
     // Revertir saldo de la cuenta
     if (tx.accountId) {
-      const delta = tx.type === "ingreso" ? -tx.amount : tx.amount;
-      await applyAccountDelta(ctx, tx.accountId, delta);
+      if (tx.type === "pago_tarjeta") {
+        // El pago de tarjeta descontó de la cuenta: devolver
+        await applyAccountDelta(ctx, tx.accountId, tx.amount);
+        // Y volvió a subir la deuda de la tarjeta
+        if (tx.cardId) await applyCardDelta(ctx, tx.cardId, tx.amount);
+      } else {
+        const delta = tx.type === "ingreso" ? -tx.amount : tx.amount;
+        await applyAccountDelta(ctx, tx.accountId, delta);
+      }
     }
 
-    // Revertir balance de la tarjeta
+    // Revertir balance de la tarjeta para gastos directos legacy
     if (tx.cardId && tx.type === "gasto") {
       await applyCardDelta(ctx, tx.cardId, -tx.amount);
     }
 
-    // Revertir budget.spent
+    // Revertir gasto_tarjeta: sube currentBalance de la tarjeta y revierte budget
+    if (tx.type === "gasto_tarjeta") {
+      if (tx.cardId) {
+        await applyCardDelta(ctx, tx.cardId, -tx.amount);
+      }
+      if (tx.categoryId) {
+        await applyBudgetDelta(ctx, user.clerkId, tx.categoryId, tx.month, -tx.amount);
+      }
+      // Eliminar la cuota asociada si existe
+      if (tx.cardInstallmentId) {
+        const inst = await ctx.db.get(tx.cardInstallmentId);
+        if (inst) await ctx.db.delete(inst._id);
+      }
+    }
+
+    // Revertir budget.spent para gastos de cuenta
     if (tx.type === "gasto" && tx.categoryId) {
       await applyBudgetDelta(ctx, user.clerkId, tx.categoryId, tx.month, -tx.amount);
+    }
+
+    // Revertir pago_tarjeta: recalcular cuotas FIFO
+    if (tx.type === "pago_tarjeta" && tx.cardId) {
+      await recomputeInstallmentsPaid(ctx, tx.cardId);
     }
 
     await ctx.db.delete(transactionId);

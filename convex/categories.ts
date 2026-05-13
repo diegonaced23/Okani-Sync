@@ -81,6 +81,7 @@ export const update = mutation({
     if (!cat || cat.userId !== user.clerkId) {
       throw new Error("Categoría no encontrada");
     }
+    if (cat.isSystem) throw new Error("Las categorías del sistema no se pueden editar");
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [k, v] of Object.entries(fields)) {
       if (v !== undefined) patch[k] = v;
@@ -97,6 +98,7 @@ export const archive = mutation({
     if (!cat || cat.userId !== user.clerkId) {
       throw new Error("Categoría no encontrada");
     }
+    if (cat.isSystem) throw new Error("Las categorías del sistema no se pueden archivar");
     await ctx.db.patch(categoryId, { archived: true, updatedAt: Date.now() });
   },
 });
@@ -154,6 +156,7 @@ export const remove = mutation({
     const user = await getCurrentUser(ctx);
     const cat = await ctx.db.get(categoryId);
     if (!cat || cat.userId !== user.clerkId) throw new Error("Categoría no encontrada");
+    if (cat.isSystem) throw new Error("Las categorías del sistema no se pueden eliminar");
     if (!cat.archived) throw new Error("Solo se pueden eliminar categorías archivadas");
 
     const existingTx = await ctx.db
