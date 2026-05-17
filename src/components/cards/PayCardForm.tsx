@@ -23,6 +23,9 @@ export function PayCardForm({ card, onSuccess }: PayCardFormProps) {
   const payCard = useMutation(api.cards.payCard);
   const accounts = useQuery(api.accounts.list, {});
 
+  // Montos sugeridos calculados en el servidor según el ciclo de corte real
+  const summary = useQuery(api.cards.getPaymentSummary, { cardId: card._id });
+
   const [fromAccountId, setFromAccountId] = useState("");
   const [amountStr, setAmountStr] = useState(
     () => String(fromCents(card.currentBalance))
@@ -82,7 +85,48 @@ export function PayCardForm({ card, onSuccess }: PayCardFormProps) {
         </p>
       </div>
 
-      {/* Monto a pagar */}
+      {/* Botones de pago rápido */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Pago mínimo: cuotas que vencen en el ciclo de corte actual */}
+        <button
+          type="button"
+          disabled={!summary || summary.minimumPayment <= 0}
+          onClick={() => summary && setAmountStr(String(fromCents(summary.minimumPayment)))}
+          className="flex flex-col items-start gap-0.5 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-left transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {/* Etiqueta del botón */}
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Pago mínimo
+          </span>
+          {/* Monto calculado o indicador de carga */}
+          <span className="text-sm font-bold tabular-nums text-foreground">
+            {summary
+              ? formatCents(summary.minimumPayment, card.currency)
+              : "—"}
+          </span>
+        </button>
+
+        {/* Pago total: sin interés → liquida todo; con interés → cuota actual (capital + interés) */}
+        <button
+          type="button"
+          disabled={!summary || summary.totalPayment <= 0}
+          onClick={() => summary && setAmountStr(String(fromCents(summary.totalPayment)))}
+          className="flex flex-col items-start gap-0.5 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2.5 text-left transition-colors hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {/* Etiqueta del botón */}
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-primary/70">
+            Pago total
+          </span>
+          {/* Monto calculado o indicador de carga */}
+          <span className="text-sm font-bold tabular-nums text-primary">
+            {summary
+              ? formatCents(summary.totalPayment, card.currency)
+              : "—"}
+          </span>
+        </button>
+      </div>
+
+      {/* Monto a pagar — editable manualmente */}
       <div className="space-y-1.5">
         <Label>Monto a pagar</Label>
         <MoneyInput
@@ -90,15 +134,6 @@ export function PayCardForm({ card, onSuccess }: PayCardFormProps) {
           onChange={setAmountStr}
           placeholder="0"
         />
-        <div className="flex gap-2 mt-1">
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline underline-offset-2"
-            onClick={() => setAmountStr(String(fromCents(card.currentBalance)))}
-          >
-            Pagar todo ({formatCents(card.currentBalance, card.currency)})
-          </button>
-        </div>
         {isOverBalance && (
           <p className="text-xs text-amber-500">
             El monto supera el saldo. Se aplicará el máximo disponible ({formatCents(card.currentBalance, card.currency)}).
