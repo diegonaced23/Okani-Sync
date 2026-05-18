@@ -119,7 +119,11 @@ export function CardCycleTabs({
     day: "2-digit",
     month: "short",
   });
-  const paymentDateStr = new Date(data.cycle.paymentTs).toLocaleDateString("es-CO", {
+  // Si hay cuotas vencidas, el pago del ciclo anterior ya venció → mostrar esa fecha.
+  // De lo contrario, mostrar la fecha de pago del ciclo actual (siempre futura).
+  const hasOverdue = data.overdueCuotas.length > 0;
+  const relevantPaymentTs = hasOverdue ? data.cycle.prevPaymentTs : data.cycle.nextPaymentTs;
+  const paymentDateStr = new Date(relevantPaymentTs).toLocaleDateString("es-CO", {
     day: "2-digit",
     month: "short",
   });
@@ -290,9 +294,24 @@ export function CardCycleTabs({
           )}
 
           {/* Resumen del pago mínimo + control de orden */}
-          <div className="rounded-xl bg-card border border-border px-4 py-3 space-y-0.5">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
-              Pago mínimo · Vence {paymentDateStr}
+          <div
+            className="rounded-xl px-4 py-3 space-y-0.5 border"
+            style={
+              hasOverdue
+                ? {
+                    // Indicador visual de pago vencido cuando hay cuotas sin pagar del ciclo anterior
+                    borderColor: "var(--os-magenta)",
+                    background: "color-mix(in oklch, var(--os-magenta) 6%, var(--card))",
+                  }
+                : { borderColor: "var(--border)", background: "var(--card)" }
+            }
+          >
+            <p
+              className="text-[11px] uppercase tracking-wider font-semibold"
+              style={{ color: hasOverdue ? "var(--os-magenta)" : "var(--muted-foreground)" }}
+            >
+              {/* Si hay cuotas vencidas, el pago del ciclo anterior ya pasó */}
+              Pago mínimo · {hasOverdue ? `Venció el ${paymentDateStr}` : `Vence ${paymentDateStr}`}
             </p>
             <p className="text-xl font-bold tabular-nums text-foreground">
               {formatCents(data.minimumPayment, currency)}

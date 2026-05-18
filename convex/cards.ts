@@ -298,7 +298,11 @@ export const getCardDetailData = query({
     if (!card || card.userId !== clerkId) return null;
 
     const { prevCutoffTs, nextCutoffTs } = getBillingCycleDates(card.cutoffDay);
-    const paymentTs = getNextPaymentTs(card.paymentDay, nextCutoffTs);
+    // Calculamos ambas fechas de pago:
+    //   prevPaymentTs → la que correspondía al ciclo anterior (puede ya haber vencido)
+    //   nextPaymentTs → la que corresponde al ciclo que cierra en nextCutoffTs
+    const prevPaymentTs = getNextPaymentTs(card.paymentDay, prevCutoffTs);
+    const nextPaymentTs = getNextPaymentTs(card.paymentDay, nextCutoffTs);
 
     // Todas las compras activas de la tarjeta
     const allPurchases = await ctx.db
@@ -376,6 +380,15 @@ export const getCardDetailData = query({
       }
     }
 
+    // Ordenar globalmente por dueDate usando el mapa de lookup.
+    // Sin este sort, el orden depende de cuál compra se iteró primero (incorrecto).
+    overdueCuotas.sort(
+      (a, b) => (installmentById[a]?.dueDate ?? 0) - (installmentById[b]?.dueDate ?? 0)
+    );
+    currentCycleCuotas.sort(
+      (a, b) => (installmentById[a]?.dueDate ?? 0) - (installmentById[b]?.dueDate ?? 0)
+    );
+
     // Compras hechas en el ciclo en curso (para el tab "Ciclo actual"), desc por fecha
     const purchasesInCurrentCycle = allPurchases
       .filter((p) => p.purchaseDate > prevCutoffTs && p.purchaseDate <= nextCutoffTs)
@@ -383,7 +396,14 @@ export const getCardDetailData = query({
 
     return {
       card,
-      cycle: { prevCutoffTs, nextCutoffTs, paymentTs },
+      cycle: {
+        prevCutoffTs,
+        nextCutoffTs,
+        // prevPaymentTs: vencimiento del ciclo anterior (puede ser pasado si no se pagó)
+        // nextPaymentTs: vencimiento del ciclo actual (siempre futuro)
+        prevPaymentTs,
+        nextPaymentTs,
+      },
       // IDs ordenados cronológicamente, lookup via installmentById
       overdueCuotas,
       currentCycleCuotas,
