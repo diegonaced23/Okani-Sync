@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { toCents, fromCents, formatCents, calculateInstallment } from "@/lib/money";
+import { toCents, fromCents, formatCents, calculateInstallment, dateStrToTs, tsToDateStr } from "@/lib/money";
 
 interface PurchaseFormProps {
   cardId: Id<"cards">;
@@ -54,8 +54,9 @@ export function PurchaseForm({
   });
   const [categoryId, setCategoryId] = useState(purchase?.categoryId ?? "");
   const [purchaseDate, setPurchaseDate] = useState(() => {
+    // tsToDateStr usa hora local, evitando el desfase UTC que da toISOString()
     const ts = purchase?.purchaseDate ?? Date.now();
-    return new Date(ts).toISOString().substring(0, 10);
+    return tsToDateStr(ts);
   });
   const [notes, setNotes] = useState(purchase?.notes ?? "");
   const [loading, setLoading] = useState(false);
@@ -70,7 +71,8 @@ export function PurchaseForm({
   }, [canEditFinancials, amountCents, rate, nInstallments]);
 
   const firstInstallmentDate = useMemo(() => {
-    const d = new Date(purchaseDate);
+    // Parsear como mediodía local para que setMonth opere sobre la fecha correcta
+    const d = new Date(purchaseDate + "T12:00:00");
     d.setMonth(d.getMonth() + 1);
     return d.getTime();
   }, [purchaseDate]);
@@ -100,7 +102,7 @@ export function PurchaseForm({
             totalInstallments: nInstallments,
             hasInterest,
             interestRate: hasInterest ? rate : undefined,
-            purchaseDate: new Date(purchaseDate).getTime(),
+            purchaseDate: dateStrToTs(purchaseDate),
             firstInstallmentDate,
           }),
         });
@@ -114,7 +116,7 @@ export function PurchaseForm({
           totalInstallments: nInstallments,
           hasInterest,
           interestRate: hasInterest ? rate : undefined,
-          purchaseDate: new Date(purchaseDate).getTime(),
+          purchaseDate: dateStrToTs(purchaseDate),
           firstInstallmentDate,
           notes: notes || undefined,
         });
@@ -281,7 +283,8 @@ export function PurchaseForm({
                 <span>#</span><span>Capital</span><span>Interés</span><span className="text-right">Cuota</span>
               </div>
               {preview.schedule.slice(0, 6).map((s) => {
-                const dueTs = new Date(purchaseDate);
+                // Mediodía local para calcular correctamente el mes de vencimiento en el preview
+                const dueTs = new Date(purchaseDate + "T12:00:00");
                 dueTs.setMonth(dueTs.getMonth() + s.installmentNumber);
                 return (
                   <div key={s.installmentNumber} className="grid grid-cols-4 px-3 py-1.5 border-t border-border">

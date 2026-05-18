@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, fromCents, formatCents } from "@/lib/money";
+import { toCents, fromCents, formatCents, dateStrToTs, tsToDateStr, todayStr } from "@/lib/money";
 import { CURRENCIES, ACCOUNT_COLORS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -36,12 +36,12 @@ export function LoanForm({ loan, onSuccess }: LoanFormProps) {
     loan ? fromCents(loan.originalAmount).toString() : ""
   );
   const [currency, setCurrency]       = useState(loan?.currency ?? "COP");
+  // tsToDateStr usa hora local; toISOString() daría fecha UTC (puede diferir un día en Colombia)
   const [startDate, setStartDate]     = useState(
-    loan ? new Date(loan.startDate).toISOString().substring(0, 10)
-         : new Date().toISOString().substring(0, 10)
+    loan ? tsToDateStr(loan.startDate) : todayStr()
   );
   const [dueDate, setDueDate]         = useState(
-    loan?.dueDate ? new Date(loan.dueDate).toISOString().substring(0, 10) : ""
+    loan?.dueDate ? tsToDateStr(loan.dueDate) : ""
   );
   const [fromAccountId, setFromAccountId] = useState("");
   const [color, setColor]             = useState(loan?.color ?? ACCOUNT_COLORS[0]);
@@ -62,7 +62,7 @@ export function LoanForm({ loan, onSuccess }: LoanFormProps) {
           loanId: loan._id,
           name: name.trim(),
           borrower: borrower.trim(),
-          dueDate: dueDate ? new Date(dueDate).getTime() : undefined,
+          dueDate: dueDate ? dateStrToTs(dueDate) : undefined,
           color,
           notes: notes.trim() || undefined,
         });
@@ -75,8 +75,8 @@ export function LoanForm({ loan, onSuccess }: LoanFormProps) {
           borrower: borrower.trim(),
           originalAmount: toCents(amount),
           currency,
-          startDate: new Date(startDate).getTime(),
-          dueDate: dueDate ? new Date(dueDate).getTime() : undefined,
+          startDate: dateStrToTs(startDate),
+          dueDate: dueDate ? dateStrToTs(dueDate) : undefined,
           fromAccountId: fromAccountId ? (fromAccountId as Id<"accounts">) : undefined,
           color,
           icon: "hand-coins",

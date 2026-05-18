@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents } from "@/lib/money";
+import { toCents, dateStrToTs, todayStr } from "@/lib/money";
 import { CURRENCIES, ACCOUNT_COLORS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +34,7 @@ export function DebtForm({ onSuccess }: { onSuccess?: () => void }) {
   const [originalAmount, setOriginalAmount] = useState("");
   const [interestRate, setInterestRate] = useState("");
   const [monthlyPayment, setMonthlyPayment] = useState("");
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [startDate, setStartDate] = useState(todayStr);
   const [dueDate, setDueDate] = useState("");
   const [currency, setCurrency] = useState("COP");
   const [color, setColor] = useState(ACCOUNT_COLORS[3]);
@@ -57,8 +57,8 @@ export function DebtForm({ onSuccess }: { onSuccess?: () => void }) {
         originalAmount: toCents(amount),
         interestRate: interestRate ? parseFloat(interestRate) / 100 : undefined,
         monthlyPayment: monthlyPayment ? toCents(parseFloat(monthlyPayment)) : undefined,
-        startDate: new Date(startDate).getTime(),
-        dueDate: dueDate ? new Date(dueDate).getTime() : undefined,
+        startDate: dateStrToTs(startDate),
+        dueDate: dueDate ? dateStrToTs(dueDate) : undefined,
         currency,
         color,
         icon: "hand-coins",

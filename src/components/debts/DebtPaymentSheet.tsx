@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, fromCents, formatCents } from "@/lib/money";
+import { toCents, fromCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
 
 interface DebtPaymentSheetProps {
   debtId: Id<"debts">;
@@ -42,7 +42,7 @@ export function DebtPaymentSheet({
     suggestedPayment ? fromCents(suggestedPayment).toString() : ""
   );
   const [fromAccountId, setFromAccountId] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [date, setDate] = useState(todayStr);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -56,7 +56,7 @@ export function DebtPaymentSheet({
       await addPayment({
         debtId,
         amount: toCents(amountNum),
-        date: new Date(date).getTime(),
+        date: dateStrToTs(date),
         fromAccountId: fromAccountId ? (fromAccountId as Id<"accounts">) : undefined,
         notes: notes.trim() || undefined,
       });

@@ -11,7 +11,7 @@ import { MoneyInput } from "@/components/ui/money-input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
-import { formatCents, toCents, fromCents } from "@/lib/money";
+import { formatCents, toCents, fromCents, todayStr } from "@/lib/money";
 import { toast } from "sonner";
 
 interface PayCardFormProps {
@@ -30,9 +30,8 @@ export function PayCardForm({ card, onSuccess }: PayCardFormProps) {
   const [amountStr, setAmountStr] = useState(
     () => String(fromCents(card.currentBalance))
   );
-  const [paymentDate, setPaymentDate] = useState(
-    () => new Date().toISOString().substring(0, 10)
-  );
+  // todayStr() usa hora local; toISOString() daría fecha UTC que puede diferir un día
+  const [paymentDate, setPaymentDate] = useState(todayStr);
   const [loading, setLoading] = useState(false);
 
   const validAccounts = useMemo(

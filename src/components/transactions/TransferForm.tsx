@@ -18,7 +18,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, formatCents } from "@/lib/money";
+import { toCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
 import { ArrowDown, Check } from "lucide-react";
 
 interface TransferFormProps {
@@ -40,7 +40,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
   const [amount, setAmount] = useState("");
   const [exchangeRate, setExchangeRate] = useState("");
   const [description, setDescription] = useState("Transferencia");
-  const [date, setDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [date, setDate] = useState(todayStr);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -77,7 +77,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         fromAccountId: fromAccountId as Id<"accounts">,
         toAccountId: toAccountId as Id<"accounts">,
         amount: toCents(amountNum),
-        date: new Date(date).getTime(),
+        date: dateStrToTs(date),
         description: description.trim() || "Transferencia",
         exchangeRate: needsRate ? rateNum : undefined,
         notes: notes.trim() || undefined,

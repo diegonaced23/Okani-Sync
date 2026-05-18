@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, fromCents, formatCents } from "@/lib/money";
+import { toCents, fromCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
 
 interface LoanRepaymentSheetProps {
   loanId: Id<"loans">;
@@ -40,7 +40,7 @@ export function LoanRepaymentSheet({
 
   const [amount, setAmount]               = useState(fromCents(currentBalance).toString());
   const [toAccountId, setToAccountId]     = useState("");
-  const [date, setDate]                   = useState(() => new Date().toISOString().substring(0, 10));
+  const [date, setDate]                   = useState(todayStr);
   const [notes, setNotes]                 = useState("");
   const [loading, setLoading]             = useState(false);
 
@@ -54,7 +54,7 @@ export function LoanRepaymentSheet({
       await addRepayment({
         loanId,
         amount: toCents(amountNum),
-        date: new Date(date).getTime(),
+        date: dateStrToTs(date),
         toAccountId: toAccountId ? (toAccountId as Id<"accounts">) : undefined,
         notes: notes.trim() || undefined,
       });

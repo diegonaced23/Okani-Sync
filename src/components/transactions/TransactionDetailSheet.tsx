@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { formatCents, fromCents, toCents } from "@/lib/money";
+import { formatCents, fromCents, toCents, dateStrToTs, tsToDateStr } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
 import { Check, Pencil, Trash2, X, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -148,7 +148,8 @@ export function TransactionDetailSheet({
         tx.accountId ? `account:${tx.accountId}` :
         tx.cardId    ? `card:${tx.cardId}`        : ""
       );
-      setDate(new Date(tx.date).toISOString().substring(0, 10));
+      // tsToDateStr usa hora local para evitar el desfase UTC al mostrar la fecha
+      setDate(tsToDateStr(tx.date));
       setCategoryId(tx.categoryId ?? "");
     }
     setEditing(false);
@@ -226,7 +227,7 @@ export function TransactionDetailSheet({
         transactionId: currentTx._id,
         amount:      toCents(amountNum),
         description: desc.trim(),
-        date:        new Date(date).getTime(),
+        date:        dateStrToTs(date),
         categoryId:  categoryId ? (categoryId as Id<"categories">) : undefined,
         accountId:   sourceKind === "account" && sourceRawId ? (sourceRawId as Id<"accounts">) : undefined,
         cardId:      sourceKind === "card"    && sourceRawId ? (sourceRawId as Id<"cards">)    : undefined,

@@ -151,6 +151,39 @@ export function convertCurrency(amountCents: number, rate: number): number {
 // ─── Utilidades de fecha/mes ──────────────────────────────────────────────────
 
 /**
+ * Convierte un string "YYYY-MM-DD" a timestamp en hora local (mediodía).
+ *
+ * Por qué mediodía y no medianoche:
+ *   new Date("YYYY-MM-DD") la spec lo parsea como UTC medianoche.
+ *   En zonas UTC negativas (ej: Colombia UTC-5) eso es el día anterior a las 19:00 local,
+ *   por lo que el timestamp guardado representa el día equivocado.
+ *   Usando "T12:00:00" (sin sufijo Z) JavaScript lo trata como hora local,
+ *   y el mediodía garantiza que ningún cambio de horario de verano (±1h) desfase el día.
+ */
+export function dateStrToTs(dateStr: string): number {
+  return new Date(dateStr + "T12:00:00").getTime();
+}
+
+/**
+ * Convierte un timestamp a string "YYYY-MM-DD" usando la zona horaria local.
+ *
+ * NO usar toISOString().substring(0, 10) porque devuelve la fecha en UTC,
+ * que puede diferir un día respecto a la fecha local en zonas UTC negativas.
+ */
+export function tsToDateStr(ts: number): string {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Retorna la fecha de hoy como "YYYY-MM-DD" en hora local. */
+export function todayStr(): string {
+  return tsToDateStr(Date.now());
+}
+
+/**
  * Retorna el string "YYYY-MM" para el timestamp dado.
  * Usa la zona horaria local del navegador.
  */

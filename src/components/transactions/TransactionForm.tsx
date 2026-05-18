@@ -13,7 +13,7 @@ import {
   SelectSeparator, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, formatCents } from "@/lib/money";
+import { toCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
 import { Check } from "lucide-react";
 import { CategoryIcon } from "@/lib/category-icons";
 
@@ -39,7 +39,7 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
   // Valor codificado: "account:ID" | "card:ID" | ""
   const [sourceId, setSourceId]       = useState<string>("");
   const [categoryId, setCategoryId]   = useState<string>("");
-  const [date, setDate]               = useState(() => new Date().toISOString().substring(0, 10));
+  const [date, setDate]               = useState(todayStr);
   const [loading, setLoading]         = useState(false);
 
   // Campos específicos de tarjeta de crédito
@@ -86,8 +86,9 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         return;
       }
 
-      const purchaseDate = new Date(date).getTime();
-      const firstInstallmentDate = new Date(date);
+      const purchaseDate = dateStrToTs(date);
+      // Mediodía local para que setMonth opere sobre la fecha correcta
+      const firstInstallmentDate = new Date(date + "T12:00:00");
       firstInstallmentDate.setMonth(firstInstallmentDate.getMonth() + 1);
 
       setLoading(true);
@@ -121,7 +122,7 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
         type,
         amount: toCents(amountNum),
         description: description.trim(),
-        date: new Date(date).getTime(),
+        date: dateStrToTs(date),
         currency,
         accountId: sourceKind === "account" && sourceRawId
           ? (sourceRawId as Parameters<typeof createTransaction>[0]["accountId"])
