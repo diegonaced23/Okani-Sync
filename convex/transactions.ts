@@ -92,14 +92,32 @@ export const listRecent = query({
   handler: async (ctx, { limit = 10 }) => {
     const clerkId = await getCurrentUserId(ctx);
     const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
-    // Excluir gasto_tarjeta: son registros virtuales de cuotas de tarjeta de crédito,
-    // no representan movimientos de efectivo real. Se gestionan en el módulo de Tarjetas.
-    return await ctx.db
+
+    // Tomamos un pool amplio para compensar el filtrado posterior.
+    // Para safeLimit=5 → pool de 50 candidatos (suficiente para cualquier combinación).
+    const candidates = await ctx.db
       .query("transactions")
       .withIndex("by_user_date", (q) => q.eq("userId", clerkId))
       .order("desc")
-      .filter((q) => q.neq(q.field("type"), "gasto_tarjeta"))
-      .take(safeLimit);
+      .take(Math.min(safeLimit * 10, 200));
+
+    const result = [];
+
+    for (const tx of candidates) {
+      if (tx.type === "gasto_tarjeta") {
+        // Las transacciones gasto_tarjeta representan cuotas de tarjeta de crédito.
+        // Solo incluimos la cuota #1, que equivale al momento en que se registró la compra.
+        // Las cuotas #2, #3, etc. son cargos mensuales futuros, no "movimientos nuevos".
+        if (!tx.cardInstallmentId) continue;
+        const installment = await ctx.db.get(tx.cardInstallmentId);
+        if (!installment || installment.installmentNumber !== 1) continue;
+      }
+
+      result.push(tx);
+      if (result.length >= safeLimit) break;
+    }
+
+    return result;
   },
 });
 
