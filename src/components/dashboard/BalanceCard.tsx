@@ -3,7 +3,7 @@
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Eye, EyeOff, SlidersHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 // Clave en localStorage para persistir la preferencia de visibilidad del saldo
 const STORAGE_KEY = "dashboard:balanceHidden";
@@ -25,13 +25,12 @@ export function BalanceCard({
   loading,
   onManageAccounts,
 }: BalanceCardProps) {
-  const [hidden, setHidden] = useState(false);
-
-  // Al montar el componente, leer la preferencia guardada en localStorage
-  // Esto ocurre solo en el cliente, después del render inicial (evita mismatch de hidratación)
-  useEffect(() => {
-    setHidden(localStorage.getItem(STORAGE_KEY) === "true");
-  }, []);
+  // Lazy initializer: typeof window asegura que no falla en SSR.
+  // Es seguro porque cuando `total` es undefined (carga inicial), se muestra el Skeleton
+  // y el valor de hidden no afecta el HTML hidratado.
+  const [hidden, setHidden] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem(STORAGE_KEY) === "true"
+  );
 
   // Alterna la visibilidad y persiste la nueva preferencia en localStorage
   const toggleHidden = () => {

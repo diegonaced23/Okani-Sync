@@ -2,7 +2,7 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { toMonthString, getSystemPaymentCategoryId } from "./lib/utils";
-import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
+import { recomputeInstallmentsPaid, getBillingCycleDates, getNextPaymentTs } from "./lib/cardHelpers";
 
 export const list = query({
   args: {},
@@ -209,45 +209,6 @@ export const payCard = mutation({
 });
 
 /**
- * Calcula las fechas de inicio y fin del ciclo de facturación actual,
- * considerando el día de corte real de la tarjeta y los meses cortos.
- * Ejemplo: cutoffDay=25, hoy=17 mayo → ciclo [25 abr, 25 may].
- */
-function getBillingCycleDates(cutoffDay: number): {
-  prevCutoffTs: number;
-  nextCutoffTs: number;
-} {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
-  const day = now.getDate();
-
-  // Día de corte real clampeado al último día del mes (ej: 31 en febrero → 28)
-  const cutoffOf = (y: number, m: number) =>
-    Math.min(cutoffDay, new Date(y, m + 1, 0).getDate());
-
-  let prevYear: number, prevMonth: number, nextYear: number, nextMonth: number;
-
-  if (day >= cutoffOf(year, month)) {
-    // Ya pasamos el corte este mes → ciclo actual: [corte este mes → corte próximo mes]
-    prevYear = year; prevMonth = month;
-    nextYear = month === 11 ? year + 1 : year;
-    nextMonth = month === 11 ? 0 : month + 1;
-  } else {
-    // Aún no llega el corte → ciclo actual: [corte mes pasado → corte este mes]
-    prevYear = month === 0 ? year - 1 : year;
-    prevMonth = month === 0 ? 11 : month - 1;
-    nextYear = year; nextMonth = month;
-  }
-
-  // Fin del día (23:59:59.999) para incluir operaciones realizadas el mismo día del corte
-  const prevCutoffTs = new Date(prevYear, prevMonth, cutoffOf(prevYear, prevMonth), 23, 59, 59, 999).getTime();
-  const nextCutoffTs = new Date(nextYear, nextMonth, cutoffOf(nextYear, nextMonth), 23, 59, 59, 999).getTime();
-
-  return { prevCutoffTs, nextCutoffTs };
-}
-
-/**
  * Calcula el pago mínimo y el pago total recomendado para la tarjeta.
  *
  * Pago mínimo: suma de cuotas no pagadas cuyo vencimiento cae dentro del
@@ -314,6 +275,125 @@ export const getPaymentSummary = query({
     }
 
     return { minimumPayment, totalPayment, currency: card.currency };
+  },
+});
+
+/**
+ * Devuelve en una sola subscripción todo lo necesario para la página de detalle
+ * de una tarjeta: compras activas, cuotas clasificadas por ciclo de facturación,
+ * cronogramas completos (elimina N+1 de PurchaseRow) y montos de pago.
+ *
+ * Clasificación de cuotas:
+ *   overdueCuotas       — !paid && dueDate ≤ prevCutoffTs   (vencidas sin pagar)
+ *   currentCycleCuotas  — !paid && dueDate ∈ (prev, next]   (lo que suma el pago mínimo)
+ *
+ * Compras del ciclo en curso:
+ *   purchasesInCurrentCycle — purchaseDate ∈ (prevCutoffTs, nextCutoffTs]
+ */
+export const getCardDetailData = query({
+  args: { cardId: v.id("cards") },
+  handler: async (ctx, { cardId }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const card = await ctx.db.get(cardId);
+    if (!card || card.userId !== clerkId) return null;
+
+    const { prevCutoffTs, nextCutoffTs } = getBillingCycleDates(card.cutoffDay);
+    const paymentTs = getNextPaymentTs(card.paymentDay, nextCutoffTs);
+
+    // Todas las compras activas de la tarjeta
+    const allPurchases = await ctx.db
+      .query("cardPurchases")
+      .withIndex("by_card", (q) => q.eq("cardId", cardId))
+      .filter((q) => q.eq(q.field("status"), "activa"))
+      .collect();
+
+    // Acumuladores
+    const installmentsByPurchase: Record<string, Array<{
+      _id: string; purchaseId: string; cardId: string; userId: string;
+      installmentNumber: number; amount: number; dueDate: number;
+      month: string; paid: boolean; paidAt?: number; createdAt: number;
+      principalAmount?: number; interestAmount?: number; remainingPrincipal?: number;
+    }>> = {};
+
+    // Cuotas del ciclo para mostrar en "A pagar"
+    const overdueCuotas: string[] = [];    // IDs de cuotas vencidas
+    const currentCycleCuotas: string[] = []; // IDs de cuotas del ciclo actual
+    // Mapa id → cuota para lookup rápido
+    const installmentById: Record<string, (typeof installmentsByPurchase)[string][number]> = {};
+
+    let minimumPayment = 0;
+    let totalPayment = 0;
+
+    for (const purchase of allPurchases) {
+      const installments = await ctx.db
+        .query("cardInstallments")
+        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+        .collect();
+
+      // Guardar el cronograma completo (pagadas + no pagadas) para el Tab 3
+      installmentsByPurchase[purchase._id] = installments.map((i) => ({
+        _id: i._id,
+        purchaseId: i.purchaseId,
+        cardId: i.cardId,
+        userId: i.userId,
+        installmentNumber: i.installmentNumber,
+        amount: i.amount,
+        dueDate: i.dueDate,
+        month: i.month,
+        paid: i.paid,
+        paidAt: i.paidAt,
+        createdAt: i.createdAt,
+        principalAmount: i.principalAmount,
+        interestAmount: i.interestAmount,
+        remainingPrincipal: i.remainingPrincipal,
+      }));
+
+      for (const inst of installments) {
+        installmentById[inst._id] = installmentsByPurchase[purchase._id].find(
+          (i) => i._id === inst._id
+        )!;
+      }
+
+      // Cuotas no pagadas ordenadas de más antigua a más reciente (FIFO)
+      const unpaid = installments
+        .filter((i) => !i.paid)
+        .sort((a, b) => a.dueDate - b.dueDate);
+
+      for (const inst of unpaid) {
+        if (inst.dueDate <= prevCutoffTs) {
+          overdueCuotas.push(inst._id);
+        } else if (inst.dueDate <= nextCutoffTs) {
+          currentCycleCuotas.push(inst._id);
+          minimumPayment += inst.amount;
+        }
+      }
+
+      // Pago total: sin interés → todas las cuotas; con interés → solo la más antigua
+      if (purchase.hasInterest) {
+        if (unpaid.length > 0) totalPayment += unpaid[0].amount;
+      } else {
+        for (const inst of unpaid) totalPayment += inst.amount;
+      }
+    }
+
+    // Compras hechas en el ciclo en curso (para el tab "Ciclo actual"), desc por fecha
+    const purchasesInCurrentCycle = allPurchases
+      .filter((p) => p.purchaseDate > prevCutoffTs && p.purchaseDate <= nextCutoffTs)
+      .sort((a, b) => b.purchaseDate - a.purchaseDate);
+
+    return {
+      card,
+      cycle: { prevCutoffTs, nextCutoffTs, paymentTs },
+      // IDs ordenados cronológicamente, lookup via installmentById
+      overdueCuotas,
+      currentCycleCuotas,
+      installmentById,
+      purchasesInCurrentCycle,
+      allPurchases,
+      installmentsByPurchase,
+      minimumPayment,
+      totalPayment,
+    };
   },
 });
 
