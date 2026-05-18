@@ -71,10 +71,7 @@ export function PurchaseForm({
   }, [canEditFinancials, amountCents, rate, nInstallments]);
 
   const firstInstallmentDate = useMemo(() => {
-    // Parsear como mediodía local para que setMonth opere sobre la fecha correcta
-    const d = new Date(purchaseDate + "T12:00:00");
-    d.setMonth(d.getMonth() + 1);
-    return d.getTime();
+    return new Date(purchaseDate + "T12:00:00").getTime();
   }, [purchaseDate]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -283,9 +280,8 @@ export function PurchaseForm({
                 <span>#</span><span>Capital</span><span>Interés</span><span className="text-right">Cuota</span>
               </div>
               {preview.schedule.slice(0, 6).map((s) => {
-                // Mediodía local para calcular correctamente el mes de vencimiento en el preview
                 const dueTs = new Date(purchaseDate + "T12:00:00");
-                dueTs.setMonth(dueTs.getMonth() + s.installmentNumber);
+                dueTs.setMonth(dueTs.getMonth() + s.installmentNumber - 1);
                 return (
                   <div key={s.installmentNumber} className="grid grid-cols-4 px-3 py-1.5 border-t border-border">
                     <span className="text-muted-foreground">{s.installmentNumber}</span>
