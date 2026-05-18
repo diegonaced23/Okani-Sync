@@ -9,7 +9,7 @@ import { useState, useMemo } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
-import { Search, Plus, ArrowUpDown } from "lucide-react";
+import { Search, Plus, ArrowUpDown, FileDown, FileText, FileSpreadsheet } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AppSheet } from "@/components/ui/app-sheet";
@@ -18,9 +18,18 @@ import { CompactPurchaseRow } from "./CompactPurchaseRow";
 import { CompactInstallmentRow } from "./CompactInstallmentRow";
 import { PurchaseForm } from "./PurchaseForm";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { formatCents, currentMonth } from "@/lib/money";
+import { toast } from "sonner";
+import type { InstallmentEntry } from "./CardStatementDocument";
+import type { PaymentStatementRow } from "@/lib/reports";
 
 type TabId = "ciclo-actual" | "a-pagar" | "plan-completo";
 
@@ -88,6 +97,8 @@ export function CardCycleTabs({
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   // Orden del Tab 2 "A pagar": true = más antiguo primero (default), false = más reciente primero
   const [sortAsc, setSortAsc] = useState(true);
+  // Estado de la descarga del extracto
+  const [downloading, setDownloading] = useState<"pdf" | "csv" | null>(null);
 
   const currMonthStr = currentMonth();
 
@@ -102,6 +113,95 @@ export function CardCycleTabs({
     const arr = [...data.currentCycleCuotas];
     return sortAsc ? arr : arr.reverse();
   }, [data.currentCycleCuotas, sortAsc]);
+
+  // ── Descarga del extracto "A pagar" ──────────────────────────────────────
+
+  // Convierte un ID de cuota en la estructura que usan PDF y CSV
+  function buildInstallmentEntry(instId: string): InstallmentEntry | null {
+    const inst = data.installmentById[instId];
+    if (!inst) return null;
+    const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
+    if (!purchase) return null;
+    return {
+      installmentNumber: inst.installmentNumber,
+      totalInstallments: purchase.totalInstallments,
+      amount: inst.amount,
+      dueDate: inst.dueDate,
+      interestAmount: inst.interestAmount,
+      principalAmount: inst.principalAmount,
+      description: purchase.description,
+      category: purchase.categoryId ? categoryMap[purchase.categoryId] ?? "" : "",
+    };
+  }
+
+  async function handleDownloadCsv() {
+    setDownloading("csv");
+    try {
+      const { generatePaymentStatementCsv, downloadCsv } = await import("@/lib/reports");
+      const rows: PaymentStatementRow[] = [
+        // Vencidas primero
+        ...sortedOverdueCuotas.flatMap((id) => {
+          const entry = buildInstallmentEntry(id);
+          return entry ? [{ ...entry, status: "Vencida" as const, currency }] : [];
+        }),
+        // Luego el ciclo actual
+        ...sortedCurrentCycleCuotas.flatMap((id) => {
+          const entry = buildInstallmentEntry(id);
+          return entry ? [{ ...entry, status: "Ciclo actual" as const, currency }] : [];
+        }),
+      ];
+      const csv = generatePaymentStatementCsv(rows);
+      const month = new Date().toISOString().slice(0, 7);
+      downloadCsv(csv, `a-pagar_${card.lastFourDigits}_${month}.csv`);
+      toast.success("CSV descargado correctamente");
+    } catch {
+      toast.error("Error al generar el CSV");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function handleDownloadPdf() {
+    setDownloading("pdf");
+    try {
+      const [{ pdf }, { default: CardStatementDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/components/cards/CardStatementDocument"),
+      ]);
+      // Construir arrays de entradas para cada sección
+      const overdueEntries = sortedOverdueCuotas.flatMap((id) => {
+        const e = buildInstallmentEntry(id);
+        return e ? [e] : [];
+      });
+      const currentEntries = sortedCurrentCycleCuotas.flatMap((id) => {
+        const e = buildInstallmentEntry(id);
+        return e ? [e] : [];
+      });
+      const element = (
+        <CardStatementDocument
+          card={card}
+          cycle={data.cycle}
+          overdue={overdueEntries}
+          currentCycle={currentEntries}
+          minimumPayment={data.minimumPayment}
+          hasOverdue={data.overdueCuotas.length > 0}
+        />
+      );
+      const blob = await pdf(element).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const month = new Date().toISOString().slice(0, 7);
+      link.download = `a-pagar_${card.lastFourDigits}_${month}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("PDF descargado correctamente");
+    } catch {
+      toast.error("Error al generar el PDF");
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   // ── Tab 1: Ciclo actual ────────────────────────────────────────────────────
 
@@ -321,18 +421,49 @@ export function CardCycleTabs({
                 {data.currentCycleCuotas.length} cuota
                 {data.currentCycleCuotas.length !== 1 ? "s" : ""} del ciclo actual
               </p>
-              {/* Botón para alternar el orden de las fechas */}
-              {data.currentCycleCuotas.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setSortAsc((s) => !s)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={sortAsc ? "Cambiar a más reciente primero" : "Cambiar a más antiguo primero"}
-                >
-                  <ArrowUpDown className="h-3 w-3" />
-                  {sortAsc ? "Antiguo primero" : "Reciente primero"}
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Botón para alternar el orden de las fechas */}
+                {data.currentCycleCuotas.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setSortAsc((s) => !s)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={sortAsc ? "Cambiar a más reciente primero" : "Cambiar a más antiguo primero"}
+                  >
+                    <ArrowUpDown className="h-3 w-3" />
+                    {sortAsc ? "Antiguo primero" : "Reciente primero"}
+                  </button>
+                )}
+
+                {/* Descargar extracto de lo que se debe pagar */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    disabled={!!downloading}
+                    aria-label="Descargar extracto"
+                    className="inline-flex items-center justify-center rounded-md h-6 w-6 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <FileDown className="h-3.5 w-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={handleDownloadPdf}
+                      disabled={downloading === "pdf"}
+                      className="gap-2"
+                    >
+                      <FileText className="h-4 w-4" />
+                      {downloading === "pdf" ? "Generando PDF…" : "Descargar PDF"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleDownloadCsv}
+                      disabled={downloading === "csv"}
+                      className="gap-2"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      {downloading === "csv" ? "Generando CSV…" : "Descargar CSV"}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </div>
 

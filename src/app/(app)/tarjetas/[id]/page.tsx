@@ -5,17 +5,10 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Pencil, Trash2, FileDown, FileText, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppSheet } from "@/components/ui/app-sheet";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import type { CardStatementRow } from "@/lib/reports";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -56,8 +49,6 @@ export default function CardDetailPage({
   const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
   const [purchaseDeleteId, setPurchaseDeleteId] = useState<Id<"cardPurchases"> | null>(null);
   const [purchaseDeleting, setPurchaseDeleting] = useState(false);
-  // Estado del botón de descarga: null = inactivo, "pdf" | "csv" = generando
-  const [downloading, setDownloading] = useState<"pdf" | "csv" | null>(null);
 
   // ── Queries de Convex ────────────────────────────────────────────────────────
 
@@ -107,76 +98,6 @@ export default function CardDetailPage({
     }
   }
 
-  // ── Handlers de descarga ─────────────────────────────────────────────────────
-
-  async function handleDownloadCsv() {
-    if (!data) return;
-    setDownloading("csv");
-    try {
-      // Importar las utilidades de forma dinámica para no aumentar el bundle inicial
-      const { generateCardStatementCsv, downloadCsv } = await import("@/lib/reports");
-      const rows: CardStatementRow[] = data.allPurchases.map((p) => ({
-        description: p.description,
-        category: p.categoryId ? categoryMap[p.categoryId] ?? "" : "",
-        purchaseDate: p.purchaseDate,
-        paidInstallments: p.paidInstallments,
-        totalInstallments: p.totalInstallments,
-        amountPerInstallment: p.amountPerInstallment,
-        totalAmount: p.totalAmount,
-        totalWithInterest: p.totalWithInterest,
-        totalInterest: p.totalInterest ?? 0,
-        hasInterest: p.hasInterest,
-        interestRate: p.interestRate,
-        status: p.status,
-        currency: p.currency,
-      }));
-      const csv = generateCardStatementCsv(rows);
-      const month = new Date().toISOString().slice(0, 7);
-      downloadCsv(csv, `extracto_${data.card.lastFourDigits}_${month}.csv`);
-      toast.success("CSV descargado correctamente");
-    } catch {
-      toast.error("Error al generar el CSV");
-    } finally {
-      setDownloading(null);
-    }
-  }
-
-  async function handleDownloadPdf() {
-    if (!data) return;
-    setDownloading("pdf");
-    try {
-      // Carga diferida de @react-pdf/renderer y el documento (son pesados)
-      const [{ pdf }, { default: CardStatementDocument }] = await Promise.all([
-        import("@react-pdf/renderer"),
-        import("@/components/cards/CardStatementDocument"),
-      ]);
-      const element = (
-        <CardStatementDocument
-          card={data.card}
-          purchases={data.allPurchases}
-          categoryMap={categoryMap}
-          cycle={data.cycle}
-          minimumPayment={data.minimumPayment}
-          totalPayment={data.totalPayment}
-          hasOverdue={data.overdueCuotas.length > 0}
-        />
-      );
-      const blob = await pdf(element).toBlob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      const month = new Date().toISOString().slice(0, 7);
-      link.download = `extracto_${data.card.lastFourDigits}_${month}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
-      toast.success("PDF descargado correctamente");
-    } catch {
-      toast.error("Error al generar el PDF");
-    } finally {
-      setDownloading(null);
-    }
-  }
-
   // ── Render de carga ──────────────────────────────────────────────────────────
 
   if (data === undefined) {
@@ -221,37 +142,6 @@ export default function CardDetailPage({
           <ArrowLeft className="h-4 w-4" /> Tarjetas
         </button>
         <div className="flex items-center gap-1">
-          {/* Descargar extracto: PDF o CSV */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={!!downloading}
-              aria-label="Descargar extracto"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-            >
-              <FileDown className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {/* Descarga PDF — carga @react-pdf/renderer bajo demanda */}
-              <DropdownMenuItem
-                onClick={handleDownloadPdf}
-                disabled={downloading === "pdf"}
-                className="gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                {downloading === "pdf" ? "Generando PDF…" : "Descargar PDF"}
-              </DropdownMenuItem>
-              {/* Descarga CSV — usa papaparse */}
-              <DropdownMenuItem
-                onClick={handleDownloadCsv}
-                disabled={downloading === "csv"}
-                className="gap-2"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                {downloading === "csv" ? "Generando CSV…" : "Descargar CSV"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           <Button
             variant="ghost"
             size="icon"

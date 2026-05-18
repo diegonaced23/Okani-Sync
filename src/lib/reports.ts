@@ -47,44 +47,38 @@ export function downloadCsv(content: string, filename: string) {
 // ─── PDF — se genera en el componente con dynamic import de @react-pdf ────────
 // Ver src/components/reports/ReportDocument.tsx
 
-// ─── Extracto de tarjeta de crédito ──────────────────────────────────────────
+// ─── Extracto "A pagar" de tarjeta de crédito ────────────────────────────────
+// Una fila por CUOTA, no por compra. Refleja exactamente el tab "A pagar".
 
-export interface CardStatementRow {
-  description: string;
-  category: string;
-  purchaseDate: number;
-  paidInstallments: number;
-  totalInstallments: number;
-  amountPerInstallment: number; // en centavos
-  totalAmount: number;          // monto base sin interés, en centavos
-  totalWithInterest: number;    // en centavos
-  totalInterest: number;        // en centavos
-  hasInterest: boolean;
-  interestRate?: number;        // decimal (0.08 = 8%)
-  status: string;
+export interface PaymentStatementRow {
+  status: "Vencida" | "Ciclo actual";   // sección del tab donde aparece
+  description: string;                  // descripción de la compra padre
+  category: string;                     // nombre de categoría
+  installmentNumber: number;            // N° de cuota
+  totalInstallments: number;            // total de cuotas de la compra
+  amount: number;                       // monto total de esta cuota (centavos)
+  principalAmount?: number;             // capital de esta cuota (centavos)
+  interestAmount?: number;              // interés de esta cuota (centavos)
+  dueDate: number;                      // timestamp de vencimiento
   currency: string;
 }
 
 /**
- * Genera el CSV del extracto de una tarjeta de crédito.
- * Una fila por compra activa.
+ * Genera el CSV del extracto "A pagar".
+ * Muestra las cuotas vencidas primero, luego las del ciclo actual.
  */
-export function generateCardStatementCsv(rows: CardStatementRow[]): string {
+export function generatePaymentStatementCsv(rows: PaymentStatementRow[]): string {
   const data = rows.map((r) => ({
+    Estado: r.status,
     Descripción: r.description,
     Categoría: r.category || "Sin categoría",
-    "Fecha de compra": formatDateShort(r.purchaseDate),
-    "Cuotas pagadas": r.paidInstallments,
-    "Total cuotas": r.totalInstallments,
-    "Cuota mensual": formatCents(r.amountPerInstallment, r.currency),
-    "Monto base": formatCents(r.totalAmount, r.currency),
-    "Total con interés": formatCents(r.totalWithInterest, r.currency),
-    "Interés total": formatCents(r.totalInterest, r.currency),
-    "Con interés": r.hasInterest ? "Sí" : "No",
-    "Tasa mensual": r.hasInterest && r.interestRate
-      ? `${(r.interestRate * 100).toFixed(2)}%`
+    Cuota: r.totalInstallments > 1 ? `${r.installmentNumber}/${r.totalInstallments}` : "—",
+    Vencimiento: formatDateShort(r.dueDate),
+    Monto: formatCents(r.amount, r.currency),
+    Capital: r.principalAmount != null ? formatCents(r.principalAmount, r.currency) : "—",
+    Interés: r.interestAmount != null && r.interestAmount > 0
+      ? formatCents(r.interestAmount, r.currency)
       : "—",
-    Estado: r.status === "activa" ? "Activa" : r.status === "pagada" ? "Pagada" : "Cancelada",
     Moneda: r.currency,
   }));
 
