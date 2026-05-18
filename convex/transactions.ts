@@ -92,10 +92,13 @@ export const listRecent = query({
   handler: async (ctx, { limit = 10 }) => {
     const clerkId = await getCurrentUserId(ctx);
     const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
+    // Excluir gasto_tarjeta: son registros virtuales de cuotas de tarjeta de crédito,
+    // no representan movimientos de efectivo real. Se gestionan en el módulo de Tarjetas.
     return await ctx.db
       .query("transactions")
       .withIndex("by_user_date", (q) => q.eq("userId", clerkId))
       .order("desc")
+      .filter((q) => q.neq(q.field("type"), "gasto_tarjeta"))
       .take(safeLimit);
   },
 });
