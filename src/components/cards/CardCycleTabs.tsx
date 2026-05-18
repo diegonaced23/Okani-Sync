@@ -9,7 +9,7 @@ import { useState, useMemo } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, ArrowUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AppSheet } from "@/components/ui/app-sheet";
@@ -86,8 +86,22 @@ export function CardCycleTabs({
   const [searchText, setSearchText] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  // Orden del Tab 2 "A pagar": true = más antiguo primero (default), false = más reciente primero
+  const [sortAsc, setSortAsc] = useState(true);
 
   const currMonthStr = currentMonth();
+
+  // ── Tab 2: cuotas ordenadas por dueDate (el backend devuelve asc por defecto) ──
+  // sortAsc=true → más antiguo primero (default), sortAsc=false → más reciente primero
+  const sortedOverdueCuotas = useMemo(() => {
+    const arr = [...data.overdueCuotas];
+    return sortAsc ? arr : arr.reverse();
+  }, [data.overdueCuotas, sortAsc]);
+
+  const sortedCurrentCycleCuotas = useMemo(() => {
+    const arr = [...data.currentCycleCuotas];
+    return sortAsc ? arr : arr.reverse();
+  }, [data.currentCycleCuotas, sortAsc]);
 
   // ── Tab 1: Ciclo actual ────────────────────────────────────────────────────
 
@@ -227,19 +241,19 @@ export function CardCycleTabs({
           aria-labelledby="tab-a-pagar"
           className="space-y-3"
         >
-          {/* Bloque de vencidas — solo si hay cuotas anteriores al ciclo actual sin pagar */}
-          {data.overdueCuotas.length > 0 && (
+          {/* Bloque de vencidas — cuotas anteriores al ciclo activo sin pagar */}
+          {sortedOverdueCuotas.length > 0 && (
             <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--os-magenta)" }}>
-              {/* Cabecera de vencidas */}
+              {/* Cabecera: título, total y botón de orden */}
               <div
-                className="px-4 py-2 flex items-center justify-between"
+                className="px-4 py-2 flex items-center justify-between gap-2"
                 style={{ background: "color-mix(in oklch, var(--os-magenta) 12%, var(--surface))" }}
               >
                 <span
                   className="text-[11px] font-bold uppercase tracking-widest"
                   style={{ color: "var(--os-magenta)" }}
                 >
-                  Vencidas ({data.overdueCuotas.length})
+                  Vencidas ({sortedOverdueCuotas.length})
                 </span>
                 <span
                   className="text-sm font-bold tabular-nums"
@@ -254,8 +268,8 @@ export function CardCycleTabs({
                   )}
                 </span>
               </div>
-              {/* Filas de cuotas vencidas */}
-              {data.overdueCuotas.map((instId) => {
+              {/* Filas de cuotas vencidas con acciones */}
+              {sortedOverdueCuotas.map((instId) => {
                 const inst = data.installmentById[instId];
                 if (!inst) return null;
                 const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
@@ -267,13 +281,15 @@ export function CardCycleTabs({
                     purchase={purchase}
                     currency={currency}
                     categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
+                    onEdit={onEditPurchase}
+                    onDelete={onDeletePurchase}
                   />
                 );
               })}
             </div>
           )}
 
-          {/* Resumen del pago mínimo del ciclo */}
+          {/* Resumen del pago mínimo + control de orden */}
           <div className="rounded-xl bg-card border border-border px-4 py-3 space-y-0.5">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
               Pago mínimo · Vence {paymentDateStr}
@@ -281,14 +297,28 @@ export function CardCycleTabs({
             <p className="text-xl font-bold tabular-nums text-foreground">
               {formatCents(data.minimumPayment, currency)}
             </p>
-            <p className="text-xs text-muted-foreground">
-              {data.currentCycleCuotas.length} cuota
-              {data.currentCycleCuotas.length !== 1 ? "s" : ""} del ciclo actual
-            </p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-muted-foreground">
+                {data.currentCycleCuotas.length} cuota
+                {data.currentCycleCuotas.length !== 1 ? "s" : ""} del ciclo actual
+              </p>
+              {/* Botón para alternar el orden de las fechas */}
+              {data.currentCycleCuotas.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSortAsc((s) => !s)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={sortAsc ? "Cambiar a más reciente primero" : "Cambiar a más antiguo primero"}
+                >
+                  <ArrowUpDown className="h-3 w-3" />
+                  {sortAsc ? "Antiguo primero" : "Reciente primero"}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Lista de cuotas del ciclo actual */}
-          {data.currentCycleCuotas.length === 0 ? (
+          {sortedCurrentCycleCuotas.length === 0 ? (
             <div className="rounded-xl bg-card border border-border px-4 py-8 text-center">
               <p className="text-sm font-medium text-foreground">
                 Sin cuotas pendientes este ciclo
@@ -299,7 +329,7 @@ export function CardCycleTabs({
             </div>
           ) : (
             <div className="rounded-xl bg-card border border-border overflow-hidden">
-              {data.currentCycleCuotas.map((instId) => {
+              {sortedCurrentCycleCuotas.map((instId) => {
                 const inst = data.installmentById[instId];
                 if (!inst) return null;
                 const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
@@ -311,6 +341,8 @@ export function CardCycleTabs({
                     purchase={purchase}
                     currency={currency}
                     categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
+                    onEdit={onEditPurchase}
+                    onDelete={onDeletePurchase}
                   />
                 );
               })}
