@@ -330,7 +330,8 @@ export default defineSchema({
     month: v.string(),
     notes: v.optional(v.string()),
     alertThreshold: v.optional(v.number()), // % para notificar (default 80)
-    notifiedAt: v.optional(v.number()),
+    notifiedAt: v.optional(v.number()),         // ts de la primera alerta de umbral
+    exceededNotifiedAt: v.optional(v.number()), // ts de la primera alerta de excedido
     recurring: v.optional(v.boolean()),     // se copia al mes siguiente automáticamente
     createdAt: v.number(),
     updatedAt: v.number(),

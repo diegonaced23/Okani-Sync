@@ -298,7 +298,7 @@ export default function DashboardPage() {
           </Link>
         </div>
         {accounts === undefined ? (
-          <div className="flex gap-3">
+          <div className="flex gap-3 overflow-x-auto w-full" style={{ scrollbarWidth: "none" }}>
             <Skeleton className="flex-none w-[220px] h-[130px] rounded-2xl" />
             <Skeleton className="flex-none w-[220px] h-[130px] rounded-2xl" />
           </div>

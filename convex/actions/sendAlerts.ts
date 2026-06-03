@@ -2,6 +2,7 @@
 import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -38,28 +39,47 @@ async function checkUpcomingInstallments(
 ) {
   const cutoff = now + THREE_DAYS_MS;
 
-  // Obtener todos los usuarios con cuotas próximas venciendo
   const upcoming = await ctx.runQuery(
     internal.cardInstallments.listUpcomingUnpaid,
     { afterTs: now, beforeTs: cutoff }
   );
 
+  // Agrupar por tarjeta — una sola alerta por tarjeta, no por cuota individual
+  const byCard = new Map<Id<"cards">, (typeof upcoming)[number][]>();
   for (const inst of upcoming) {
-    // Verificar que no hayamos notificado ya en las últimas 24h
+    if (!byCard.has(inst.cardId)) byCard.set(inst.cardId, []);
+    byCard.get(inst.cardId)!.push(inst);
+  }
+
+  for (const [cardId, installments] of byCard) {
+    const userId = installments[0].userId;
+
+    // Deduplicar: no alertar si ya enviamos una notificación para esta tarjeta en los últimos 3 días
+    const alreadyNotified = await ctx.runQuery(
+      internal.notifications.existsRecentForEntity,
+      { userId, type: "cuota_proxima", relatedEntityId: cardId as string, since: now - THREE_DAYS_MS }
+    );
+    if (alreadyNotified) continue;
+
+    const card = await ctx.runQuery(internal.cards.getByIdInternal, { cardId });
+    const cardName = card?.name ?? "tu tarjeta";
+    const count = installments.length;
+    const cuotaLabel = count > 1 ? `${count} cuotas` : "una cuota";
+
     const notifId = await ctx.runMutation(internal.notifications.createInternal, {
-      userId: inst.userId,
+      userId,
       type: "cuota_proxima",
       title: "Cuota próxima a vencer",
-      message: `Tienes una cuota de tarjeta por ${inst.amount} que vence pronto.`,
-      actionUrl: `/tarjetas/${inst.cardId}`,
-      relatedEntityId: inst._id,
+      message: `${cardName} tiene ${cuotaLabel} venciendo en menos de 3 días.`,
+      actionUrl: `/tarjetas/${cardId}`,
+      relatedEntityId: cardId as string,
     });
 
     await ctx.runAction(internal.actions.sendPushNotification.run, {
-      userId: inst.userId,
+      userId,
       title: "⏰ Cuota próxima a vencer",
-      body: `Cuota #${inst.installmentNumber} vence en menos de 3 días.`,
-      url: `/tarjetas/${inst.cardId}`,
+      body: `${cardName} — ${cuotaLabel} vence en menos de 3 días.`,
+      url: `/tarjetas/${cardId}`,
       notificationId: notifId,
     });
   }
@@ -92,10 +112,11 @@ async function checkBudgetAlerts(
       relatedEntityId: budget._id,
     });
 
-    // Actualizar notifiedAt para no volver a alertar este mes
+    // Marcar qué tipo de alerta se envió para no repetirla
     await ctx.runMutation(internal.budgets.updateNotifiedAt, {
       budgetId: budget._id,
       notifiedAt: now,
+      exceeded: isOver,
     });
 
     await ctx.runAction(internal.actions.sendPushNotification.run, {

@@ -1,4 +1,4 @@
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUserId } from "./lib/auth";
 
@@ -109,6 +109,30 @@ export const createInternal = internalMutation({
       relatedEntityId: args.relatedEntityId,
       createdAt: Date.now(),
     });
+  },
+});
+
+/** Interna: ¿existe una notificación reciente del tipo y entidad indicados? Usado para deduplicar alertas. */
+export const existsRecentForEntity = internalQuery({
+  args: {
+    userId: v.string(),
+    type: v.string(),
+    relatedEntityId: v.string(),
+    since: v.number(),
+  },
+  handler: async (ctx, { userId, type, relatedEntityId, since }) => {
+    const result = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("type"), type),
+          q.eq(q.field("relatedEntityId"), relatedEntityId),
+          q.gte(q.field("createdAt"), since)
+        )
+      )
+      .first();
+    return result !== null;
   },
 });
 

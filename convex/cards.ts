@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { toMonthString, getSystemPaymentCategoryId } from "./lib/utils";
@@ -464,5 +464,13 @@ export const remove = mutation({
 
     // 4. La tarjeta
     await ctx.db.delete(cardId);
+  },
+});
+
+/** Interna: obtiene una tarjeta por ID sin validación de usuario (uso exclusivo de crons/actions). */
+export const getByIdInternal = internalQuery({
+  args: { cardId: v.id("cards") },
+  handler: async (ctx, { cardId }) => {
+    return await ctx.db.get(cardId);
   },
 });

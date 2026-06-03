@@ -151,13 +151,10 @@ export const rolloverRecurring = internalMutation({
   },
 });
 
-/** Interna: presupuestos que superan su umbral y no han sido notificados hoy. */
+/** Interna: presupuestos que superan su umbral y aún no han sido notificados en este ciclo. */
 export const listExceedingThreshold = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
     const all = await ctx.db.query("budgets").collect();
     return await Promise.all(
       all
@@ -166,7 +163,11 @@ export const listExceedingThreshold = internalQuery({
           const pct = b.spent / b.amount;
           const threshold = (b.alertThreshold ?? 80) / 100;
           if (pct < threshold) return false;
-          if (b.notifiedAt && b.notifiedAt >= todayStart.getTime()) return false;
+          const isOver = b.spent > b.amount;
+          // Ya se envió la alerta de excedido → no repetir
+          if (isOver && b.exceededNotifiedAt) return false;
+          // Aún no excedido pero ya se envió la alerta de umbral → no repetir
+          if (!isOver && b.notifiedAt) return false;
           return true;
         })
         .map(async (b) => {
@@ -177,10 +178,13 @@ export const listExceedingThreshold = internalQuery({
   },
 });
 
-/** Interna: actualiza notifiedAt tras enviar alerta. */
+/** Interna: marca el tipo de alerta enviado para evitar repeticiones. */
 export const updateNotifiedAt = internalMutation({
-  args: { budgetId: v.id("budgets"), notifiedAt: v.number() },
-  handler: async (ctx, { budgetId, notifiedAt }) => {
-    await ctx.db.patch(budgetId, { notifiedAt, updatedAt: Date.now() });
+  args: { budgetId: v.id("budgets"), notifiedAt: v.number(), exceeded: v.boolean() },
+  handler: async (ctx, { budgetId, notifiedAt, exceeded }) => {
+    await ctx.db.patch(budgetId, {
+      ...(exceeded ? { exceededNotifiedAt: notifiedAt } : { notifiedAt }),
+      updatedAt: Date.now(),
+    });
   },
 });
