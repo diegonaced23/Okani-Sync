@@ -77,7 +77,7 @@ export default function CardDetailPage({
     try {
       await removeCard({ cardId });
       toast.success("Tarjeta eliminada");
-      router.push("/tarjetas");
+      router.push("/productos?tab=tarjetas");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar");
       setDeleting(false);
@@ -118,8 +118,8 @@ export default function CardDetailPage({
     return (
       <div className="flex flex-col items-center gap-3 py-20">
         <p className="text-muted-foreground">Tarjeta no encontrada.</p>
-        <Button variant="outline" onClick={() => router.push("/tarjetas")}>
-          Volver
+        <Button variant="outline" onClick={() => router.push("/productos?tab=tarjetas")}>
+          Mis productos
         </Button>
       </div>
     );
@@ -136,10 +136,10 @@ export default function CardDetailPage({
       <div className="flex items-center justify-between">
         <button
           type="button"
-          onClick={() => router.push("/tarjetas")}
+          onClick={() => router.push("/productos?tab=tarjetas")}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" /> Tarjetas
+          <ArrowLeft className="h-4 w-4" /> Mis productos
         </button>
         <div className="flex items-center gap-1">
           <Button

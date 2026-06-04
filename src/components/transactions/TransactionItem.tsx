@@ -38,7 +38,7 @@ const TYPE_CONFIG = {
     icon: ArrowUpRight,
     iconColor: "var(--os-magenta)",
     iconBg: "color-mix(in oklch, var(--os-magenta) 16%, transparent)",
-    amountColor: "var(--foreground)",
+    amountColor: "var(--os-magenta)",
     sign: "-",
   },
   transferencia: {
@@ -52,21 +52,21 @@ const TYPE_CONFIG = {
     icon: CreditCard,
     iconColor: "var(--os-orange)",
     iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
-    amountColor: "var(--foreground)",
+    amountColor: "var(--os-magenta)",
     sign: "-",
   },
   gasto_tarjeta: {
     icon: CreditCard,
     iconColor: "var(--os-cyan)",
     iconBg: "color-mix(in oklch, var(--os-cyan) 18%, transparent)",
-    amountColor: "var(--muted-foreground)",
-    sign: "·",
+    amountColor: "var(--os-magenta)",
+    sign: "-",
   },
   pago_deuda: {
     icon: HandCoins,
     iconColor: "var(--os-orange)",
     iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
-    amountColor: "var(--foreground)",
+    amountColor: "var(--os-magenta)",
     sign: "-",
   },
   ajuste: {
@@ -80,7 +80,7 @@ const TYPE_CONFIG = {
     icon: Banknote,
     iconColor: "#6366F1",
     iconBg: "color-mix(in oklch, #6366F1 15%, transparent)",
-    amountColor: "var(--foreground)",
+    amountColor: "var(--os-magenta)",
     sign: "-",
   },
   prestamo_cobrado: {
@@ -123,7 +123,7 @@ export function TransactionItem({
       const to   = accountMap[tx.toAccountId ?? ""] ?? "Cuenta";
       if (tx.transferDirection === "out") {
         sign = "−";
-        amountColor = "var(--foreground)";
+        amountColor = "var(--os-magenta)";
         subtitleParts.push(`${from} → ${to}`);
       } else if (tx.transferDirection === "in") {
         sign = "+";

@@ -591,6 +591,29 @@ export default defineSchema({
     .index("by_user_month", ["userId", "month"]),
 
   // ============================================================
+  // METAS DE AHORRO — Objetivos financieros personales
+  // El progreso es manual: el usuario abona importes hasta completar la meta.
+  // ============================================================
+  goals: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    targetAmount: v.number(),        // monto objetivo en centavos
+    currentAmount: v.number(),       // acumulado hasta ahora en centavos
+    currency: v.string(),
+    deadline: v.optional(v.number()), // timestamp de fecha límite
+    icon: v.string(),                 // emoji representativo
+    color: v.string(),
+    status: v.union(v.literal("activa"), v.literal("completada")),
+    notes: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"]),
+
+  // ============================================================
   // SNAPSHOTS DE PATRIMONIO NETO — Histórico mensual
   // Capturados el día 1 de cada mes antes del rollover de presupuestos.
   // No se pueden recuperar retroactivamente — implementar desde el inicio.

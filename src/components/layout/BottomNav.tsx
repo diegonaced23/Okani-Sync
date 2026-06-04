@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   ArrowLeftRight,
   Plus,
-  Landmark,
+  Wallet,
   MoreHorizontal,
   Users,
   User,
@@ -21,13 +21,14 @@ interface NavItem {
   icon: React.ElementType;
   label: string;
   isFab?: boolean;
+  matchPaths?: string[];
 }
 
 const USER_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",     icon: LayoutDashboard, label: "Inicio" },
   { href: "/transacciones", icon: ArrowLeftRight,  label: "Movimientos" },
   { href: "#",              icon: Plus,            label: "Nuevo", isFab: true },
-  { href: "/cuentas",       icon: Landmark,        label: "Cuentas" },
+  { href: "/productos", icon: Wallet, label: "Productos", matchPaths: ["/cuentas", "/tarjetas"] },
   { href: "/mas",           icon: MoreHorizontal,  label: "Más" },
 ];
 
@@ -64,7 +65,11 @@ export function BottomNav() {
       >
         {navItems.map((item) => {
           const isActive =
-            !item.isFab && (pathname === item.href || pathname.startsWith(item.href.split("?")[0] + "/"));
+            !item.isFab && (
+              pathname === item.href ||
+              pathname.startsWith(item.href.split("?")[0] + "/") ||
+              item.matchPaths?.some((p) => pathname === p || pathname.startsWith(p + "/"))
+            );
           const Icon = item.icon;
 
           if (item.isFab) {

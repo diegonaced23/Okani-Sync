@@ -3,19 +3,18 @@
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import {
-  CreditCard, HandCoins, Tags, PieChart, BarChart3,
+  HandCoins, Tags, PieChart, BarChart3,
   User, ChevronRight, Repeat,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 const MAIN_LINKS = [
-  { href: "/tarjetas",   icon: CreditCard,  label: "Tarjetas de crédito", desc: "Cuotas e interés compuesto" },
-  { href: "/deudas",       icon: HandCoins, label: "Deudas",    desc: "Dinero que debes a otros" },
-  { href: "/prestamos",    icon: HandCoins, label: "Préstamos", desc: "Dinero que te deben a ti" },
-  { href: "/recurrentes", icon: Repeat,    label: "Movimientos recurrentes", desc: "Gastos automáticos cada mes" },
-  { href: "/categorias", icon: Tags,        label: "Categorías",           desc: "Organiza tus movimientos" },
-  { href: "/presupuestos",icon: PieChart,   label: "Presupuestos",         desc: "Control por categoría y mes" },
-  { href: "/reportes",   icon: BarChart3,   label: "Reportes",             desc: "Exportar CSV y PDF" },
+  { href: "/presupuestos", icon: PieChart,   label: "Presupuestos y metas",    desc: "Control mensual y objetivos financieros" },
+  { href: "/deudas",       icon: HandCoins,  label: "Deudas",                  desc: "Dinero que debes a otros" },
+  { href: "/prestamos",    icon: HandCoins,  label: "Préstamos",               desc: "Dinero que te deben a ti" },
+  { href: "/recurrentes",  icon: Repeat,     label: "Movimientos recurrentes", desc: "Gastos automáticos cada mes" },
+  { href: "/categorias",   icon: Tags,       label: "Categorías",              desc: "Organiza tus movimientos" },
+  { href: "/reportes",     icon: BarChart3,  label: "Reportes",                desc: "Exportar CSV y PDF" },
 ];
 
 const ACCOUNT_LINKS = [

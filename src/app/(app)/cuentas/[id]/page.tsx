@@ -79,7 +79,7 @@ export default function AccountDetailPage({
   // para evitar el crash de PWA "This page couldn't load".
   useEffect(() => {
     if (!isLoading && account === null) {
-      router.replace("/cuentas");
+      router.replace("/productos?tab=cuentas");
     }
   }, [isLoading, account, router]);
 
@@ -110,7 +110,7 @@ export default function AccountDetailPage({
       try {
         await archiveAccount({ accountId });
         toast.success("Cuenta archivada");
-        router.replace("/cuentas");
+        router.replace("/productos?tab=cuentas");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error");
       }
@@ -132,11 +132,11 @@ export default function AccountDetailPage({
       {/* Navegación */}
       <button
         type="button"
-        onClick={() => router.push("/cuentas")}
+        onClick={() => router.push("/productos?tab=cuentas")}
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        Cuentas
+        Mis productos
       </button>
 
       {/* Header cuenta */}

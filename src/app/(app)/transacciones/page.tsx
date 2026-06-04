@@ -21,8 +21,8 @@ const FILTER_PILLS: { key: TxFilter; label: string }[] = [
   { key: "all",            label: "Todos" },
   { key: "ingreso",        label: "Ingresos" },
   { key: "gasto",          label: "Gastos" },
-  { key: "gasto_tarjeta",  label: "Tarjeta" },
-  { key: "transferencia",  label: "Transfer." },
+  { key: "gasto_tarjeta",  label: "Tarjetas de crédito" },
+  { key: "transferencia",  label: "Transferencias" },
 ];
 
 // ─── Utilidades ────────────────────────────────────────────────────────────────
@@ -42,10 +42,49 @@ function monthLabel(m: string) {
   return `${name} ${year}`;
 }
 
-// ─── Componente de fila separador ─────────────────────────────────────────────
+// ─── Separador entre filas del mismo día ──────────────────────────────────────
 
 function TxSeparator() {
   return <div style={{ height: 1, background: "var(--border)", margin: "0 16px" }} />;
+}
+
+// ─── Cabecera de agrupación por día ───────────────────────────────────────────
+
+function DayHeader({ dayKey, todayKey, yesterdayKey, dayMs }: {
+  dayKey: string;
+  todayKey: string;
+  yesterdayKey: string;
+  dayMs: number;
+}) {
+  let label: string;
+  if (dayKey === todayKey) {
+    label = "Hoy";
+  } else if (dayKey === yesterdayKey) {
+    label = "Ayer";
+  } else {
+    label = new Date(dayMs).toLocaleDateString("es-CO", {
+      weekday: "long", day: "numeric", month: "short",
+    }).replace(/^\w/, (c) => c.toUpperCase());
+  }
+
+  return (
+    <div
+      className="flex items-center px-4 py-1.5"
+      style={{
+        background: "color-mix(in oklch, var(--surface-2) 80%, transparent)",
+        borderBottom: "1px solid color-mix(in oklch, var(--border) 50%, transparent)",
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: "0.05em",
+          color: "var(--muted-foreground)", textTransform: "capitalize",
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
 }
 
 // ─── Página ───────────────────────────────────────────────────────────────────
@@ -163,6 +202,33 @@ export default function TransaccionesPage() {
   const currency      = "COP";
 
   const canGoForward  = month < today;
+
+  // Claves del día de hoy y ayer para las cabeceras de grupo (calculadas una vez al montar)
+  const [todayKey]     = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [yesterdayKey] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+
+  // Agrupar la lista filtrada por día calendario
+  const groupedByDay = useMemo(() => {
+    const groups: { dayKey: string; dayMs: number; txs: Doc<"transactions">[] }[] = [];
+    for (const tx of filtered) {
+      const d = new Date(tx.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const last = groups[groups.length - 1];
+      if (last?.dayKey === key) {
+        last.txs.push(tx);
+      } else {
+        groups.push({ dayKey: key, dayMs: tx.date, txs: [tx] });
+      }
+    }
+    return groups;
+  }, [filtered]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-0">
@@ -369,19 +435,30 @@ export default function TransaccionesPage() {
           className="rounded-xl overflow-hidden"
           style={{ background: "var(--card)", border: "1px solid var(--border)" }}
         >
-          {filtered.map((tx, i) => (
-            <div key={tx._id}>
-              <TransactionItem
-                transaction={tx}
-                category={tx.categoryId ? catMap[tx.categoryId] : undefined}
-                accountMap={accountMap}
-                cardMap={cardMap}
-                onPress={() => {
-                  setSelectedTx(tx);
-                  setDetailOpen(true);
-                }}
+          {groupedByDay.map((group, gi) => (
+            <div key={group.dayKey}>
+              {gi > 0 && <div style={{ height: 1, background: "var(--border)" }} />}
+              <DayHeader
+                dayKey={group.dayKey}
+                todayKey={todayKey}
+                yesterdayKey={yesterdayKey}
+                dayMs={group.dayMs}
               />
-              {i < filtered.length - 1 && <TxSeparator />}
+              {group.txs.map((tx, i) => (
+                <div key={tx._id}>
+                  <TransactionItem
+                    transaction={tx}
+                    category={tx.categoryId ? catMap[tx.categoryId] : undefined}
+                    accountMap={accountMap}
+                    cardMap={cardMap}
+                    onPress={() => {
+                      setSelectedTx(tx);
+                      setDetailOpen(true);
+                    }}
+                  />
+                  {i < group.txs.length - 1 && <TxSeparator />}
+                </div>
+              ))}
             </div>
           ))}
         </div>

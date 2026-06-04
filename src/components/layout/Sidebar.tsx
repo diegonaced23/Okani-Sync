@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, ArrowLeftRight, Landmark, CreditCard,
-  HandCoins, Tags, PieChart, BarChart3, User, Users, Repeat,
+  LayoutDashboard, ArrowLeftRight, Wallet, PieChart,
+  HandCoins, Tags, BarChart3, User, Users, Repeat,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
@@ -14,21 +14,20 @@ const USER_NAV_SECTIONS = [
   {
     label: "Principal",
     items: [
-      { href: "/dashboard",     icon: LayoutDashboard, label: "Dashboard",      prefetch: true },
-      { href: "/transacciones", icon: ArrowLeftRight,  label: "Transacciones",  prefetch: true },
-      { href: "/cuentas",       icon: Landmark,        label: "Cuentas",        prefetch: true },
-      { href: "/tarjetas",      icon: CreditCard,      label: "Tarjetas",       prefetch: true },
-      { href: "/deudas",        icon: HandCoins,       label: "Deudas",         prefetch: true },
-      { href: "/prestamos",     icon: HandCoins,       label: "Préstamos",      prefetch: true },
-      { href: "/recurrentes",   icon: Repeat,          label: "Recurrentes",    prefetch: true },
+      { href: "/dashboard",     icon: LayoutDashboard, label: "Dashboard",            prefetch: true },
+      { href: "/transacciones", icon: ArrowLeftRight,  label: "Transacciones",        prefetch: true },
+      { href: "/productos",     icon: Wallet,          label: "Mis productos",        prefetch: true, matchPaths: ["/cuentas", "/tarjetas"] },
+      { href: "/presupuestos",  icon: PieChart,        label: "Presupuestos y metas", prefetch: true },
     ],
   },
   {
     label: "Organización",
     items: [
-      { href: "/categorias",   icon: Tags,      label: "Categorías"  },
-      { href: "/presupuestos", icon: PieChart,  label: "Presupuestos" },
-      { href: "/reportes",     icon: BarChart3, label: "Reportes"    },
+      { href: "/deudas",      icon: HandCoins, label: "Deudas"      },
+      { href: "/prestamos",   icon: HandCoins, label: "Préstamos"   },
+      { href: "/recurrentes", icon: Repeat,    label: "Recurrentes" },
+      { href: "/categorias",  icon: Tags,      label: "Categorías"  },
+      { href: "/reportes",    icon: BarChart3, label: "Reportes"    },
     ],
   },
 ];
@@ -96,7 +95,12 @@ export function Sidebar() {
             </p>
             <ul className="space-y-0.5">
               {section.items.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                const isActive =
+                  pathname === item.href ||
+                  pathname.startsWith(item.href + "/") ||
+                  ("matchPaths" in item && item.matchPaths?.some(
+                    (p) => pathname === p || pathname.startsWith(p + "/")
+                  ));
                 const Icon = item.icon;
                 return (
                   <li key={item.href}>
