@@ -10,8 +10,7 @@ import { Separator } from "@/components/ui/separator";
 
 const MAIN_LINKS = [
   { href: "/presupuestos", icon: PieChart,   label: "Presupuestos y metas",    desc: "Control mensual y objetivos financieros" },
-  { href: "/deudas",       icon: HandCoins,  label: "Deudas",                  desc: "Dinero que debes a otros" },
-  { href: "/prestamos",    icon: HandCoins,  label: "Préstamos",               desc: "Dinero que te deben a ti" },
+  { href: "/deudas",       icon: HandCoins,  label: "Deudas y préstamos",      desc: "Dinero que debes y dinero que te deben" },
   { href: "/recurrentes",  icon: Repeat,     label: "Movimientos recurrentes", desc: "Gastos automáticos cada mes" },
   { href: "/categorias",   icon: Tags,       label: "Categorías",              desc: "Organiza tus movimientos" },
   { href: "/reportes",     icon: BarChart3,  label: "Reportes",                desc: "Exportar CSV y PDF" },

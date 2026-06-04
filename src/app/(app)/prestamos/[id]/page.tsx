@@ -80,7 +80,7 @@ export default function LoanDetailPage({
     return (
       <div className="flex flex-col items-center gap-3 py-20">
         <p className="text-muted-foreground">Préstamo no encontrado.</p>
-        <Button variant="outline" onClick={() => router.push("/prestamos")}>
+        <Button variant="outline" onClick={() => router.push("/deudas")}>
           Volver
         </Button>
       </div>
@@ -107,7 +107,7 @@ export default function LoanDetailPage({
     try {
       await removeLoan({ loanId });
       toast.success("Préstamo eliminado");
-      router.push("/prestamos");
+      router.push("/deudas");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar");
       setDeleting(false);
@@ -120,10 +120,10 @@ export default function LoanDetailPage({
       <div className="flex items-center justify-between">
         <button
           type="button"
-          onClick={() => router.push("/prestamos")}
+          onClick={() => router.push("/deudas")}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" /> Préstamos
+          <ArrowLeft className="h-4 w-4" /> Deudas y préstamos
         </button>
         <div className="flex items-center gap-1">
           <Button

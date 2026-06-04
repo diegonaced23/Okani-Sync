@@ -9,8 +9,12 @@ import {
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import type { LucideIcon } from "lucide-react";
 
-const USER_NAV_SECTIONS = [
+type NavItem = { href: string; icon: LucideIcon; label: string; prefetch?: boolean; matchPaths?: string[] };
+type NavSection = { label: string; items: NavItem[] };
+
+const USER_NAV_SECTIONS: NavSection[] = [
   {
     label: "Principal",
     items: [
@@ -23,8 +27,7 @@ const USER_NAV_SECTIONS = [
   {
     label: "Organización",
     items: [
-      { href: "/deudas",      icon: HandCoins, label: "Deudas"      },
-      { href: "/prestamos",   icon: HandCoins, label: "Préstamos"   },
+      { href: "/deudas", icon: HandCoins, label: "Deudas y préstamos", matchPaths: ["/prestamos"] },
       { href: "/recurrentes", icon: Repeat,    label: "Recurrentes" },
       { href: "/categorias",  icon: Tags,      label: "Categorías"  },
       { href: "/reportes",    icon: BarChart3, label: "Reportes"    },
@@ -32,7 +35,7 @@ const USER_NAV_SECTIONS = [
   },
 ];
 
-const ADMIN_NAV_SECTIONS = [
+const ADMIN_NAV_SECTIONS: NavSection[] = [
   {
     label: "Administración",
     items: [
