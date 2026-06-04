@@ -5,9 +5,19 @@ import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
+const DISMISS_KEY = "okani_push_dismissed_at";
+const DISMISS_DAYS = 30;
+
+function wasDismissedRecently(): boolean {
+  if (typeof window === "undefined") return false;
+  const raw = localStorage.getItem(DISMISS_KEY);
+  if (!raw) return false;
+  return Date.now() - parseInt(raw) < DISMISS_DAYS * 24 * 60 * 60 * 1000;
+}
+
 export function PushSubscriptionBanner() {
   const { status, enable } = usePushNotifications();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => wasDismissedRecently());
   const [loading, setLoading] = useState(false);
 
   // No mostrar si no aplica
@@ -25,6 +35,11 @@ export function PushSubscriptionBanner() {
     setLoading(true);
     await enable();
     setLoading(false);
+  }
+
+  function handleDismiss() {
+    localStorage.setItem(DISMISS_KEY, Date.now().toString());
+    setDismissed(true);
   }
 
   return (
@@ -52,7 +67,7 @@ export function PushSubscriptionBanner() {
         </div>
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={handleDismiss}
           className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors shrink-0"
           aria-label="Cerrar"
         >

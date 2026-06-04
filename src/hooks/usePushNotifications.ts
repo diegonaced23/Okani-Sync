@@ -25,11 +25,37 @@ export function usePushNotifications() {
 
   useEffect(() => {
     if (!isPushSupported()) return;
-    if (getNotificationPermission() === "denied") return;
-    getCurrentSubscription().then((sub) => {
-      setStatus(sub ? "subscribed" : "unsubscribed");
+    const perm = getNotificationPermission();
+    if (perm === "denied") return;
+
+    getCurrentSubscription().then(async (sub) => {
+      if (sub) {
+        setStatus("subscribed");
+        return;
+      }
+
+      // El permiso ya fue concedido pero la suscripción del SW expiró → re-suscribir
+      // silenciosamente sin mostrar ningún diálogo al usuario.
+      if (perm === "granted") {
+        try {
+          const newSub = await subscribeToWebPush();
+          if (newSub) {
+            await saveSubscription({
+              subscription: newSub,
+              userAgent: navigator.userAgent.slice(0, 200),
+            });
+            setStatus("subscribed");
+            return;
+          }
+        } catch {
+          // Si falla el re-suscribe, caemos al estado "unsubscribed" para que el
+          // banner aparezca y el usuario pueda reintentar manualmente.
+        }
+      }
+
+      setStatus("unsubscribed");
     });
-  }, []);
+  }, [saveSubscription]);
 
   async function enable() {
     setStatus("loading");
