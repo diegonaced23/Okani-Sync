@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
-import { Check } from "lucide-react";
+import { Check, PiggyBank } from "lucide-react";
 import { CategoryIcon } from "@/lib/category-icons";
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -33,12 +33,15 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
   const cards      = useQuery(api.cards.list);
   const categories = useQuery(api.categories.list, {});
 
+  const goals = useQuery(api.goals.list);
+
   const [type]        = useState<TxType>(defaultType);
   const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
   // Valor codificado: "account:ID" | "card:ID" | ""
   const [sourceId, setSourceId]       = useState<string>("");
   const [categoryId, setCategoryId]   = useState<string>("");
+  const [goalId, setGoalId]           = useState<string>("");
   const [date, setDate]               = useState(todayStr);
   const [loading, setLoading]         = useState(false);
 
@@ -129,6 +132,9 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
           : undefined,
         categoryId: categoryId
           ? (categoryId as Parameters<typeof createTransaction>[0]["categoryId"])
+          : undefined,
+        goalId: type === "gasto" && goalId
+          ? (goalId as Parameters<typeof createTransaction>[0]["goalId"])
           : undefined,
       });
       toast.success(type === "ingreso" ? "Ingreso registrado" : "Gasto registrado");
@@ -363,6 +369,43 @@ export function TransactionForm({ defaultType = "gasto", onSuccess }: Transactio
               ))}
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {/* ── Meta de ahorro (solo gastos desde cuenta, no tarjeta) ──────────── */}
+      {type === "gasto" && sourceKind !== "card" && (goals ?? []).filter((g) => g.status === "activa" && !g.linkedAccountId).length > 0 && (
+        <div>
+          <Label htmlFor="tx-goal" className="text-[12px] font-semibold text-foreground mb-2 flex items-center gap-1.5">
+            <PiggyBank className="h-3.5 w-3.5" style={{ color: "var(--os-cyan)" }} />
+            Ahorrar para (opcional)
+          </Label>
+          <Select value={goalId} onValueChange={(v) => setGoalId(v ?? "")}>
+            <SelectTrigger id="tx-goal" className="w-full" style={{ background: "var(--surface-2)" }}>
+              {goalId ? (
+                <span className="text-sm truncate">
+                  {(goals ?? []).find((g) => g._id === goalId)?.icon}{" "}
+                  {(goals ?? []).find((g) => g._id === goalId)?.name}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Sin meta</span>
+              )}
+            </SelectTrigger>
+            <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
+              <SelectItem value="">Sin meta</SelectItem>
+              {(goals ?? [])
+                .filter((g) => g.status === "activa" && !g.linkedAccountId)
+                .map((g) => (
+                  <SelectItem key={g._id} value={g._id}>
+                    {g.icon} {g.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          {goalId && (
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Este gasto se contará como ahorro y se sumará al progreso de la meta.
+            </p>
+          )}
         </div>
       )}
 

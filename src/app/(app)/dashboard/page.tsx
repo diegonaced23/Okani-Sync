@@ -10,6 +10,7 @@ import { BalanceCard } from "@/components/dashboard/BalanceCard";
 import { BalanceAccountsSheet } from "@/components/dashboard/BalanceAccountsSheet";
 import { UpcomingCommitmentsCard } from "@/components/dashboard/UpcomingCommitmentsCard";
 import { HealthScoreCard } from "@/components/dashboard/HealthScoreCard";
+import { SavingsCard } from "@/components/dashboard/SavingsCard";
 const NetWorthChart = dynamic(
   () => import("@/components/dashboard/NetWorthChart").then((m) => ({ default: m.NetWorthChart })),
   { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
@@ -95,6 +96,7 @@ export default function DashboardPage() {
   const recent     = useQuery(api.transactions.listRecent, { limit: 5 });
   const categories = useQuery(api.categories.list, {});
   const budgets    = useQuery(api.budgets.listByMonthWithCategory, { month: today });
+  const savings    = useQuery(api.accounts.monthlySavingsSummary, { month: today });
 
   const catMap = Object.fromEntries(
     (categories ?? []).map((c) => [c._id, c.name])
@@ -350,6 +352,27 @@ export default function DashboardPage() {
       {/* ── Gastos por fuente ── full width */}
       <div className="md:col-span-2">
         <SpendingBySourceChart data={spendingBySource} currency={currency} />
+      </div>
+
+      {/* ── Ahorro del mes ── full width */}
+      <div className="md:col-span-2">
+        {savings === undefined ? (
+          <SavingsCard
+            totalAhorrado={0} transferenciasAhorro={0} gastosMetaVinculada={0}
+            tasaAhorro={null} totalIngresos={0} currency={currency}
+            cuentasAhorro={[]} loading
+          />
+        ) : (
+          <SavingsCard
+            totalAhorrado={savings.totalAhorrado}
+            transferenciasAhorro={savings.transferenciasAhorro}
+            gastosMetaVinculada={savings.gastosMetaVinculada}
+            tasaAhorro={savings.tasaAhorro}
+            totalIngresos={savings.totalIngresos}
+            currency={savings.currency}
+            cuentasAhorro={savings.cuentasAhorro}
+          />
+        )}
       </div>
 
       {/* ── Salud financiera ── full width */}

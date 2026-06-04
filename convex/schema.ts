@@ -387,6 +387,7 @@ export default defineSchema({
     cardInstallmentId: v.optional(v.id("cardInstallments")),
     debtId: v.optional(v.id("debts")),
     loanId: v.optional(v.id("loans")),
+    goalId: v.optional(v.id("goals")),      // gasto vinculado a meta de ahorro (ahorro en casa)
     transferDirection: v.optional(v.union(v.literal("out"), v.literal("in"))),
 
     receiptStorageId: v.optional(v.id("_storage")),
@@ -605,13 +606,15 @@ export default defineSchema({
     icon: v.string(),                 // emoji representativo
     color: v.string(),
     status: v.union(v.literal("activa"), v.literal("completada")),
+    linkedAccountId: v.optional(v.id("accounts")), // meta cuyo progreso refleja el saldo de una cuenta de ahorro
     notes: v.optional(v.string()),
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_status", ["userId", "status"]),
+    .index("by_user_status", ["userId", "status"])
+    .index("by_linkedAccount", ["linkedAccountId"]),
 
   // ============================================================
   // SNAPSHOTS DE PATRIMONIO NETO — Histórico mensual

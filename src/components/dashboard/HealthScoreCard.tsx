@@ -106,13 +106,15 @@ export function HealthScoreCard({ data, loading }: HealthScoreCardProps) {
   } = data;
 
   const metrics: HealthMetric[] = [
-    // Tasa de ahorro
+    // Ahorro activo (transferencias a cuentas de ahorro + gastos vinculados a meta)
     {
-      label: "Tasa de ahorro",
+      label: "Ahorro activo",
       value: savingsRate !== null ? `${savingsRate.toFixed(1)}%` : "—",
-      subtext: savingsRate !== null
-        ? `Ingresos: ${formatCents(lastMonthIncome, currency)}`
-        : "Sin ingresos el mes pasado",
+      subtext: savingsRate !== null && savingsRate === 0
+        ? "Transfiere a una cuenta de ahorro o vincula un gasto a una meta"
+        : savingsRate !== null
+          ? `del ingreso del mes pasado`
+          : "Sin ingresos el mes pasado",
       status: savingsRate !== null ? savingsStatus(savingsRate) : "neutral",
       Icon: TrendingUp,
     },

@@ -168,6 +168,21 @@ export async function deleteTransactionWithEffects(
     await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount, tx.currency);
   }
 
+  // Revertir contribución a meta de ahorro (solo metas manuales, no las vinculadas a cuenta)
+  if (tx.type === "gasto" && tx.goalId) {
+    const goal = await ctx.db.get(tx.goalId);
+    if (goal && goal.userId === tx.userId && !goal.linkedAccountId) {
+      const newAmount = Math.max(0, goal.currentAmount - tx.amount);
+      const stillCompleted = newAmount >= goal.targetAmount;
+      await ctx.db.patch(tx.goalId, {
+        currentAmount: newAmount,
+        status: stillCompleted ? "completada" : "activa",
+        completedAt: stillCompleted ? goal.completedAt : undefined,
+        updatedAt: Date.now(),
+      });
+    }
+  }
+
   // Revertir pago_tarjeta: recalcular FIFO de cuotas pagadas
   if (tx.type === "pago_tarjeta" && tx.cardId) {
     await recomputeInstallmentsPaid(ctx, tx.cardId);

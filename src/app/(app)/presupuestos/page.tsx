@@ -101,7 +101,12 @@ function PresupuestosContent() {
   const [deletingGoalId, setDeletingGoalId]     = useState<Id<"goals"> | null>(null);
 
   const goals       = useQuery(api.goals.list);
+  const accounts    = useQuery(api.accounts.list);
   const removeGoal  = useMutation(api.goals.remove);
+
+  const accountMap = Object.fromEntries(
+    (accounts ?? []).map((a) => [a._id, a])
+  );
 
   const activeGoals    = (goals ?? []).filter((g) => g.status === "activa");
   const completedGoals = (goals ?? []).filter((g) => g.status === "completada");
@@ -372,16 +377,20 @@ function PresupuestosContent() {
                       En progreso
                     </h2>
                   )}
-                  {activeGoals.map((goal) => (
-                    <GoalCard
-                      key={goal._id}
-                      goal={goal}
-                      nowMs={nowMs}
-                      onEdit={() => setEditingGoal(goal)}
-                      onDelete={() => setDeletingGoalId(goal._id as Id<"goals">)}
-                      onAddFunds={() => setAddFundsGoal(goal)}
-                    />
-                  ))}
+                  {activeGoals.map((goal) => {
+                    const linkedAcc = goal.linkedAccountId ? accountMap[goal.linkedAccountId] : undefined;
+                    return (
+                      <GoalCard
+                        key={goal._id}
+                        goal={goal}
+                        linkedAccount={linkedAcc ? { name: linkedAcc.name, balance: linkedAcc.balance, currency: linkedAcc.currency, color: linkedAcc.color } : undefined}
+                        nowMs={nowMs}
+                        onEdit={() => setEditingGoal(goal)}
+                        onDelete={() => setDeletingGoalId(goal._id as Id<"goals">)}
+                        onAddFunds={() => setAddFundsGoal(goal)}
+                      />
+                    );
+                  })}
                 </section>
               )}
 
@@ -390,16 +399,20 @@ function PresupuestosContent() {
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Completadas
                   </h2>
-                  {completedGoals.map((goal) => (
-                    <GoalCard
-                      key={goal._id}
-                      goal={goal}
-                      nowMs={nowMs}
-                      onEdit={() => setEditingGoal(goal)}
-                      onDelete={() => setDeletingGoalId(goal._id as Id<"goals">)}
-                      onAddFunds={() => setAddFundsGoal(goal)}
-                    />
-                  ))}
+                  {completedGoals.map((goal) => {
+                    const linkedAcc = goal.linkedAccountId ? accountMap[goal.linkedAccountId] : undefined;
+                    return (
+                      <GoalCard
+                        key={goal._id}
+                        goal={goal}
+                        linkedAccount={linkedAcc ? { name: linkedAcc.name, balance: linkedAcc.balance, currency: linkedAcc.currency, color: linkedAcc.color } : undefined}
+                        nowMs={nowMs}
+                        onEdit={() => setEditingGoal(goal)}
+                        onDelete={() => setDeletingGoalId(goal._id as Id<"goals">)}
+                        onAddFunds={() => setAddFundsGoal(goal)}
+                      />
+                    );
+                  })}
                 </section>
               )}
             </div>

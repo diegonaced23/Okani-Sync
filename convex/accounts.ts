@@ -247,7 +247,14 @@ export const financialHealthMetrics = query({
       return converted;
     }
 
-    // ── Totales mensuales (ingresos / gastos) — misma definición que monthlySummary ──
+    // ── Cuentas de tipo "ahorros" — usadas para detectar transferencias de ahorro ──
+    const savingsAcctsForMetrics = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_type", (q) => q.eq("ownerId", clerkId).eq("type", "ahorros"))
+      .collect();
+    const savingsAccountIdsForMetrics = new Set(savingsAcctsForMetrics.map((a) => a._id));
+
+    // ── Totales mensuales (ingresos / gastos / ahorros) — misma definición que monthlySummary ──
     // Usamos los últimos 3 meses completos; el mes en curso está parcialmente lleno.
     const last3Months = [prevNMonth(3), prevNMonth(2), prevNMonth(1)];
     const monthlyTotals = await Promise.all(
@@ -262,17 +269,27 @@ export const financialHealthMetrics = query({
         const gastos = txs
           .filter((t) => t.type === "gasto" || t.type === "gasto_tarjeta" || t.type === "pago_deuda")
           .reduce((s, t) => s + convert(t.amount, t.currency), 0);
-        return { month, ingresos, gastos, hasData: txs.length > 0 };
+        // Ahorros = transferencias OUT a cuentas de ahorro + gastos vinculados a meta
+        const ahorros = txs
+          .filter((t) =>
+            (t.type === "transferencia" && t.transferDirection === "out" &&
+              t.toAccountId !== undefined && savingsAccountIdsForMetrics.has(t.toAccountId)) ||
+            (t.type === "gasto" && t.goalId !== undefined)
+          )
+          .reduce((s, t) => s + convert(t.amount, t.currency), 0);
+        return { month, ingresos, gastos, ahorros, hasData: txs.length > 0 };
       })
     );
 
     // Mes inmediatamente anterior = referencia primaria para tasa de ahorro y DTI
     const lastMonth = monthlyTotals[2]; // prevNMonth(1)
 
-    // ── Tasa de ahorro ────────────────────────────────────────────────────────
-    const savingsRate = lastMonth.ingresos > 0
-      ? ((lastMonth.ingresos - lastMonth.gastos) / lastMonth.ingresos) * 100
-      : null;
+    // ── Tasa de ahorro — ahorro intencional (transferencias a cuentas de ahorro + gastos a meta) ──
+    const savingsRate = lastMonth.ingresos > 0 && lastMonth.ahorros > 0
+      ? (lastMonth.ahorros / lastMonth.ingresos) * 100
+      : lastMonth.ingresos > 0
+        ? 0
+        : null;
 
     // ── DTI — solo deudas con monthlyPayment definido ─────────────────────────
     // Cuotas de tarjeta del mes en curso
@@ -377,6 +394,78 @@ export const financialHealthMetrics = query({
       totalAssets,
       avgMonthlyExpenses,
       totalMonthlyCommitments,
+    };
+  },
+});
+
+/**
+ * Resumen de ahorro del mes: transferencias a cuentas de tipo "ahorros" +
+ * gastos vinculados a metas. Usado por el widget SavingsCard del dashboard.
+ */
+export const monthlySavingsSummary = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    const user = await getCurrentUser(ctx);
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
+
+    function convert(amount: number, fromCurrency: string): number {
+      const { converted } = convertAmount(amount, fromCurrency, preferredCurrency, rateMap);
+      return converted;
+    }
+
+    // Cuentas de tipo "ahorros" del usuario
+    const savingsAccounts = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_type", (q) => q.eq("ownerId", user.clerkId).eq("type", "ahorros"))
+      .collect();
+    const savingsAccountIds = new Set(savingsAccounts.map((a) => a._id));
+
+    // Todas las transacciones del mes
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_month", (q) => q.eq("userId", user.clerkId).eq("month", month))
+      .collect();
+
+    // Transferencias OUT hacia cuentas de ahorro
+    const transferenciasAhorro = txs
+      .filter((t) =>
+        t.type === "transferencia" &&
+        t.transferDirection === "out" &&
+        t.toAccountId !== undefined &&
+        savingsAccountIds.has(t.toAccountId)
+      )
+      .reduce((s, t) => s + convert(t.amount, t.currency), 0);
+
+    // Gastos vinculados a una meta (ahorro en efectivo / casa)
+    const gastosMetaVinculada = txs
+      .filter((t) => t.type === "gasto" && t.goalId !== undefined)
+      .reduce((s, t) => s + convert(t.amount, t.currency), 0);
+
+    // Ingresos del mes (para calcular tasa)
+    const totalIngresos = txs
+      .filter((t) => t.type === "ingreso")
+      .reduce((s, t) => s + convert(t.amount, t.currency), 0);
+
+    const totalAhorrado = transferenciasAhorro + gastosMetaVinculada;
+    const tasaAhorro = totalIngresos > 0 ? (totalAhorrado / totalIngresos) * 100 : null;
+
+    return {
+      transferenciasAhorro,
+      gastosMetaVinculada,
+      totalAhorrado,
+      tasaAhorro,
+      totalIngresos,
+      currency: preferredCurrency,
+      cuentasAhorro: savingsAccounts.map((a) => ({
+        id: a._id,
+        name: a.name,
+        balance: convert(a.balance, a.currency),
+        originalBalance: a.balance,
+        currency: a.currency,
+        color: a.color,
+      })),
     };
   },
 });

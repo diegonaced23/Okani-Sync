@@ -1,12 +1,20 @@
 "use client";
 
-import { Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2, Link2 } from "lucide-react";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { Doc } from "../../../convex/_generated/dataModel";
 
+interface LinkedAccountInfo {
+  name: string;
+  balance: number;
+  currency: string;
+  color: string;
+}
+
 interface GoalCardProps {
   goal: Doc<"goals">;
+  linkedAccount?: LinkedAccountInfo;
   nowMs: number;
   onEdit: () => void;
   onDelete: () => void;
@@ -36,12 +44,16 @@ function monthlyNeeded(remaining: number, deadline: number, nowMs: number): numb
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function GoalCard({ goal, nowMs, onEdit, onDelete, onAddFunds }: GoalCardProps) {
+export function GoalCard({ goal, linkedAccount, nowMs, onEdit, onDelete, onAddFunds }: GoalCardProps) {
+  const isLinked = !!goal.linkedAccountId;
+  // Para metas vinculadas, el progreso real es el saldo actual de la cuenta
+  const effectiveAmount = isLinked && linkedAccount ? linkedAccount.balance : goal.currentAmount;
+  const effectiveCurrency = isLinked && linkedAccount ? linkedAccount.currency : goal.currency;
   const percent = goal.targetAmount > 0
-    ? Math.min(100, (goal.currentAmount / goal.targetAmount) * 100)
+    ? Math.min(100, (effectiveAmount / goal.targetAmount) * 100)
     : 0;
-  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
-  const isCompleted = goal.status === "completada";
+  const remaining = Math.max(0, goal.targetAmount - effectiveAmount);
+  const isCompleted = goal.status === "completada" || (isLinked && linkedAccount && linkedAccount.balance >= goal.targetAmount);
 
   const dl = goal.deadline ? deadlineLabel(goal.deadline, nowMs) : null;
   const monthly = (!isCompleted && goal.deadline && remaining > 0)
@@ -92,7 +104,16 @@ export function GoalCard({ goal, nowMs, onEdit, onDelete, onAddFunds }: GoalCard
 
         {/* Acciones */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {!isCompleted && (
+          {isLinked && (
+            <span
+              className="p-1.5"
+              title="Vinculada a cuenta de ahorro"
+              aria-label="Meta vinculada a cuenta de ahorro"
+            >
+              <Link2 className="h-3.5 w-3.5 text-[var(--os-cyan)]" />
+            </span>
+          )}
+          {!isCompleted && !isLinked && (
             <button
               type="button"
               onClick={onAddFunds}
@@ -145,9 +166,9 @@ export function GoalCard({ goal, nowMs, onEdit, onDelete, onAddFunds }: GoalCard
 
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>
-            Ahorrado:{" "}
+            {isLinked ? "Saldo cuenta:" : "Ahorrado:"}{" "}
             <span className="font-semibold text-foreground">
-              {formatCents(goal.currentAmount, goal.currency)}
+              {formatCents(effectiveAmount, effectiveCurrency)}
             </span>
           </span>
           <span className="font-semibold" style={{ color: goal.color }}>
@@ -164,8 +185,13 @@ export function GoalCard({ goal, nowMs, onEdit, onDelete, onAddFunds }: GoalCard
         <span>
           Objetivo:{" "}
           <span className="font-semibold text-foreground">
-            {formatCents(goal.targetAmount, goal.currency)}
+            {formatCents(goal.targetAmount, effectiveCurrency)}
           </span>
+          {isLinked && linkedAccount && (
+            <span className="ml-1.5 text-[10px]" style={{ color: "var(--os-cyan)" }}>
+              · {linkedAccount.name}
+            </span>
+          )}
         </span>
 
         <div className="flex flex-col items-end gap-0.5">

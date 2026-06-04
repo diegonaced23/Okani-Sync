@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
+import { Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,12 +43,17 @@ export function GoalForm({ editGoal, onSuccess }: GoalFormProps) {
   const updateGoal = useMutation(api.goals.update);
   const me = useQuery(api.users.getMe);
 
+  const accounts = useQuery(api.accounts.list);
+
   const [name, setName]               = useState(editGoal?.name ?? "");
   const [description, setDescription] = useState(editGoal?.description ?? "");
   const [targetAmount, setTargetAmount] = useState(
     isEdit ? String(fromCents(editGoal!.targetAmount)) : ""
   );
   const [currency, setCurrency] = useState(editGoal?.currency ?? "COP");
+  const [linkedAccountId, setLinkedAccountId] = useState<string>(
+    editGoal?.linkedAccountId ?? ""
+  );
   const [deadlineStr, setDeadlineStr] = useState(
     editGoal?.deadline ? tsToDateStr(editGoal.deadline) : ""
   );
@@ -75,6 +81,9 @@ export function GoalForm({ editGoal, onSuccess }: GoalFormProps) {
           icon,
           color,
           notes: notes.trim() || undefined,
+          linkedAccountId: linkedAccountId
+            ? (linkedAccountId as Id<"accounts">)
+            : undefined,
         });
         toast.success("Meta actualizada");
       } else {
@@ -87,6 +96,9 @@ export function GoalForm({ editGoal, onSuccess }: GoalFormProps) {
           icon,
           color,
           notes: notes.trim() || undefined,
+          linkedAccountId: linkedAccountId
+            ? (linkedAccountId as Id<"accounts">)
+            : undefined,
         });
         toast.success("Meta creada");
       }
@@ -217,6 +229,39 @@ export function GoalForm({ editGoal, onSuccess }: GoalFormProps) {
           onChange={(e) => setNotes(e.target.value)}
         />
       </div>
+
+      {/* Cuenta de ahorro vinculada */}
+      {(accounts ?? []).filter((a) => a.type === "ahorros").length > 0 && (
+        <div className="space-y-1.5">
+          <Label htmlFor="goal-linked-account" className="flex items-center gap-1.5">
+            <Link2 className="h-3.5 w-3.5" style={{ color: "var(--os-cyan)" }} />
+            Vincular a cuenta de ahorro (opcional)
+          </Label>
+          <Select
+            value={linkedAccountId}
+            onValueChange={(v) => setLinkedAccountId(v ?? "")}
+          >
+            <SelectTrigger id="goal-linked-account">
+              <SelectValue placeholder="Sin cuenta vinculada" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Sin cuenta vinculada</SelectItem>
+              {(accounts ?? [])
+                .filter((a) => a.type === "ahorros")
+                .map((a) => (
+                  <SelectItem key={a._id} value={a._id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          {linkedAccountId && (
+            <p className="text-xs text-muted-foreground">
+              El progreso de esta meta reflejará automáticamente el saldo de esa cuenta. No se necesitan abonos manuales.
+            </p>
+          )}
+        </div>
+      )}
 
       <Button type="submit" className="w-full" disabled={loading}>
         {loading ? "Guardando…" : isEdit ? "Guardar cambios" : "Crear meta"}

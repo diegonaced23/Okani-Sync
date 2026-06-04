@@ -1,6 +1,7 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanRead, assertCanWrite } from "./lib/permissions";
 import { toMonthString, generateId } from "./lib/utils";
@@ -519,6 +520,7 @@ export const create = mutation({
     accountId: v.optional(v.id("accounts")),
     cardId: v.optional(v.id("cards")),
     categoryId: v.optional(v.id("categories")),
+    goalId: v.optional(v.id("goals")),
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     receiptStorageId: v.optional(v.id("_storage")),
@@ -566,6 +568,14 @@ export const create = mutation({
     const month = toMonthString(args.date);
     const now = Date.now();
 
+    // Validar meta si se especifica (solo en gastos, y no en metas vinculadas a cuenta)
+    if (args.goalId) {
+      if (args.type !== "gasto") throw new Error("Solo los gastos pueden vincularse a una meta de ahorro");
+      const goal = await ctx.db.get(args.goalId);
+      if (!goal || goal.userId !== user.clerkId) throw new Error("Meta de ahorro no encontrada");
+      if (goal.linkedAccountId) throw new Error("Esta meta está vinculada a una cuenta de ahorro. Transfiere dinero a esa cuenta para actualizar el progreso automáticamente.");
+    }
+
     const txId = await ctx.db.insert("transactions", {
       userId: user.clerkId,
       type: args.type,
@@ -577,6 +587,7 @@ export const create = mutation({
       accountId: args.accountId,
       cardId: args.cardId,
       categoryId: args.categoryId,
+      goalId: args.goalId,
       notes: args.notes,
       tags: args.tags,
       receiptStorageId: args.receiptStorageId,
@@ -595,6 +606,21 @@ export const create = mutation({
     // Recalcular budget.spent si es gasto con categoría
     if (args.type === "gasto" && args.categoryId) {
       await applyBudgetDelta(ctx, user.clerkId, args.categoryId, month, args.amount, args.currency);
+    }
+
+    // Abonar a la meta de ahorro (ahorro en casa / efectivo)
+    if (args.goalId && args.type === "gasto") {
+      const goal = await ctx.db.get(args.goalId);
+      if (goal) {
+        const newAmount = Math.max(0, goal.currentAmount + args.amount);
+        const completed = newAmount >= goal.targetAmount;
+        await ctx.db.patch(args.goalId, {
+          currentAmount: newAmount,
+          status: completed ? "completada" : "activa",
+          completedAt: completed && goal.status === "activa" ? now : goal.completedAt,
+          updatedAt: now,
+        });
+      }
     }
 
     return txId;
@@ -749,6 +775,22 @@ export const update = mutation({
       await applyCardDelta(ctx, tx.cardId, diff);
     }
 
+    // Sincronizar meta de ahorro si cambió el monto de un gasto vinculado
+    if (tx.type === "gasto" && tx.goalId && amountChanged) {
+      const goal = await ctx.db.get(tx.goalId);
+      if (goal && !goal.linkedAccountId) {
+        const diff = newAmount - tx.amount;
+        const newGoalAmount = Math.max(0, goal.currentAmount + diff);
+        const completed = newGoalAmount >= goal.targetAmount;
+        await ctx.db.patch(tx.goalId, {
+          currentAmount: newGoalAmount,
+          status: completed ? "completada" : "activa",
+          completedAt: completed && goal.status === "activa" ? Date.now() : goal.completedAt,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+
     await ctx.db.patch(transactionId, patch);
   },
 });
@@ -871,6 +913,11 @@ export const createTransfer = mutation({
     // Actualizar saldos
     await applyAccountDelta(ctx, args.fromAccountId, -args.amount);
     await applyAccountDelta(ctx, args.toAccountId, toAmount);
+
+    // Auto-completar metas vinculadas a la cuenta destino si se alcanza el objetivo
+    if (toAccount.type === "ahorros") {
+      await ctx.runMutation(internal.goals.checkLinkedGoalCompletion, { accountId: args.toAccountId });
+    }
 
     return { transferGroupId, outTxId };
   },
