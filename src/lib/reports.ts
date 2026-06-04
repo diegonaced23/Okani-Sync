@@ -139,7 +139,7 @@ export function generateFullLedgerCsv(txs: LedgerTx[], maps: LedgerMaps): string
 // Una fila por CUOTA, no por compra. Refleja exactamente el tab "A pagar".
 
 export interface PaymentStatementRow {
-  status: "Vencida" | "Ciclo actual";   // sección del tab donde aparece
+  status: "Vencida" | "A pagar";         // sección del tab donde aparece
   description: string;                  // descripción de la compra padre
   category: string;                     // nombre de categoría
   installmentNumber: number;            // N° de cuota

@@ -367,9 +367,10 @@ export const getCardDetailData = query({
       for (const inst of unpaid) {
         if (inst.dueDate <= prevCutoffTs) {
           overdueCuotas.push(inst._id);
+          // El pago mínimo son las cuotas del ciclo cerrado (no las del ciclo en curso)
+          minimumPayment += inst.amount;
         } else if (inst.dueDate <= nextCutoffTs) {
           currentCycleCuotas.push(inst._id);
-          minimumPayment += inst.amount;
         }
       }
 
@@ -400,8 +401,6 @@ export const getCardDetailData = query({
       cycle: {
         prevCutoffTs,
         nextCutoffTs,
-        // prevPaymentTs: vencimiento del ciclo anterior (puede ser pasado si no se pagó)
-        // nextPaymentTs: vencimiento del ciclo actual (siempre futuro)
         prevPaymentTs,
         nextPaymentTs,
       },
@@ -414,6 +413,8 @@ export const getCardDetailData = query({
       installmentsByPurchase,
       minimumPayment,
       totalPayment,
+      // El pago mínimo está vencido solo si el día de pago de la tarjeta ya pasó
+      isPaymentOverdue: Date.now() > prevPaymentTs,
     };
   },
 });

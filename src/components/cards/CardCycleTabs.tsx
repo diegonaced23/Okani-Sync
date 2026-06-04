@@ -109,11 +109,6 @@ export function CardCycleTabs({
     return sortAsc ? arr : arr.reverse();
   }, [data.overdueCuotas, sortAsc]);
 
-  const sortedCurrentCycleCuotas = useMemo(() => {
-    const arr = [...data.currentCycleCuotas];
-    return sortAsc ? arr : arr.reverse();
-  }, [data.currentCycleCuotas, sortAsc]);
-
   // ── Descarga del extracto "A pagar" ──────────────────────────────────────
 
   // Convierte un ID de cuota en la estructura que usan PDF y CSV
@@ -138,18 +133,10 @@ export function CardCycleTabs({
     setDownloading("csv");
     try {
       const { generatePaymentStatementCsv, downloadCsv } = await import("@/lib/reports");
-      const rows: PaymentStatementRow[] = [
-        // Vencidas primero
-        ...sortedOverdueCuotas.flatMap((id) => {
-          const entry = buildInstallmentEntry(id);
-          return entry ? [{ ...entry, status: "Vencida" as const, currency }] : [];
-        }),
-        // Luego el ciclo actual
-        ...sortedCurrentCycleCuotas.flatMap((id) => {
-          const entry = buildInstallmentEntry(id);
-          return entry ? [{ ...entry, status: "Ciclo actual" as const, currency }] : [];
-        }),
-      ];
+      const rows: PaymentStatementRow[] = sortedOverdueCuotas.flatMap((id) => {
+        const entry = buildInstallmentEntry(id);
+        return entry ? [{ ...entry, status: "A pagar" as const, currency }] : [];
+      });
       const csv = generatePaymentStatementCsv(rows);
       const month = new Date().toISOString().slice(0, 7);
       downloadCsv(csv, `a-pagar_${card.lastFourDigits}_${month}.csv`);
@@ -173,18 +160,14 @@ export function CardCycleTabs({
         const e = buildInstallmentEntry(id);
         return e ? [e] : [];
       });
-      const currentEntries = sortedCurrentCycleCuotas.flatMap((id) => {
-        const e = buildInstallmentEntry(id);
-        return e ? [e] : [];
-      });
       const element = (
         <CardStatementDocument
           card={card}
           cycle={data.cycle}
           overdue={overdueEntries}
-          currentCycle={currentEntries}
+          currentCycle={[]}
           minimumPayment={data.minimumPayment}
-          hasOverdue={data.overdueCuotas.length > 0}
+          hasOverdue={data.isPaymentOverdue}
         />
       );
       const blob = await pdf(element).toBlob();
@@ -219,14 +202,21 @@ export function CardCycleTabs({
     day: "2-digit",
     month: "short",
   });
-  // Si hay cuotas vencidas, el pago del ciclo anterior ya venció → mostrar esa fecha.
-  // De lo contrario, mostrar la fecha de pago del ciclo actual (siempre futura).
-  const hasOverdue = data.overdueCuotas.length > 0;
-  const relevantPaymentTs = hasOverdue ? data.cycle.prevPaymentTs : data.cycle.nextPaymentTs;
+  // "Vencido" solo si el día de pago de la tarjeta ya pasó (no por fechas individuales de cuotas)
+  const hasOverdue = data.isPaymentOverdue;
+  // Fecha límite más próxima: si hay cuotas del ciclo anterior pendientes, usar prevPaymentTs;
+  // si no hay, usar nextPaymentTs (el del ciclo en curso que aún no cerró).
+  const relevantPaymentTs = data.overdueCuotas.length > 0
+    ? data.cycle.prevPaymentTs
+    : data.cycle.nextPaymentTs;
   const paymentDateStr = new Date(relevantPaymentTs).toLocaleDateString("es-CO", {
     day: "2-digit",
     month: "short",
   });
+  const daysUntilPayment = Math.max(
+    0,
+    Math.ceil((relevantPaymentTs - Date.now()) / (1000 * 60 * 60 * 24))
+  );
 
   // ── Tab 3: Plan completo (con filtros) ─────────────────────────────────────
 
@@ -345,10 +335,9 @@ export function CardCycleTabs({
           aria-labelledby="tab-a-pagar"
           className="space-y-3"
         >
-          {/* Bloque de vencidas — cuotas anteriores al ciclo activo sin pagar */}
-          {sortedOverdueCuotas.length > 0 && (
+          {/* Bloque de vencidas: solo se muestra si el día de pago de la tarjeta ya pasó */}
+          {hasOverdue && sortedOverdueCuotas.length > 0 && (
             <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--os-magenta)" }}>
-              {/* Cabecera: título, total y botón de orden */}
               <div
                 className="px-4 py-2 flex items-center justify-between gap-2"
                 style={{ background: "color-mix(in oklch, var(--os-magenta) 12%, var(--surface))" }}
@@ -363,16 +352,9 @@ export function CardCycleTabs({
                   className="text-sm font-bold tabular-nums"
                   style={{ color: "var(--os-magenta)" }}
                 >
-                  {formatCents(
-                    data.overdueCuotas.reduce(
-                      (s, id) => s + (data.installmentById[id]?.amount ?? 0),
-                      0
-                    ),
-                    currency
-                  )}
+                  {formatCents(data.minimumPayment, currency)}
                 </span>
               </div>
-              {/* Filas de cuotas vencidas con acciones */}
               {sortedOverdueCuotas.map((instId) => {
                 const inst = data.installmentById[instId];
                 if (!inst) return null;
@@ -393,13 +375,12 @@ export function CardCycleTabs({
             </div>
           )}
 
-          {/* Resumen del pago mínimo + control de orden */}
+          {/* Resumen del pago mínimo */}
           <div
             className="rounded-xl px-4 py-3 space-y-0.5 border"
             style={
               hasOverdue
                 ? {
-                    // Indicador visual de pago vencido cuando hay cuotas sin pagar del ciclo anterior
                     borderColor: "var(--os-magenta)",
                     background: "color-mix(in oklch, var(--os-magenta) 6%, var(--card))",
                   }
@@ -410,20 +391,22 @@ export function CardCycleTabs({
               className="text-[11px] uppercase tracking-wider font-semibold"
               style={{ color: hasOverdue ? "var(--os-magenta)" : "var(--muted-foreground)" }}
             >
-              {/* Si hay cuotas vencidas, el pago del ciclo anterior ya pasó */}
-              Pago mínimo · {hasOverdue ? `Venció el ${paymentDateStr}` : `Vence ${paymentDateStr}`}
+              {hasOverdue
+                ? `Pago mínimo · Venció el ${paymentDateStr}`
+                : data.overdueCuotas.length > 0
+                  ? `Pago mínimo · Vence en ${daysUntilPayment} ${daysUntilPayment === 1 ? "día" : "días"} · ${paymentDateStr}`
+                  : `Pago mínimo · Vence ${paymentDateStr}`}
             </p>
             <p className="text-xl font-bold tabular-nums text-foreground">
               {formatCents(data.minimumPayment, currency)}
             </p>
             <div className="flex items-center justify-between mt-1">
               <p className="text-xs text-muted-foreground">
-                {data.currentCycleCuotas.length} cuota
-                {data.currentCycleCuotas.length !== 1 ? "s" : ""} del ciclo actual
+                {data.overdueCuotas.length} cuota
+                {data.overdueCuotas.length !== 1 ? "s" : ""} del ciclo anterior
               </p>
               <div className="flex items-center gap-2">
-                {/* Botón para alternar el orden de las fechas */}
-                {data.currentCycleCuotas.length > 1 && (
+                {data.overdueCuotas.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setSortAsc((s) => !s)}
@@ -434,69 +417,71 @@ export function CardCycleTabs({
                     {sortAsc ? "Antiguo primero" : "Reciente primero"}
                   </button>
                 )}
-
-                {/* Descargar extracto de lo que se debe pagar */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    disabled={!!downloading}
-                    aria-label="Descargar extracto"
-                    className="inline-flex items-center justify-center rounded-md h-6 w-6 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    <FileDown className="h-3.5 w-3.5" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={handleDownloadPdf}
-                      disabled={downloading === "pdf"}
-                      className="gap-2"
+                {data.overdueCuotas.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      disabled={!!downloading}
+                      aria-label="Descargar extracto"
+                      className="inline-flex items-center justify-center rounded-md h-6 w-6 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                     >
-                      <FileText className="h-4 w-4" />
-                      {downloading === "pdf" ? "Generando PDF…" : "Descargar PDF"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={handleDownloadCsv}
-                      disabled={downloading === "csv"}
-                      className="gap-2"
-                    >
-                      <FileSpreadsheet className="h-4 w-4" />
-                      {downloading === "csv" ? "Generando CSV…" : "Descargar CSV"}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <FileDown className="h-3.5 w-3.5" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={handleDownloadPdf}
+                        disabled={downloading === "pdf"}
+                        className="gap-2"
+                      >
+                        <FileText className="h-4 w-4" />
+                        {downloading === "pdf" ? "Generando PDF…" : "Descargar PDF"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleDownloadCsv}
+                        disabled={downloading === "csv"}
+                        className="gap-2"
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        {downloading === "csv" ? "Generando CSV…" : "Descargar CSV"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Lista de cuotas del ciclo actual */}
-          {sortedCurrentCycleCuotas.length === 0 ? (
-            <div className="rounded-xl bg-card border border-border px-4 py-8 text-center">
-              <p className="text-sm font-medium text-foreground">
-                Sin cuotas pendientes este ciclo
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                El corte es el {nextDateStr}
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-xl bg-card border border-border overflow-hidden">
-              {sortedCurrentCycleCuotas.map((instId) => {
-                const inst = data.installmentById[instId];
-                if (!inst) return null;
-                const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
-                if (!purchase) return null;
-                return (
-                  <CompactInstallmentRow
-                    key={instId}
-                    installment={inst}
-                    purchase={purchase}
-                    currency={currency}
-                    categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
-                    onEdit={onEditPurchase}
-                    onDelete={onDeletePurchase}
-                  />
-                );
-              })}
-            </div>
+          {/* Lista plana de cuotas del ciclo anterior (solo cuando el pago aún no venció) */}
+          {!hasOverdue && (
+            sortedOverdueCuotas.length === 0 ? (
+              <div className="rounded-xl bg-card border border-border px-4 py-8 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  Sin cuotas pendientes del ciclo anterior
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  El próximo corte es el {nextDateStr}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-card border border-border overflow-hidden">
+                {sortedOverdueCuotas.map((instId) => {
+                  const inst = data.installmentById[instId];
+                  if (!inst) return null;
+                  const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
+                  if (!purchase) return null;
+                  return (
+                    <CompactInstallmentRow
+                      key={instId}
+                      installment={inst}
+                      purchase={purchase}
+                      currency={currency}
+                      categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
+                      onEdit={onEditPurchase}
+                      onDelete={onDeletePurchase}
+                    />
+                  );
+                })}
+              </div>
+            )
           )}
         </div>
       )}
