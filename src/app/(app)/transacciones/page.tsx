@@ -10,6 +10,8 @@ import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionDetailSheet } from "@/components/transactions/TransactionDetailSheet";
 import { TransactionFilters } from "@/components/transactions/TransactionFilters";
+import { CardPurchaseItem } from "@/components/transactions/CardPurchaseItem";
+import { CardPurchaseDetailSheet } from "@/components/transactions/CardPurchaseDetailSheet";
 import { currentMonth, formatCents } from "@/lib/money";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
@@ -95,8 +97,10 @@ export default function TransaccionesPage() {
 
   const [month, setMonth]           = useState(() => today);
   const [filter, setFilter]         = useState<TxFilter>("all");
-  const [selectedTx, setSelectedTx] = useState<Doc<"transactions"> | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedTx, setSelectedTx]           = useState<Doc<"transactions"> | null>(null);
+  const [detailOpen, setDetailOpen]           = useState(false);
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState<Id<"cardPurchases"> | null>(null);
+  const [purchaseDetailOpen, setPurchaseDetailOpen] = useState(false);
 
   // ── Estados de búsqueda y filtros avanzados ───────────────────────────────
   const [searchText,   setSearchText]   = useState("");
@@ -134,7 +138,8 @@ export default function TransaccionesPage() {
         }
       : "skip"
   );
-  const monthResults = useQuery(api.transactions.listByMonth, !isSearchMode ? { month } : "skip");
+  const monthResults       = useQuery(api.transactions.listByMonth, !isSearchMode ? { month } : "skip");
+  const purchasesOfMonth   = useQuery(api.cardPurchases.listByPurchaseMonth, !isSearchMode ? { month } : "skip");
 
   const rawTransactions = isSearchMode ? searchResults : monthResults;
 
@@ -171,33 +176,42 @@ export default function TransaccionesPage() {
   const monthGastos = useMemo(
     () => !isSearchMode
       ? (rawTransactions ?? [])
-          .filter((t) => ["gasto", "pago_tarjeta", "pago_deuda"].includes(t.type))
+          .filter((t) => ["gasto", "gasto_tarjeta", "pago_deuda"].includes(t.type))
           .reduce((s, t) => s + t.amount, 0)
       : 0,
     [rawTransactions, isSearchMode]
   );
 
   // ── Lista filtrada: tipo (pill) + texto client-side ────────────────────────
-  const filtered: Doc<"transactions">[] = useMemo(() => {
+
+  type ListItem =
+    | { kind: "tx";       item: Doc<"transactions"> }
+    | { kind: "purchase"; item: Doc<"cardPurchases"> };
+
+  const filteredTxs: Doc<"transactions">[] = useMemo(() => {
     let all = rawTransactions ?? [];
 
-    // El texto ya fue enviado al servidor (searchIndex); aquí actúa como fallback
-    // para el modo "gasto" multi-tipo que no se puede filtrar en el índice
     if (isSearchMode && searchText.trim()) {
       const q = searchText.trim().toLowerCase();
       all = all.filter((t) => t.description.toLowerCase().includes(q));
     }
 
-    if (filter === "all") return all;
-    if (filter === "gasto") return all.filter((t) =>
-      t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda"
-    );
+    if (filter === "all")          return all;
+    if (filter === "gasto")        return all.filter((t) => t.type === "gasto" || t.type === "pago_deuda");
     if (filter === "gasto_tarjeta") return all.filter((t) => t.type === "gasto_tarjeta");
+    if (filter === "transferencia") return all.filter((t) => t.type === "transferencia" || t.type === "pago_tarjeta");
     return all.filter((t) => t.type === filter);
   }, [rawTransactions, filter, searchText, isSearchMode]);
 
+  // Las compras (padre) solo se muestran en modo browse y en filtros relevantes
+  const filteredPurchases: Doc<"cardPurchases">[] = useMemo(() => {
+    if (isSearchMode) return [];
+    if (filter === "all" || filter === "gasto_tarjeta") return purchasesOfMonth ?? [];
+    return [];
+  }, [purchasesOfMonth, filter, isSearchMode]);
+
   const totalCount    = (rawTransactions ?? []).length;
-  const filteredCount = filtered.length;
+  const filteredCount = filteredTxs.length;
   const isFiltered    = filter !== "all" || isSearchMode;
   const currency      = "COP";
 
@@ -214,21 +228,27 @@ export default function TransaccionesPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
 
-  // Agrupar la lista filtrada por día calendario
+  // Combinar txs y compras padre, ordenados por fecha desc, agrupados por día
   const groupedByDay = useMemo(() => {
-    const groups: { dayKey: string; dayMs: number; txs: Doc<"transactions">[] }[] = [];
-    for (const tx of filtered) {
-      const d = new Date(tx.date);
+    const allItems: { date: number; item: ListItem }[] = [
+      ...filteredTxs.map((tx) => ({ date: tx.date,           item: { kind: "tx"       as const, item: tx } })),
+      ...filteredPurchases.map((p) => ({ date: p.purchaseDate, item: { kind: "purchase" as const, item: p } })),
+    ];
+    allItems.sort((a, b) => b.date - a.date);
+
+    const groups: { dayKey: string; dayMs: number; items: ListItem[] }[] = [];
+    for (const { date, item } of allItems) {
+      const d   = new Date(date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const last = groups[groups.length - 1];
       if (last?.dayKey === key) {
-        last.txs.push(tx);
+        last.items.push(item);
       } else {
-        groups.push({ dayKey: key, dayMs: tx.date, txs: [tx] });
+        groups.push({ dayKey: key, dayMs: date, items: [item] });
       }
     }
     return groups;
-  }, [filtered]);
+  }, [filteredTxs, filteredPurchases]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-0">
@@ -408,7 +428,7 @@ export default function TransaccionesPage() {
             ))}
           </div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : groupedByDay.length === 0 ? (
         <div
           className="rounded-xl p-12 text-center"
           style={{ background: "var(--card)", border: "1px solid var(--border)" }}
@@ -444,19 +464,35 @@ export default function TransaccionesPage() {
                 yesterdayKey={yesterdayKey}
                 dayMs={group.dayMs}
               />
-              {group.txs.map((tx, i) => (
-                <div key={tx._id}>
-                  <TransactionItem
-                    transaction={tx}
-                    category={tx.categoryId ? catMap[tx.categoryId] : undefined}
-                    accountMap={accountMap}
-                    cardMap={cardMap}
-                    onPress={() => {
-                      setSelectedTx(tx);
-                      setDetailOpen(true);
-                    }}
-                  />
-                  {i < group.txs.length - 1 && <TxSeparator />}
+              {group.items.map((listItem, i) => (
+                <div key={listItem.kind === "tx" ? listItem.item._id : `purchase-${listItem.item._id}`}>
+                  {listItem.kind === "tx" ? (
+                    <TransactionItem
+                      transaction={listItem.item}
+                      category={listItem.item.categoryId ? catMap[listItem.item.categoryId] : undefined}
+                      accountMap={accountMap}
+                      cardMap={cardMap}
+                      onPress={() => {
+                        if (listItem.item.cardPurchaseId) {
+                          setSelectedPurchaseId(listItem.item.cardPurchaseId as Id<"cardPurchases">);
+                          setPurchaseDetailOpen(true);
+                        } else {
+                          setSelectedTx(listItem.item);
+                          setDetailOpen(true);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <CardPurchaseItem
+                      purchase={listItem.item}
+                      cardName={cardMap[listItem.item.cardId]?.name}
+                      onPress={() => {
+                        setSelectedPurchaseId(listItem.item._id);
+                        setPurchaseDetailOpen(true);
+                      }}
+                    />
+                  )}
+                  {i < group.items.length - 1 && <TxSeparator />}
                 </div>
               ))}
             </div>
@@ -473,6 +509,16 @@ export default function TransaccionesPage() {
           if (!o) setSelectedTx(null);
         }}
         categories={categories ?? []}
+      />
+
+      {/* ── Sheet de detalle de compra con tarjeta ───────────────────────────── */}
+      <CardPurchaseDetailSheet
+        purchaseId={selectedPurchaseId}
+        open={purchaseDetailOpen}
+        onOpenChange={(o) => {
+          setPurchaseDetailOpen(o);
+          if (!o) setSelectedPurchaseId(null);
+        }}
       />
 
     </div>

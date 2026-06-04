@@ -475,7 +475,7 @@ export const monthlySummary = query({
           .filter((t) => t.type === "ingreso")
           .reduce((s, t) => s + convertAmount(t.amount, t.currency, preferredCurrency, rateMap).converted, 0);
         const gastos = txs
-          .filter((t) => t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda")
+          .filter((t) => t.type === "gasto" || t.type === "gasto_tarjeta" || t.type === "pago_deuda")
           .reduce((s, t) => s + convertAmount(t.amount, t.currency, preferredCurrency, rateMap).converted, 0);
 
         return { month, ingresos, gastos };

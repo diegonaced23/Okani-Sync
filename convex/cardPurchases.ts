@@ -44,6 +44,42 @@ export const listActiveByUser = query({
   },
 });
 
+/** Compras cuya purchaseDate cae en el mes indicado (para mostrar el registro padre en la lista). */
+export const listByPurchaseMonth = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const all = await ctx.db
+      .query("cardPurchases")
+      .withIndex("by_user_status", (q) =>
+        q.eq("userId", clerkId).eq("status", "activa")
+      )
+      .collect();
+    return all.filter((p) => toMonthString(p.purchaseDate) === month);
+  },
+});
+
+/** Retorna una compra con su cronograma de cuotas — para el modal de detalle. */
+export const getWithInstallments = query({
+  args: { purchaseId: v.id("cardPurchases") },
+  handler: async (ctx, { purchaseId }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const purchase = await ctx.db.get(purchaseId);
+    if (!purchase || purchase.userId !== clerkId) return null;
+
+    const installments = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+      .collect();
+
+    installments.sort((a, b) => a.installmentNumber - b.installmentNumber);
+
+    const card = await ctx.db.get(purchase.cardId);
+
+    return { purchase, installments, card };
+  },
+});
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export const createPurchase = mutation({

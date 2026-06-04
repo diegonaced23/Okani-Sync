@@ -49,10 +49,10 @@ const TYPE_CONFIG = {
     sign: "",
   },
   pago_tarjeta: {
-    icon: CreditCard,
-    iconColor: "var(--os-orange)",
-    iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
-    amountColor: "var(--os-magenta)",
+    icon: ArrowLeftRight,
+    iconColor: "var(--os-cyan)",
+    iconBg: "color-mix(in oklch, var(--os-cyan) 16%, transparent)",
+    amountColor: "var(--muted-foreground)",
     sign: "-",
   },
   gasto_tarjeta: {
