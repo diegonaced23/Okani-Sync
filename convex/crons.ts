@@ -24,6 +24,13 @@ crons.daily(
   internal.actions.sendAlerts.run
 );
 
+// Snapshot de patrimonio neto: día 1 a las 4:30 AM Colombia (9:30 UTC) — ANTES del rollover
+crons.monthly(
+  "snapshot patrimonio neto mensual",
+  { day: 1, hourUTC: 9, minuteUTC: 30 },
+  internal.netWorthSnapshots.captureForAllUsers
+);
+
 // Copia presupuestos recurrentes al nuevo mes: día 1 a las 5 AM Colombia (10 UTC)
 crons.monthly(
   "rollover presupuestos recurrentes",

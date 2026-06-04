@@ -101,7 +101,10 @@ async function checkBudgetAlerts(
     const isOver = budget.spent > budget.amount;
     const type = isOver ? "presupuesto_excedido" : "presupuesto_alerta";
 
-    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+    // Crear notificación y marcar el presupuesto como notificado atómicamente.
+    // Sin esto, un crash entre ambas operaciones causaría que el cron reenviara
+    // la alerta en el siguiente ciclo.
+    const notifId = await ctx.runMutation(internal.notifications.createAndMarkBudgetAlert, {
       userId: budget.userId,
       type,
       title: isOver ? "Presupuesto excedido" : `Presupuesto al ${percent}%`,
@@ -110,10 +113,6 @@ async function checkBudgetAlerts(
         : `Llevas el ${percent}% del presupuesto de ${budget.categoryName ?? "una categoría"}.`,
       actionUrl: "/presupuestos",
       relatedEntityId: budget._id,
-    });
-
-    // Marcar qué tipo de alerta se envió para no repetirla
-    await ctx.runMutation(internal.budgets.updateNotifiedAt, {
       budgetId: budget._id,
       notifiedAt: now,
       exceeded: isOver,

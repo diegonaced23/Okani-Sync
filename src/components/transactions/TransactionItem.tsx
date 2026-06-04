@@ -2,7 +2,7 @@
 
 import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins, Scale } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins, Scale, Banknote } from "lucide-react";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { CategoryIcon } from "@/components/ui/category-icon";
 
@@ -75,6 +75,20 @@ const TYPE_CONFIG = {
     iconBg: "color-mix(in oklch, var(--muted-foreground) 12%, transparent)",
     amountColor: "var(--muted-foreground)",
     sign: "",
+  },
+  prestamo_otorgado: {
+    icon: Banknote,
+    iconColor: "#6366F1",
+    iconBg: "color-mix(in oklch, #6366F1 15%, transparent)",
+    amountColor: "var(--foreground)",
+    sign: "-",
+  },
+  prestamo_cobrado: {
+    icon: Banknote,
+    iconColor: "var(--os-lime)",
+    iconBg: "color-mix(in oklch, var(--os-lime) 15%, transparent)",
+    amountColor: "var(--os-lime)",
+    sign: "+",
   },
 };
 

@@ -1,6 +1,80 @@
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
+
+/**
+ * Comparación histórica de presupuesto vs. real por categoría.
+ * Devuelve una fila por categoría que tuvo presupuesto en alguno de los meses
+ * solicitados, con el detalle presupuestado/gastado por cada mes.
+ */
+export const historicalComparison = query({
+  args: {
+    months: v.array(v.string()),                          // ["2026-01", "2026-02", ...]
+    categoryIds: v.optional(v.array(v.id("categories"))), // filtro opcional
+  },
+  handler: async (ctx, { months, categoryIds }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const safeMonths = months.slice(0, 12); // máx 12 meses
+
+    // Recoger todos los presupuestos de los meses solicitados en paralelo
+    const budgetsByMonth = await Promise.all(
+      safeMonths.map((month) =>
+        ctx.db
+          .query("budgets")
+          .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", month))
+          .collect()
+      )
+    );
+
+    // Construir mapa: categoryId → { month → { budgeted, spent } }
+    const catMap = new Map<
+      string,
+      { budgeted: number; spent: number; hasBudget: boolean; currency: string }[]
+    >();
+
+    for (let i = 0; i < safeMonths.length; i++) {
+      for (const budget of budgetsByMonth[i]) {
+        const catId = budget.categoryId;
+        if (categoryIds && !categoryIds.includes(catId)) continue;
+        if (!catMap.has(catId)) {
+          catMap.set(catId, safeMonths.map(() => ({ budgeted: 0, spent: 0, hasBudget: false, currency: budget.currency })));
+        }
+        catMap.get(catId)![i] = {
+          budgeted: budget.amount,
+          spent: budget.spent,
+          hasBudget: true,
+          currency: budget.currency,
+        };
+      }
+    }
+
+    // Enriquecer con nombres de categorías
+    const rows = await Promise.all(
+      [...catMap.entries()].map(async ([catId, data]) => {
+        const cat = await ctx.db.get(catId as Id<"categories">);
+        return {
+          categoryId: catId,
+          categoryName: cat?.name ?? "Sin categoría",
+          categoryColor: cat?.color ?? "#6B7280",
+          data,
+        };
+      })
+    );
+
+    // Ordenar por nombre de categoría
+    rows.sort((a, b) => a.categoryName.localeCompare(b.categoryName));
+
+    // Totales por mes
+    const totals = safeMonths.map((_, i) => {
+      const budgeted = rows.reduce((s, r) => s + r.data[i].budgeted, 0);
+      const spent    = rows.reduce((s, r) => s + r.data[i].spent, 0);
+      return { budgeted, spent };
+    });
+
+    return { rows, months: safeMonths, totals };
+  },
+});
 
 export const listByMonth = query({
   args: { month: v.string() },

@@ -43,6 +43,55 @@ export const listByCardMonth = query({
   },
 });
 
+/**
+ * Todas las cuotas de una tarjeta (pagadas + pendientes), enriquecidas con la
+ * descripción y el total de cuotas de la compra correspondiente.
+ * Usadas por la simulación FIFO client-side en el formulario de pago.
+ */
+export const listAllByCard = query({
+  args: { cardId: v.id("cards") },
+  handler: async (ctx, { cardId }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const card = await ctx.db.get(cardId);
+    if (!card || card.userId !== clerkId) return [];
+
+    const installments = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_card_month", (q) => q.eq("cardId", cardId))
+      .collect();
+
+    // Batch-lookup de compras únicas para obtener descripción y totalInstallments
+    const purchaseCache = new Map<string, { description: string; totalInstallments: number }>();
+    for (const inst of installments) {
+      if (!purchaseCache.has(inst.purchaseId)) {
+        const p = await ctx.db.get(inst.purchaseId);
+        purchaseCache.set(inst.purchaseId, {
+          description: p?.description ?? "Compra",
+          totalInstallments: p?.totalInstallments ?? 1,
+        });
+      }
+    }
+
+    return installments.map((inst) => {
+      const purchase = purchaseCache.get(inst.purchaseId)!;
+      return {
+        _id: inst._id,
+        amount: inst.amount,
+        dueDate: inst.dueDate,
+        month: inst.month,
+        paid: inst.paid,
+        paidAt: inst.paidAt,
+        installmentNumber: inst.installmentNumber,
+        totalInstallments: purchase.totalInstallments,
+        description:
+          purchase.totalInstallments > 1
+            ? `${purchase.description} — Cuota ${inst.installmentNumber}/${purchase.totalInstallments}`
+            : purchase.description,
+      };
+    });
+  },
+});
+
 /** Cuotas pendientes del usuario (para alertas y crons). */
 export const listUnpaidByUser = query({
   args: {},

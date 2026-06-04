@@ -14,6 +14,10 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+// Nombres canónicos de las categorías de sistema — usados para lookup por nombre.
+export const SYSTEM_CATEGORY_PAYMENT_NAME   = "Pago de tarjeta";
+export const SYSTEM_CATEGORY_INTERESTS_NAME = "Gastos financieros";
+
 /** Resuelve el ID de la categoría sistema "Pago de tarjeta" para el usuario dado. */
 export async function getSystemPaymentCategoryId(
   ctx: MutationCtx | QueryCtx,
@@ -22,7 +26,24 @@ export async function getSystemPaymentCategoryId(
   const cat = await ctx.db
     .query("categories")
     .withIndex("by_user", (q) => q.eq("userId", userId))
-    .filter((q) => q.eq(q.field("isSystem"), true))
+    .filter((q) =>
+      q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), SYSTEM_CATEGORY_PAYMENT_NAME))
+    )
+    .first();
+  return cat?._id;
+}
+
+/** Resuelve el ID de la categoría sistema "Gastos financieros" para el usuario dado. */
+export async function getSystemInterestsCategoryId(
+  ctx: MutationCtx | QueryCtx,
+  userId: string
+): Promise<Id<"categories"> | undefined> {
+  const cat = await ctx.db
+    .query("categories")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .filter((q) =>
+      q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), SYSTEM_CATEGORY_INTERESTS_NAME))
+    )
     .first();
   return cat?._id;
 }

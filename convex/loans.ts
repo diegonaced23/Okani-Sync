@@ -114,10 +114,10 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    // Crear la transacción de gasto vinculada
+    // Crear la transacción vinculada — tipo prestamo_otorgado para excluirla del P&L
     await ctx.db.insert("transactions", {
       userId: user.clerkId,
-      type: "gasto",
+      type: "prestamo_otorgado",
       amount: args.originalAmount,
       description: `Préstamo a ${args.borrower}`,
       date: args.startDate,
@@ -195,10 +195,10 @@ export const addRepayment = mutation({
     const month = toMonthString(paymentDate);
     const now = Date.now();
 
-    // Crear transacción de ingreso vinculada
+    // Crear transacción vinculada — tipo prestamo_cobrado para excluirla del P&L
     const txId = await ctx.db.insert("transactions", {
       userId: user.clerkId,
-      type: "ingreso",
+      type: "prestamo_cobrado",
       amount: args.amount,
       description: `Abono préstamo — ${loan.borrower}`,
       date: paymentDate,

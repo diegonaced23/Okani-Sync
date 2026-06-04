@@ -12,11 +12,15 @@ export interface ReportRow {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  ingreso: "Ingreso",
-  gasto: "Gasto",
-  transferencia: "Transferencia",
-  pago_tarjeta: "Pago tarjeta",
-  pago_deuda: "Pago deuda",
+  ingreso:            "Ingreso",
+  gasto:              "Gasto",
+  transferencia:      "Transferencia",
+  pago_tarjeta:       "Pago tarjeta",
+  pago_deuda:         "Pago deuda",
+  gasto_tarjeta:      "Gasto tarjeta",
+  ajuste:             "Ajuste saldo",
+  prestamo_otorgado:  "Préstamo otorgado",
+  prestamo_cobrado:   "Cobro de préstamo",
 };
 
 // ─── CSV ───────────────────────────────────────────────────────────────────────
@@ -42,6 +46,90 @@ export function downloadCsv(content: string, filename: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+// ─── Libro completo de movimientos (formato contable) ─────────────────────────
+
+const TX_TYPE_LABELS: Record<string, string> = {
+  ingreso:           "Ingreso",
+  gasto:             "Gasto",
+  transferencia:     "Transferencia",
+  pago_tarjeta:      "Pago tarjeta",
+  pago_deuda:        "Pago deuda",
+  gasto_tarjeta:     "Gasto tarjeta",
+  ajuste:            "Ajuste saldo",
+  prestamo_otorgado: "Préstamo otorgado",
+  prestamo_cobrado:  "Cobro de préstamo",
+};
+
+export interface LedgerTx {
+  _id: string;
+  date: number;
+  description: string;
+  type: string;
+  amount: number;           // centavos
+  currency: string;
+  accountId?: string;
+  cardId?: string;
+  categoryId?: string;
+  transferDirection?: string;
+  notes?: string;
+}
+
+export interface LedgerMaps {
+  accounts: Record<string, string>;                         // id → name
+  cards:    Record<string, { name: string; lastFour: string }>;
+  cats:     Record<string, string>;                         // id → name
+}
+
+/**
+ * Genera el CSV del libro completo de movimientos en formato contable.
+ *
+ * Columnas: Fecha · Descripción · Tipo · Debe · Haber · Saldo neto acum. · Fuente · Categoría · Moneda · Notas
+ *
+ * Debe/Haber:
+ * - Ingresos y transferencias entrantes → Haber (crédito)
+ * - Gastos, pagos y transferencias salientes → Debe (débito)
+ * - Ajustes → Haber (no hay forma de distinguir signo del monto; el usuario lo interpreta)
+ * - `gasto_tarjeta` → Debe (gasto comprometido, sin salida inmediata de efectivo)
+ *
+ * El saldo neto acumulado es la suma corriente de (Haber − Debe). En extractos
+ * multi-moneda los montos se suman sin conversión — el campo "Moneda" permite
+ * que el usuario aplique sus propias tasas en una hoja de cálculo.
+ */
+export function generateFullLedgerCsv(txs: LedgerTx[], maps: LedgerMaps): string {
+  let runningBalance = 0;
+
+  const data = txs.map((tx) => {
+    const isCredit =
+      tx.type === "ingreso" ||
+      tx.type === "prestamo_cobrado" ||
+      (tx.type === "transferencia" && tx.transferDirection === "in");
+
+    const debe  = isCredit ? 0 : tx.amount;
+    const haber = isCredit ? tx.amount : 0;
+    runningBalance += haber - debe;
+
+    const accountName = tx.accountId ? (maps.accounts[tx.accountId] ?? "—") : undefined;
+    const cardName    = tx.cardId
+      ? `${maps.cards[tx.cardId]?.name ?? "Tarjeta"} ····${maps.cards[tx.cardId]?.lastFour ?? "????"}` : undefined;
+    const source      = accountName ?? cardName ?? "—";
+
+    return {
+      Fecha:            formatDateShort(tx.date),
+      Descripción:      tx.description,
+      Tipo:             TX_TYPE_LABELS[tx.type] ?? tx.type,
+      Debe:             debe > 0 ? (debe / 100).toFixed(2) : "",
+      Haber:            haber > 0 ? (haber / 100).toFixed(2) : "",
+      "Saldo neto acum.": (runningBalance / 100).toFixed(2),
+      Fuente:           source,
+      Categoría:        tx.categoryId ? (maps.cats[tx.categoryId] ?? "Sin categoría") : "—",
+      Moneda:           tx.currency,
+      Notas:            tx.notes ?? "",
+    };
+  });
+
+  return Papa.unparse(data, { delimiter: ",", header: true });
 }
 
 // ─── PDF — se genera en el componente con dynamic import de @react-pdf ────────

@@ -1,61 +1,17 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanRead, assertCanWrite } from "./lib/permissions";
 import { toMonthString, generateId } from "./lib/utils";
 import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
-
-// ─── Helpers internos ─────────────────────────────────────────────────────────
-
-async function applyAccountDelta(
-  ctx: MutationCtx,
-  accountId: Id<"accounts">,
-  delta: number
-) {
-  const account = await ctx.db.get(accountId);
-  if (!account) throw new Error("Cuenta no encontrada");
-  await ctx.db.patch(accountId, {
-    balance: account.balance + delta,
-    updatedAt: Date.now(),
-  });
-}
-
-async function applyCardDelta(
-  ctx: MutationCtx,
-  cardId: Id<"cards">,
-  delta: number  // positivo = más gasto, negativo = reversión
-) {
-  const card = await ctx.db.get(cardId);
-  if (!card) throw new Error("Tarjeta no encontrada");
-  const newBalance = card.currentBalance + delta;
-  await ctx.db.patch(cardId, {
-    currentBalance: newBalance,
-    availableCredit: card.creditLimit - newBalance,
-    updatedAt: Date.now(),
-  });
-}
-
-async function applyBudgetDelta(
-  ctx: MutationCtx,
-  userId: string,
-  categoryId: Id<"categories">,
-  month: string,
-  delta: number
-) {
-  const budget = await ctx.db
-    .query("budgets")
-    .withIndex("by_user_category_month", (q) =>
-      q.eq("userId", userId).eq("categoryId", categoryId).eq("month", month)
-    )
-    .unique();
-  if (!budget) return;
-  await ctx.db.patch(budget._id, {
-    spent: Math.max(0, budget.spent + delta),
-    updatedAt: Date.now(),
-  });
-}
+import {
+  applyAccountDelta,
+  applyCardDelta,
+  applyBudgetDelta,
+  deleteTransactionWithEffects,
+} from "./lib/transactionEffects";
+import { buildRateMap, convertAmount } from "./lib/money";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +26,29 @@ export const listByMonth = query({
       )
       .order("desc")
       .collect();
+  },
+});
+
+/**
+ * Exportación completa del libro de movimientos para uno o varios meses.
+ * Devuelve TODOS los tipos (incluyendo gasto_tarjeta, transferencias y ajustes),
+ * ordenados por fecha ascendente — listos para `generateFullLedgerCsv`.
+ * Máximo 12 meses para evitar respuestas demasiado grandes.
+ */
+export const listForExport = query({
+  args: { months: v.array(v.string()) },
+  handler: async (ctx, { months }) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const safeMonths = months.slice(0, 12);
+    const byMonth = await Promise.all(
+      safeMonths.map((month) =>
+        ctx.db
+          .query("transactions")
+          .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", month))
+          .collect()
+      )
+    );
+    return byMonth.flat().sort((a, b) => a.date - b.date);
   },
 });
 
@@ -93,31 +72,37 @@ export const listRecent = query({
     const clerkId = await getCurrentUserId(ctx);
     const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
 
-    // Tomamos un pool amplio para compensar el filtrado posterior.
-    // Para safeLimit=5 → pool de 50 candidatos (suficiente para cualquier combinación).
+    // Pool grande: las gasto_tarjeta tienen date = fecha de vencimiento (futura),
+    // lo que las desplaza al tope del índice by_user_date. Tomamos más candidatos
+    // para asegurar suficiente variedad tras reordenar por fecha real.
     const candidates = await ctx.db
       .query("transactions")
       .withIndex("by_user_date", (q) => q.eq("userId", clerkId))
       .order("desc")
-      .take(Math.min(safeLimit * 10, 200));
+      .take(Math.min(safeLimit * 15, 300));
 
-    const result = [];
+    type TxWithEffectiveDate = (typeof candidates)[number] & { date: number };
+    const enriched: TxWithEffectiveDate[] = [];
 
     for (const tx of candidates) {
       if (tx.type === "gasto_tarjeta") {
-        // Las transacciones gasto_tarjeta representan cuotas de tarjeta de crédito.
-        // Solo incluimos la cuota #1, que equivale al momento en que se registró la compra.
-        // Las cuotas #2, #3, etc. son cargos mensuales futuros, no "movimientos nuevos".
+        // Solo cuota #1: representa el momento de compra; las siguientes son cargos futuros.
         if (!tx.cardInstallmentId) continue;
         const installment = await ctx.db.get(tx.cardInstallmentId);
         if (!installment || installment.installmentNumber !== 1) continue;
-      }
 
-      result.push(tx);
-      if (result.length >= safeLimit) break;
+        // Reemplazar date (vencimiento de cuota) por la fecha real de la compra.
+        const purchase = tx.cardPurchaseId ? await ctx.db.get(tx.cardPurchaseId) : null;
+        enriched.push({ ...tx, date: purchase?.purchaseDate ?? tx._creationTime });
+      } else {
+        enriched.push(tx as TxWithEffectiveDate);
+      }
     }
 
-    return result;
+    // Re-ordenar por fecha efectiva porque las gasto_tarjeta tenían fechas futuras.
+    enriched.sort((a, b) => b.date - a.date);
+
+    return enriched.slice(0, safeLimit);
   },
 });
 
@@ -131,40 +116,218 @@ export const getById = query({
   },
 });
 
-/** Gastos del mes agrupados por categoría — para el gráfico Pie del dashboard. */
-export const spendingByCategory = query({
-  args: { month: v.string() },
-  handler: async (ctx, { month }) => {
-    const clerkId = await getCurrentUserId(ctx);
-    const gastos = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", clerkId).eq("type", "gasto").eq("month", month)
-      )
+/**
+ * Compromisos de pago en los próximos N días para el widget del dashboard.
+ *
+ * Fuentes (sin doble-conteo):
+ * - Cuotas de tarjeta: unpaid, dueDate ≤ hoy+N (incluye vencidas)
+ * - Deudas activas/vencidas: dueDate ≤ hoy+N → monto = monthlyPayment ?? currentBalance
+ * - Transacciones recurrentes tipo "gasto": nextOccurrence en [ahora, hoy+N]
+ *   (pago_tarjeta y pago_deuda se excluyen — ya cubiertos por las dos fuentes anteriores)
+ */
+export const upcomingCommitments = query({
+  args: { days: v.optional(v.number()) },
+  handler: async (ctx, { days = 30 }) => {
+    const user = await getCurrentUser(ctx);
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const missingRateSet = new Set<string>();
+
+    const safeDays = Math.min(Math.max(1, Math.floor(days)), 365);
+    const now = Date.now();
+    const windowEnd = now + safeDays * 86_400_000;
+
+    function convert(amountCents: number, fromCurrency: string): number {
+      const { converted, hasRate } = convertAmount(amountCents, fromCurrency, preferredCurrency, rateMap);
+      if (!hasRate && fromCurrency !== preferredCurrency) missingRateSet.add(fromCurrency);
+      return converted;
+    }
+
+    type CommitmentItem = {
+      type: "cuota_tarjeta" | "deuda" | "recurrente";
+      amount: number;
+      dueDate: number;
+      description: string;
+      cardName?: string;
+    };
+    const items: CommitmentItem[] = [];
+
+    // ── Cuotas de tarjeta ─────────────────────────────────────────────────────
+    const allUnpaid = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_user_paid", (q) => q.eq("userId", user.clerkId).eq("paid", false))
       .collect();
+    const relevantInst = allUnpaid.filter((i) => i.dueDate <= windowEnd);
 
-    // Incluir gastos con tarjeta del mes (cuotas vencidas en el mes)
-    const gastosTarjeta = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", clerkId).eq("type", "gasto_tarjeta").eq("month", month)
-      )
-      .collect();
-
-    const txs = [...gastos, ...gastosTarjeta.filter((t) => !!t.categoryId)];
-
-    const grouped = new Map<string, { amount: number; categoryId: string | null }>();
-    for (const tx of txs) {
-      const key = tx.categoryId ?? "__none__";
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.amount += tx.amount;
-      } else {
-        grouped.set(key, { amount: tx.amount, categoryId: tx.categoryId ?? null });
+    // Batch-lookup por purchaseId y cardId únicos
+    const seenPurchases = new Map<string, { description: string; totalInstallments: number }>();
+    const seenCards = new Map<string, { name: string; lastFourDigits: string; currency: string }>();
+    for (const inst of relevantInst) {
+      if (!seenPurchases.has(inst.purchaseId)) {
+        const p = await ctx.db.get(inst.purchaseId);
+        seenPurchases.set(inst.purchaseId, { description: p?.description ?? "Cuota", totalInstallments: p?.totalInstallments ?? 1 });
+      }
+      if (!seenCards.has(inst.cardId)) {
+        const c = await ctx.db.get(inst.cardId);
+        if (c) seenCards.set(inst.cardId, { name: c.name, lastFourDigits: c.lastFourDigits, currency: c.currency });
       }
     }
 
-    return await Promise.all(
+    for (const inst of relevantInst) {
+      const purchase = seenPurchases.get(inst.purchaseId)!;
+      const card = seenCards.get(inst.cardId);
+      const desc = purchase.totalInstallments > 1
+        ? `${purchase.description} — Cuota ${inst.installmentNumber}/${purchase.totalInstallments}`
+        : purchase.description;
+      items.push({
+        type: "cuota_tarjeta",
+        amount: convert(inst.amount, card?.currency ?? preferredCurrency),
+        dueDate: inst.dueDate,
+        description: desc,
+        cardName: card ? `${card.name} ····${card.lastFourDigits}` : undefined,
+      });
+    }
+
+    // ── Deudas activas y vencidas ─────────────────────────────────────────────
+    const [activeDebts, overdueDebts] = await Promise.all([
+      ctx.db.query("debts").withIndex("by_user_status", (q) => q.eq("userId", user.clerkId).eq("status", "activa")).collect(),
+      ctx.db.query("debts").withIndex("by_user_status", (q) => q.eq("userId", user.clerkId).eq("status", "vencida")).collect(),
+    ]);
+    for (const debt of [...activeDebts, ...overdueDebts]) {
+      if (debt.dueDate === undefined || debt.dueDate > windowEnd) continue;
+      const amount = debt.monthlyPayment ?? debt.currentBalance;
+      items.push({
+        type: "deuda",
+        amount: convert(amount, debt.currency),
+        dueDate: debt.dueDate,
+        description: `${debt.name} — ${debt.creditor}`,
+      });
+    }
+
+    // ── Transacciones recurrentes tipo gasto ──────────────────────────────────
+    // pago_tarjeta y pago_deuda se excluyen — sus obligaciones ya aparecen arriba.
+    const recurring = await ctx.db
+      .query("recurringTransactions")
+      .withIndex("by_user_active", (q) => q.eq("userId", user.clerkId).eq("active", true))
+      .collect();
+    for (const rec of recurring) {
+      if (rec.type !== "gasto") continue;
+      if (rec.nextOccurrence < now || rec.nextOccurrence > windowEnd) continue;
+      items.push({
+        type: "recurrente",
+        amount: convert(rec.amount, rec.currency),
+        dueDate: rec.nextOccurrence,
+        description: rec.description,
+      });
+    }
+
+    items.sort((a, b) => a.dueDate - b.dueDate);
+    const totalAmount = items.reduce((s, i) => s + i.amount, 0);
+
+    return { totalAmount, currency: preferredCurrency, missingRates: [...missingRateSet], items };
+  },
+});
+
+/**
+ * Búsqueda y filtrado avanzado de transacciones.
+ *
+ * Cuando `text` está presente usa el índice de búsqueda full-text sobre `description`
+ * (relevancia + filtro por userId/type en la BD). Para el resto de filtros aplica
+ * `.filter()` en memoria sobre el conjunto acotado devuelto por el índice.
+ *
+ * Cuando `text` está vacío y hay filtros de fecha, usa `by_user_date` con rango,
+ * lo que es eficiente y exacto sin necesidad de escanear toda la tabla.
+ *
+ * Nota: el `searchIndex` físico se activa al hacer `npx convex dev` — el TypeScript
+ * ya tipechea correctamente porque DataModel se deriva de schema.ts en compilación.
+ */
+export const search = query({
+  args: {
+    text:       v.optional(v.string()),
+    fromDate:   v.optional(v.number()),
+    toDate:     v.optional(v.number()),
+    type:       v.optional(v.string()),
+    accountId:  v.optional(v.id("accounts")),
+    categoryId: v.optional(v.id("categories")),
+  },
+  handler: async (ctx, args) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const trimmed = args.text?.trim() ?? "";
+
+    let results;
+
+    if (trimmed.length > 0) {
+      // Full-text search: devuelve máx 200 resultados ordenados por relevancia
+      const q = ctx.db
+        .query("transactions")
+        .withSearchIndex("search_description", (q) => {
+          const base = q.search("description", trimmed).eq("userId", clerkId);
+          // Filtrar tipo en el índice cuando está disponible
+          return args.type ? base.eq("type", args.type as "ingreso" | "gasto" | "transferencia" | "pago_tarjeta" | "pago_deuda" | "gasto_tarjeta" | "ajuste") : base;
+        });
+      results = await q.take(200);
+    } else {
+      // Sin texto: usar by_user_date con rango opcional
+      results = await ctx.db
+        .query("transactions")
+        .withIndex("by_user_date", (q) => {
+          const base = q.eq("userId", clerkId);
+          if (args.fromDate !== undefined && args.toDate !== undefined) {
+            return base.gte("date", args.fromDate).lte("date", args.toDate);
+          }
+          if (args.fromDate !== undefined) return base.gte("date", args.fromDate);
+          if (args.toDate !== undefined) return base.lte("date", args.toDate);
+          return base;
+        })
+        .order("desc")
+        .take(300);
+    }
+
+    // Filtros secundarios en memoria (acotados al conjunto ya reducido)
+    return results.filter((tx) => {
+      if (trimmed.length === 0 && args.type && tx.type !== args.type) return false;
+      if (args.accountId  && tx.accountId  !== args.accountId)  return false;
+      if (args.categoryId && tx.categoryId !== args.categoryId) return false;
+      if (trimmed.length > 0 && args.fromDate !== undefined && tx.date < args.fromDate) return false;
+      if (trimmed.length > 0 && args.toDate   !== undefined && tx.date > args.toDate)   return false;
+      return true;
+    });
+  },
+});
+
+/** Gastos del mes agrupados por categoría — para el gráfico Pie del dashboard.
+ *  Solo incluye gastos directos (type="gasto"); las cuotas de tarjeta se gestionan
+ *  en el módulo de tarjetas y no se suman aquí para evitar doble conteo. */
+export const spendingByCategory = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    const user = await getCurrentUser(ctx);
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
+
+    // Gastos directos de cuenta — base caja, sin cuotas de tarjeta
+    const gastos = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
+      )
+      .collect();
+
+    const grouped = new Map<string, { amount: number; categoryId: string | null }>();
+    for (const tx of gastos) {
+      const { converted } = convertAmount(tx.amount, tx.currency, preferredCurrency, rateMap);
+      const key = tx.categoryId ?? "__none__";
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.amount += converted;
+      } else {
+        grouped.set(key, { amount: converted, categoryId: tx.categoryId ?? null });
+      }
+    }
+
+    const items = await Promise.all(
       [...grouped.entries()].map(async ([key, data]) => {
         if (key === "__none__" || !data.categoryId) {
           return { name: "Sin categoría", amount: data.amount, color: "#6B7280" };
@@ -176,7 +339,27 @@ export const spendingByCategory = query({
           color: cat?.color ?? "#6B7280",
         };
       })
-    ).then((items) => items.sort((a, b) => b.amount - a.amount));
+    );
+
+    // Pagos de tarjeta del mes — base caja: el efectivo salió de la cuenta.
+    // Se agrupan como un solo bucket para reconciliar con monthlySummary.gastos.
+    const pagosTarjeta = await ctx.db
+      .query("transactions")
+      .withIndex("by_user_type_month", (q) =>
+        q.eq("userId", user.clerkId).eq("type", "pago_tarjeta").eq("month", month)
+      )
+      .collect();
+
+    const totalPagosTarjeta = pagosTarjeta.reduce((s, t) => {
+      const { converted } = convertAmount(t.amount, t.currency, preferredCurrency, rateMap);
+      return s + converted;
+    }, 0);
+
+    if (totalPagosTarjeta > 0) {
+      items.push({ name: "Pago de tarjeta", amount: totalPagosTarjeta, color: "#6366F1" });
+    }
+
+    return items.sort((a, b) => b.amount - a.amount);
   },
 });
 
@@ -184,11 +367,15 @@ export const spendingByCategory = query({
 export const spendingBySource = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
-    const clerkId = await getCurrentUserId(ctx);
+    const user = await getCurrentUser(ctx);
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
+
     const gastos = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", clerkId).eq("type", "gasto").eq("month", month)
+        q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
       )
       .collect();
 
@@ -196,7 +383,7 @@ export const spendingBySource = query({
     const pagosTarjeta = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", clerkId).eq("type", "pago_tarjeta").eq("month", month)
+        q.eq("userId", user.clerkId).eq("type", "pago_tarjeta").eq("month", month)
       )
       .collect();
 
@@ -204,7 +391,7 @@ export const spendingBySource = query({
     const pagosDeuda = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", clerkId).eq("type", "pago_deuda").eq("month", month)
+        q.eq("userId", user.clerkId).eq("type", "pago_deuda").eq("month", month)
       )
       .collect();
 
@@ -212,11 +399,11 @@ export const spendingBySource = query({
     // no la tarjeta destino
     const txs = [
       ...gastos,
-      ...pagosTarjeta.map((t) => ({ ...t, cardId: undefined })), // agrupar por accountId
+      ...pagosTarjeta.map((t) => ({ ...t, cardId: undefined })),
       ...pagosDeuda.map((t) => ({ ...t, cardId: undefined })),
     ];
 
-    // Agrupa por accountId o cardId
+    // Agrupa por accountId o cardId con importes convertidos a la moneda preferida
     const grouped = new Map<string, {
       amount: number;
       sourceId: string | null;
@@ -224,14 +411,15 @@ export const spendingBySource = query({
     }>();
 
     for (const tx of txs) {
+      const { converted } = convertAmount(tx.amount, tx.currency, preferredCurrency, rateMap);
       const key = tx.accountId ?? tx.cardId ?? "__none__";
       const sourceType = tx.accountId ? "account" : tx.cardId ? "card" : "none";
       const existing = grouped.get(key);
       if (existing) {
-        existing.amount += tx.amount;
+        existing.amount += converted;
       } else {
         grouped.set(key, {
-          amount: tx.amount,
+          amount: converted,
           sourceId: (tx.accountId ?? tx.cardId) ?? null,
           sourceType,
         });
@@ -268,7 +456,10 @@ export const spendingBySource = query({
 export const monthlySummary = query({
   args: { months: v.array(v.string()) },
   handler: async (ctx, { months }) => {
-    const clerkId = await getCurrentUserId(ctx);
+    const user = await getCurrentUser(ctx);
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
     const safeMonths = months.slice(0, 24);
 
     return await Promise.all(
@@ -276,16 +467,16 @@ export const monthlySummary = query({
         const txs = await ctx.db
           .query("transactions")
           .withIndex("by_user_month", (q) =>
-            q.eq("userId", clerkId).eq("month", month)
+            q.eq("userId", user.clerkId).eq("month", month)
           )
           .collect();
 
         const ingresos = txs
           .filter((t) => t.type === "ingreso")
-          .reduce((s, t) => s + t.amount, 0);
+          .reduce((s, t) => s + convertAmount(t.amount, t.currency, preferredCurrency, rateMap).converted, 0);
         const gastos = txs
           .filter((t) => t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda")
-          .reduce((s, t) => s + t.amount, 0);
+          .reduce((s, t) => s + convertAmount(t.amount, t.currency, preferredCurrency, rateMap).converted, 0);
 
         return { month, ingresos, gastos };
       })
@@ -403,7 +594,7 @@ export const create = mutation({
 
     // Recalcular budget.spent si es gasto con categoría
     if (args.type === "gasto" && args.categoryId) {
-      await applyBudgetDelta(ctx, user.clerkId, args.categoryId, month, args.amount);
+      await applyBudgetDelta(ctx, user.clerkId, args.categoryId, month, args.amount, args.currency);
     }
 
     return txId;
@@ -518,16 +709,19 @@ export const update = mutation({
     const amountChanged = newAmount !== tx.amount;
 
     if (sourceChanged || amountChanged) {
+      // ingreso y prestamo_cobrado son créditos (el dinero entró a la cuenta)
+      const isCreditType = tx.type === "ingreso" || tx.type === "prestamo_cobrado";
+
       // Revertir impacto en fuente vieja
       if (tx.accountId) {
-        await applyAccountDelta(ctx, tx.accountId, tx.type === "ingreso" ? -tx.amount : tx.amount);
+        await applyAccountDelta(ctx, tx.accountId, isCreditType ? -tx.amount : tx.amount);
       }
       if (tx.cardId && tx.type === "gasto") {
         await applyCardDelta(ctx, tx.cardId, -tx.amount);
       }
       // Aplicar impacto en fuente nueva
       if (newAccountId) {
-        await applyAccountDelta(ctx, newAccountId, tx.type === "ingreso" ? newAmount : -newAmount);
+        await applyAccountDelta(ctx, newAccountId, isCreditType ? newAmount : -newAmount);
       }
       if (newCardId && tx.type === "gasto") {
         await applyCardDelta(ctx, newCardId, newAmount);
@@ -541,10 +735,10 @@ export const update = mutation({
 
       if (amountChanged || categoryChanged || monthChanged) {
         if (tx.categoryId) {
-          await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount);
+          await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount, tx.currency);
         }
         if (newCategory) {
-          await applyBudgetDelta(ctx, tx.userId, newCategory, newMonth, newAmount);
+          await applyBudgetDelta(ctx, tx.userId, newCategory, newMonth, newAmount, tx.currency);
         }
       }
     }
@@ -567,73 +761,13 @@ export const remove = mutation({
     if (!tx || tx.userId !== user.clerkId) {
       throw new Error("Transacción no encontrada");
     }
-
     // Los ajustes de saldo son inmutables: si el usuario quiere "deshacer" un
-    // ajuste, debe hacer otra reasignación. El monto absoluto no preserva el
-    // signo del delta original, por lo que no es posible revertir con seguridad.
+    // ajuste, debe crear otra reasignación. El delta original no está preservado
+    // en el registro, por lo que no es posible revertirlo con seguridad.
     if (tx.type === "ajuste") {
       throw new Error("No se puede eliminar una reasignación. Crea una nueva reasignación si necesitas corregir el saldo.");
     }
-
-    // Transferencias: eliminar ambas piernas y revertir ambos saldos
-    if (tx.transferGroupId) {
-      const legs = await ctx.db
-        .query("transactions")
-        .withIndex("by_transfer_group", (q) => q.eq("transferGroupId", tx.transferGroupId!))
-        .collect();
-
-      // outLeg fue insertada antes que inLeg en createTransfer; su cuenta fue debitada
-      const [outLeg, inLeg] = [...legs].sort((a, b) => a._creationTime - b._creationTime);
-      if (outLeg?.accountId) await applyAccountDelta(ctx, outLeg.accountId, outLeg.amount);
-      if (inLeg?.accountId)  await applyAccountDelta(ctx, inLeg.accountId, -inLeg.amount);
-      for (const leg of legs) await ctx.db.delete(leg._id);
-      return;
-    }
-
-    // Revertir saldo de la cuenta
-    if (tx.accountId) {
-      if (tx.type === "pago_tarjeta") {
-        // El pago de tarjeta descontó de la cuenta: devolver
-        await applyAccountDelta(ctx, tx.accountId, tx.amount);
-        // Y volvió a subir la deuda de la tarjeta
-        if (tx.cardId) await applyCardDelta(ctx, tx.cardId, tx.amount);
-      } else {
-        const delta = tx.type === "ingreso" ? -tx.amount : tx.amount;
-        await applyAccountDelta(ctx, tx.accountId, delta);
-      }
-    }
-
-    // Revertir balance de la tarjeta para gastos directos legacy
-    if (tx.cardId && tx.type === "gasto") {
-      await applyCardDelta(ctx, tx.cardId, -tx.amount);
-    }
-
-    // Revertir gasto_tarjeta: sube currentBalance de la tarjeta y revierte budget
-    if (tx.type === "gasto_tarjeta") {
-      if (tx.cardId) {
-        await applyCardDelta(ctx, tx.cardId, -tx.amount);
-      }
-      if (tx.categoryId) {
-        await applyBudgetDelta(ctx, user.clerkId, tx.categoryId, tx.month, -tx.amount);
-      }
-      // Eliminar la cuota asociada si existe
-      if (tx.cardInstallmentId) {
-        const inst = await ctx.db.get(tx.cardInstallmentId);
-        if (inst) await ctx.db.delete(inst._id);
-      }
-    }
-
-    // Revertir budget.spent para gastos de cuenta
-    if (tx.type === "gasto" && tx.categoryId) {
-      await applyBudgetDelta(ctx, user.clerkId, tx.categoryId, tx.month, -tx.amount);
-    }
-
-    // Revertir pago_tarjeta: recalcular cuotas FIFO
-    if (tx.type === "pago_tarjeta" && tx.cardId) {
-      await recomputeInstallmentsPaid(ctx, tx.cardId);
-    }
-
-    await ctx.db.delete(transactionId);
+    await deleteTransactionWithEffects(ctx, tx);
   },
 });
 
@@ -863,5 +997,70 @@ export const updateNextOccurrence = internalMutation({
   },
   handler: async (ctx, { recurringId, nextOccurrence }) => {
     await ctx.db.patch(recurringId, { nextOccurrence, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Interna: crea la transacción de una ocurrencia recurrente Y avanza nextOccurrence
+ * en una única mutación atómica. Si el proceso falla después de crear la tx, la
+ * próxima ejecución del cron encontrará nextOccurrence sin actualizar y volvería a
+ * crear un duplicado — esta función elimina esa ventana de fallo al hacer ambas
+ * operaciones indivisibles.
+ */
+export const processRecurringOccurrence = internalMutation({
+  args: {
+    userId: v.string(),
+    type: v.union(
+      v.literal("ingreso"),
+      v.literal("gasto"),
+      v.literal("pago_tarjeta"),
+      v.literal("pago_deuda")
+    ),
+    amount: v.number(),
+    description: v.string(),
+    date: v.number(),
+    currency: v.string(),
+    accountId: v.optional(v.id("accounts")),
+    cardId: v.optional(v.id("cards")),
+    categoryId: v.optional(v.id("categories")),
+    recurringId: v.id("recurringTransactions"),
+    nextOccurrence: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { recurringId, nextOccurrence, ...txArgs } = args;
+    const month = toMonthString(txArgs.date);
+    const now = Date.now();
+
+    await ctx.db.insert("transactions", {
+      userId: txArgs.userId,
+      type: txArgs.type,
+      amount: txArgs.amount,
+      description: txArgs.description,
+      date: txArgs.date,
+      month,
+      currency: txArgs.currency,
+      accountId: txArgs.accountId,
+      cardId: txArgs.cardId,
+      categoryId: txArgs.categoryId,
+      status: "completada",
+      isRecurring: true,
+      recurringId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (txArgs.accountId) {
+      const account = await ctx.db.get(txArgs.accountId);
+      if (account) {
+        const delta = txArgs.type === "ingreso" ? txArgs.amount : -txArgs.amount;
+        await ctx.db.patch(txArgs.accountId, { balance: account.balance + delta, updatedAt: now });
+      }
+    }
+
+    if (txArgs.type === "gasto" && txArgs.categoryId) {
+      await applyBudgetDelta(ctx, txArgs.userId, txArgs.categoryId, month, txArgs.amount, txArgs.currency);
+    }
+
+    await ctx.db.patch(recurringId, { nextOccurrence, updatedAt: now });
   },
 });

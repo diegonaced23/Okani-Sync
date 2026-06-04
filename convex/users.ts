@@ -1,6 +1,6 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { DEFAULT_CATEGORIES, AUDIT_ACTIONS } from "../src/lib/constants";
+import { DEFAULT_CATEGORIES, SYSTEM_CATEGORIES, AUDIT_ACTIONS } from "../src/lib/constants";
 
 // ─── Query pública: usuario autenticado actual ────────────────────────────────
 
@@ -92,6 +92,21 @@ export const ensureExists = mutation({
         isDefault: true,
         archived: false,
         order: i,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    for (const sysCat of SYSTEM_CATEGORIES) {
+      await ctx.db.insert("categories", {
+        userId: identity.subject,
+        name: sysCat.name,
+        type: sysCat.type,
+        color: sysCat.color,
+        icon: sysCat.icon,
+        isDefault: false,
+        isSystem: true,
+        archived: false,
         createdAt: now,
         updatedAt: now,
       });
@@ -236,6 +251,21 @@ export const upsertFromClerk = internalMutation({
         isDefault: true,
         archived: false,
         order: i,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    for (const sysCat of SYSTEM_CATEGORIES) {
+      await ctx.db.insert("categories", {
+        userId: args.clerkId,
+        name: sysCat.name,
+        type: sysCat.type,
+        color: sysCat.color,
+        icon: sysCat.icon,
+        isDefault: false,
+        isSystem: true,
+        archived: false,
         createdAt: now,
         updatedAt: now,
       });
@@ -420,6 +450,21 @@ export const createFromAdmin = internalMutation({
         isDefault: true,
         archived: false,
         order: i,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    for (const sysCat of SYSTEM_CATEGORIES) {
+      await ctx.db.insert("categories", {
+        userId: args.clerkId,
+        name: sysCat.name,
+        type: sysCat.type,
+        color: sysCat.color,
+        icon: sysCat.icon,
+        isDefault: false,
+        isSystem: true,
+        archived: false,
         createdAt: now,
         updatedAt: now,
       });

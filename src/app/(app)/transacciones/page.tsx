@@ -6,9 +6,10 @@ import { useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Doc } from "../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TransactionDetailSheet } from "@/components/transactions/TransactionDetailSheet";
+import { TransactionFilters } from "@/components/transactions/TransactionFilters";
 import { currentMonth, formatCents } from "@/lib/money";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
@@ -58,7 +59,46 @@ export default function TransaccionesPage() {
   const [selectedTx, setSelectedTx] = useState<Doc<"transactions"> | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
-  const transactions = useQuery(api.transactions.listByMonth, { month });
+  // ── Estados de búsqueda y filtros avanzados ───────────────────────────────
+  const [searchText,   setSearchText]   = useState("");
+  const [fromDate,     setFromDate]     = useState("");
+  const [toDate,       setToDate]       = useState("");
+  const [filterAccId,  setFilterAccId]  = useState("");
+  const [filterCatId,  setFilterCatId]  = useState("");
+
+  const isSearchMode = searchText.trim() !== "" || fromDate !== "" || toDate !== "" || filterAccId !== "" || filterCatId !== "";
+  const hasActiveFilters = isSearchMode;
+
+  function clearAllFilters() {
+    setSearchText(""); setFromDate(""); setToDate(""); setFilterAccId(""); setFilterCatId("");
+  }
+
+  // Convierte "YYYY-MM-DD" a timestamp (inicio/fin del día local)
+  const fromTs = fromDate ? new Date(fromDate + "T00:00:00").getTime() : undefined;
+  const toTs   = toDate   ? new Date(toDate   + "T23:59:59.999").getTime() : undefined;
+
+  const typeForSearch = filter !== "all"
+    ? (filter === "gasto" ? undefined : filter)  // "gasto" es multi-tipo en browse; en search dejamos filtrar en cliente
+    : undefined;
+
+  // ── Queries ───────────────────────────────────────────────────────────────
+  const searchResults = useQuery(
+    api.transactions.search,
+    isSearchMode
+      ? {
+          text:       searchText.trim() || undefined,
+          fromDate:   fromTs,
+          toDate:     toTs,
+          type:       typeForSearch,
+          accountId:  filterAccId  ? (filterAccId  as Id<"accounts">)  : undefined,
+          categoryId: filterCatId  ? (filterCatId  as Id<"categories">) : undefined,
+        }
+      : "skip"
+  );
+  const monthResults = useQuery(api.transactions.listByMonth, !isSearchMode ? { month } : "skip");
+
+  const rawTransactions = isSearchMode ? searchResults : monthResults;
+
   const categories   = useQuery(api.categories.list, {});
   const accounts     = useQuery(api.accounts.list);
   const cards        = useQuery(api.cards.list);
@@ -82,34 +122,44 @@ export default function TransaccionesPage() {
     [cards]
   );
 
-  // ── Totales del mes (independientes del filtro) ────────────────────────────
+  // ── Totales (solo en modo browse — son cifras del mes) ────────────────────
   const monthIngresos = useMemo(
-    () => (transactions ?? []).filter((t) => t.type === "ingreso").reduce((s, t) => s + t.amount, 0),
-    [transactions]
+    () => !isSearchMode
+      ? (rawTransactions ?? []).filter((t) => t.type === "ingreso").reduce((s, t) => s + t.amount, 0)
+      : 0,
+    [rawTransactions, isSearchMode]
   );
   const monthGastos = useMemo(
-    () => (transactions ?? [])
-      .filter((t) => ["gasto", "pago_tarjeta", "pago_deuda"].includes(t.type))
-      .reduce((s, t) => s + t.amount, 0),
-    [transactions]
+    () => !isSearchMode
+      ? (rawTransactions ?? [])
+          .filter((t) => ["gasto", "pago_tarjeta", "pago_deuda"].includes(t.type))
+          .reduce((s, t) => s + t.amount, 0)
+      : 0,
+    [rawTransactions, isSearchMode]
   );
 
-  // ── Lista filtrada ─────────────────────────────────────────────────────────
+  // ── Lista filtrada: tipo (pill) + texto client-side ────────────────────────
   const filtered: Doc<"transactions">[] = useMemo(() => {
-    const all = transactions ?? [];
+    let all = rawTransactions ?? [];
+
+    // El texto ya fue enviado al servidor (searchIndex); aquí actúa como fallback
+    // para el modo "gasto" multi-tipo que no se puede filtrar en el índice
+    if (isSearchMode && searchText.trim()) {
+      const q = searchText.trim().toLowerCase();
+      all = all.filter((t) => t.description.toLowerCase().includes(q));
+    }
+
     if (filter === "all") return all;
-    // "Gastos" = salidas reales de cuenta (gastos directos, pagos de tarjeta, pagos de deuda)
     if (filter === "gasto") return all.filter((t) =>
       t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda"
     );
-    // "Tarjeta" = movimientos de tarjeta de crédito (gastos registrados, sin salida de cuenta)
     if (filter === "gasto_tarjeta") return all.filter((t) => t.type === "gasto_tarjeta");
     return all.filter((t) => t.type === filter);
-  }, [transactions, filter]);
+  }, [rawTransactions, filter, searchText, isSearchMode]);
 
-  const totalCount    = (transactions ?? []).length;
+  const totalCount    = (rawTransactions ?? []).length;
   const filteredCount = filtered.length;
-  const isFiltered    = filter !== "all";
+  const isFiltered    = filter !== "all" || isSearchMode;
   const currency      = "COP";
 
   const canGoForward  = month < today;
@@ -135,7 +185,7 @@ export default function TransaccionesPage() {
             </button>
             <span className="text-sm text-muted-foreground">
               {monthLabel(month)}
-              {transactions !== undefined && (
+              {rawTransactions !== undefined && (
                 <>
                   {" · "}
                   <span className="font-medium">
@@ -168,9 +218,30 @@ export default function TransaccionesPage() {
         </Button>
       </div>
 
-      {/* ── Stats del mes ───────────────────────────────────────────────────── */}
+      {/* ── Búsqueda y filtros avanzados ────────────────────────────────────── */}
+      <div className="pb-2">
+        <TransactionFilters
+          searchText={searchText}
+          onSearchTextChange={setSearchText}
+          fromDate={fromDate}
+          onFromDateChange={setFromDate}
+          toDate={toDate}
+          onToDateChange={setToDate}
+          accountId={filterAccId}
+          onAccountIdChange={setFilterAccId}
+          categoryId={filterCatId}
+          onCategoryIdChange={setFilterCatId}
+          accounts={accounts ?? []}
+          categories={categories ?? []}
+          hasActiveFilters={hasActiveFilters}
+          onClearAll={clearAllFilters}
+        />
+      </div>
+
+      {/* ── Stats del mes (solo en modo browse) ─────────────────────────────── */}
+      {!isSearchMode && (
       <div className="grid grid-cols-2 gap-3 pb-4">
-        {transactions === undefined ? (
+        {rawTransactions === undefined ? (
           <>
             <Skeleton className="h-[76px] rounded-xl" />
             <Skeleton className="h-[76px] rounded-xl" />
@@ -218,6 +289,7 @@ export default function TransaccionesPage() {
           </>
         )}
       </div>
+      )}
 
       {/* ── Filter pills ────────────────────────────────────────────────────── */}
       <div
@@ -259,7 +331,7 @@ export default function TransaccionesPage() {
       </div>
 
       {/* ── Lista de transacciones ───────────────────────────────────────────── */}
-      {transactions === undefined ? (
+      {rawTransactions === undefined ? (
         <div
           className="rounded-xl overflow-hidden"
           style={{ background: "var(--card)", border: "1px solid var(--border)" }}
@@ -276,7 +348,9 @@ export default function TransaccionesPage() {
           style={{ background: "var(--card)", border: "1px solid var(--border)" }}
         >
           <p className="text-sm text-muted-foreground">
-            {filter === "all"
+            {isSearchMode
+              ? "No se encontraron transacciones con esos filtros."
+              : filter === "all"
               ? `No hay transacciones en ${monthLabel(month).toLowerCase()}.`
               : `No hay ${FILTER_PILLS.find((f) => f.key === filter)?.label.toLowerCase() ?? "registros"} en ${monthLabel(month).toLowerCase()}.`}
           </p>

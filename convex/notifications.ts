@@ -112,6 +112,48 @@ export const createInternal = internalMutation({
   },
 });
 
+/**
+ * Interna: crea la notificación de alerta de presupuesto Y marca el presupuesto como
+ * notificado en una sola mutación atómica. Sin esto, un crash entre ambos pasos dejaría
+ * el presupuesto sin `notifiedAt`, causando que el cron enviara la alerta de nuevo al
+ * día siguiente.
+ */
+export const createAndMarkBudgetAlert = internalMutation({
+  args: {
+    userId: v.string(),
+    type: v.union(v.literal("presupuesto_alerta"), v.literal("presupuesto_excedido")),
+    title: v.string(),
+    message: v.string(),
+    actionUrl: v.optional(v.string()),
+    relatedEntityId: v.optional(v.string()),
+    budgetId: v.id("budgets"),
+    notifiedAt: v.number(),
+    exceeded: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const notifId = await ctx.db.insert("notifications", {
+      userId: args.userId,
+      type: args.type,
+      title: args.title,
+      message: args.message,
+      read: false,
+      pushSent: false,
+      actionUrl: args.actionUrl,
+      relatedEntityId: args.relatedEntityId,
+      createdAt: args.notifiedAt,
+    });
+
+    await ctx.db.patch(args.budgetId, {
+      ...(args.exceeded
+        ? { exceededNotifiedAt: args.notifiedAt }
+        : { notifiedAt: args.notifiedAt }),
+      updatedAt: args.notifiedAt,
+    });
+
+    return notifId;
+  },
+});
+
 /** Interna: ¿existe una notificación reciente del tipo y entidad indicados? Usado para deduplicar alertas. */
 export const existsRecentForEntity = internalQuery({
   args: {

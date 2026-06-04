@@ -12,10 +12,14 @@ const FREQ_TO_MS: Record<string, number> = {
 
 function nextOccurrenceAfter(frequency: string, fromTs: number, dayOfMonth?: number): number {
   if (frequency === "mensual" && dayOfMonth) {
+    // Calcular mes destino sin overflow: si dayOfMonth > último día del mes destino,
+    // clampear (ej: día 31 en febrero → 28). La próxima ocurrencia en marzo vuelve al 31.
     const d = new Date(fromTs);
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(dayOfMonth);
-    return d.getTime();
+    const rawMonth = d.getMonth() + 1;
+    const targetYear = d.getFullYear() + Math.floor(rawMonth / 12);
+    const targetMonth = rawMonth % 12;
+    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    return new Date(targetYear, targetMonth, Math.min(dayOfMonth, lastDay), 0, 0, 0, 0).getTime();
   }
   if (frequency === "anual") {
     const d = new Date(fromTs);
@@ -38,19 +42,21 @@ export const run = internalAction({
     const processed: Record<string, string[]> = {};
 
     for (const rec of due) {
-      // Validar fecha de fin
+      // Validar fecha de fin — desactivar atomicamente (ya es mutación única)
       if (rec.endDate && rec.endDate < now) {
         await ctx.runMutation(internal.transactions.updateNextOccurrence, {
           recurringId: rec._id,
-          nextOccurrence: Number.MAX_SAFE_INTEGER, // efectivamente desactiva
+          nextOccurrence: Number.MAX_SAFE_INTEGER,
         });
         continue;
       }
 
       try {
+        const next = nextOccurrenceAfter(rec.frequency, now, rec.dayOfMonth);
+
         if (rec.cardId && rec.type === "gasto") {
-          // Gastos con tarjeta: crear vía cardPurchases para generar gasto_tarjeta visible
-          await ctx.runMutation(internal.cardPurchases.createFromRecurring, {
+          // Gastos con tarjeta: crear compra y avanzar nextOccurrence atómicamente
+          await ctx.runMutation(internal.cardPurchases.processRecurringCardOccurrence, {
             userId: rec.userId,
             cardId: rec.cardId,
             categoryId: rec.categoryId,
@@ -58,9 +64,11 @@ export const run = internalAction({
             amount: rec.amount,
             date: now,
             recurringId: rec._id,
+            nextOccurrence: next,
           });
         } else {
-          await ctx.runMutation(internal.transactions.createInternal, {
+          // Transacción normal: crear y avanzar nextOccurrence atómicamente
+          await ctx.runMutation(internal.transactions.processRecurringOccurrence, {
             userId: rec.userId,
             type: rec.type as "ingreso" | "gasto" | "pago_tarjeta" | "pago_deuda",
             amount: rec.amount,
@@ -70,14 +78,9 @@ export const run = internalAction({
             accountId: rec.accountId,
             categoryId: rec.categoryId,
             recurringId: rec._id,
+            nextOccurrence: next,
           });
         }
-
-        const next = nextOccurrenceAfter(rec.frequency, now, rec.dayOfMonth);
-        await ctx.runMutation(internal.transactions.updateNextOccurrence, {
-          recurringId: rec._id,
-          nextOccurrence: next,
-        });
 
         console.log(`processRecurringTransactions: generada tx para "${rec.description}"`);
         processed[rec.userId] = processed[rec.userId] ?? [];

@@ -48,6 +48,40 @@ export function formatCents(cents: number, currency = "COP"): string {
   return formatCurrency(fromCents(cents), currency);
 }
 
+// ─── Conversión multi-moneda ─────────────────────────────────────────────────
+
+/**
+ * Construye un mapa rápido fromCurrency → rate para conversiones a `toCurrency`.
+ * Usar este mapa permite búsquedas O(1) en lugar de escanear el array cada vez.
+ */
+export type RateMap = Map<string, number>;
+
+export function buildRateMap(
+  rates: { fromCurrency: string; toCurrency: string; rate: number }[],
+  toCurrency: string
+): RateMap {
+  return new Map(
+    rates.filter((r) => r.toCurrency === toCurrency).map((r) => [r.fromCurrency, r.rate])
+  );
+}
+
+/**
+ * Convierte `amountCents` de `fromCurrency` a `toCurrency` usando el mapa de tasas.
+ * Si no hay tasa disponible, devuelve el monto sin convertir y `hasRate: false`
+ * para que el caller pueda acumular `missingRates` y advertir al usuario.
+ */
+export function convertAmount(
+  amountCents: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rateMap: RateMap
+): { converted: number; hasRate: boolean } {
+  if (fromCurrency === toCurrency) return { converted: amountCents, hasRate: true };
+  const rate = rateMap.get(fromCurrency);
+  if (rate === undefined) return { converted: amountCents, hasRate: false };
+  return { converted: Math.round(amountCents * rate), hasRate: true };
+}
+
 // ─── Cálculo de cuota con interés compuesto ───────────────────────────────────
 
 export interface InstallmentScheduleItem {
@@ -136,6 +170,87 @@ export function calculateInstallment(
   };
 }
 
+// ─── Amortización de deudas ──────────────────────────────────────────────────
+
+export interface AmortizationRow {
+  monthNumber: number;
+  month: string;           // "YYYY-MM"
+  payment: number;         // centavos pagados este período
+  interest: number;        // centavos de interés
+  principal: number;       // centavos de capital amortizado
+  remainingBalance: number;// centavos de saldo al final del período
+}
+
+export interface AmortizationResult {
+  schedule: AmortizationRow[];
+  totalInterest: number;  // centavos
+  totalPayments: number;  // número de cuotas hasta liquidar
+  payoffDate: string;     // "YYYY-MM"
+}
+
+function advanceMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Genera el plan de amortización de una deuda de cuota fija.
+ *
+ * @param principalCents      - Saldo actual pendiente en centavos.
+ * @param monthlyRate         - Tasa mensual decimal (ej: 0.025 = 2.5%).
+ * @param monthlyPaymentCents - Cuota mensual fija en centavos.
+ * @param startMonth          - Mes del primer pago, formato "YYYY-MM".
+ * @param maxMonths           - Límite de iteración (default 360 = 30 años).
+ *
+ * Retorna `null` si los datos son insuficientes o la cuota no cubre los intereses
+ * del primer período (amortización negativa — el saldo nunca bajaría).
+ */
+export function calculateLoanAmortization(
+  principalCents: number,
+  monthlyRate: number,
+  monthlyPaymentCents: number,
+  startMonth: string,
+  maxMonths = 360,
+): AmortizationResult | null {
+  if (principalCents <= 0 || monthlyPaymentCents <= 0) return null;
+
+  const firstInterest = Math.round(principalCents * monthlyRate);
+  if (monthlyRate > 0 && monthlyPaymentCents <= firstInterest) return null;
+
+  const schedule: AmortizationRow[] = [];
+  let balance = principalCents;
+  let currentMonth = startMonth;
+  let totalInterest = 0;
+
+  for (let i = 1; i <= maxMonths && balance > 0; i++) {
+    const interest = Math.round(balance * monthlyRate);
+    const payment = Math.min(monthlyPaymentCents, balance + interest);
+    const principal = payment - interest;
+    balance = Math.max(0, balance - principal);
+    totalInterest += interest;
+
+    schedule.push({
+      monthNumber: i,
+      month: currentMonth,
+      payment,
+      interest,
+      principal,
+      remainingBalance: balance,
+    });
+
+    currentMonth = advanceMonth(currentMonth);
+    if (balance === 0) break;
+  }
+
+  return {
+    schedule,
+    totalInterest,
+    totalPayments: schedule.length,
+    payoffDate: schedule[schedule.length - 1]?.month ?? startMonth,
+  };
+}
+
 // ─── Conversión multi-moneda ─────────────────────────────────────────────────
 
 /**
@@ -181,6 +296,51 @@ export function tsToDateStr(ts: number): string {
 /** Retorna la fecha de hoy como "YYYY-MM-DD" en hora local. */
 export function todayStr(): string {
   return tsToDateStr(Date.now());
+}
+
+// ─── Simulación FIFO de pago de tarjeta ──────────────────────────────────────
+
+/**
+ * Simula qué cuotas quedan saldadas si se aplica `paymentAmount` al saldo
+ * de una tarjeta, replicando la lógica FIFO de `recomputeInstallmentsPaid`.
+ *
+ * No escribe nada a la base de datos — es pura y usable en el cliente.
+ *
+ * @param allInstallments - Todas las cuotas de la tarjeta (pagadas + pendientes),
+ *   necesarias para calcular `totalCargado` y determinar la posición FIFO.
+ * @param currentBalance  - Saldo actual de la tarjeta (centavos).
+ * @param paymentAmount   - Monto a pagar (centavos). Se clampea a `currentBalance`.
+ */
+export function simulateFIFOPayment<
+  T extends { amount: number; dueDate: number; paid: boolean },
+>(
+  allInstallments: T[],
+  currentBalance: number,
+  paymentAmount: number,
+): { newlyPaid: T[]; stillUnpaid: T[]; newBalance: number } {
+  const effectivePayment = Math.min(paymentAmount, currentBalance);
+  const newBalance = Math.max(0, currentBalance - effectivePayment);
+
+  // totalCargado ≡ Σ gasto_tarjeta.amount (cada cuota tiene su tx gasto_tarjeta)
+  const totalCargado = allInstallments.reduce((s, i) => s + i.amount, 0);
+  const newTotalPagado = Math.max(0, totalCargado - newBalance);
+
+  // FIFO: ordenar por dueDate ascendente y marcar las primeras que caben
+  const sorted = [...allInstallments].sort((a, b) => a.dueDate - b.dueDate);
+  let acumulado = 0;
+  const willBePaid = new Set<number>();
+  for (let i = 0; i < sorted.length; i++) {
+    if (acumulado + sorted[i].amount <= newTotalPagado) {
+      willBePaid.add(i);
+      acumulado += sorted[i].amount;
+    }
+  }
+
+  return {
+    newlyPaid:   sorted.filter((inst, i) => !inst.paid && willBePaid.has(i)),
+    stillUnpaid: sorted.filter((inst, i) => !inst.paid && !willBePaid.has(i)),
+    newBalance,
+  };
 }
 
 /**

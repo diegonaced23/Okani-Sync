@@ -358,8 +358,10 @@ export default defineSchema({
       v.literal("transferencia"),   // mantener para backward compat / display
       v.literal("pago_tarjeta"),
       v.literal("pago_deuda"),
-      v.literal("gasto_tarjeta"),   // gasto con tarjeta de crédito (no descuenta cuenta)
-      v.literal("ajuste")            // reasignación manual de saldo
+      v.literal("gasto_tarjeta"),      // gasto con tarjeta de crédito (no descuenta cuenta)
+      v.literal("ajuste"),            // reasignación manual de saldo
+      v.literal("prestamo_otorgado"), // dinero prestado: salida de cuenta, NO es gasto del P&L
+      v.literal("prestamo_cobrado"),  // cobro de préstamo: entrada a cuenta, NO es ingreso del P&L
     ),
     amount: v.number(),             // en centavos
     description: v.string(),
@@ -412,7 +414,11 @@ export default defineSchema({
     .index("by_card", ["cardId"])
     .index("by_user_type_month", ["userId", "type", "month"])
     .index("by_user_category_month", ["userId", "categoryId", "month"])
-    .index("by_transfer_group", ["transferGroupId"]),
+    .index("by_transfer_group", ["transferGroupId"])
+    .searchIndex("search_description", {
+      searchField: "description",
+      filterFields: ["userId", "type"],
+    }),
 
   // ============================================================
   // TRANSACCIONES RECURRENTES — Plantillas para auto-generar
@@ -582,5 +588,23 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_loan", ["loanId"])
+    .index("by_user_month", ["userId", "month"]),
+
+  // ============================================================
+  // SNAPSHOTS DE PATRIMONIO NETO — Histórico mensual
+  // Capturados el día 1 de cada mes antes del rollover de presupuestos.
+  // No se pueden recuperar retroactivamente — implementar desde el inicio.
+  // ============================================================
+  netWorthSnapshots: defineTable({
+    userId:               v.string(),
+    month:                v.string(),   // "YYYY-MM" del mes capturado
+    totalAssets:          v.number(),   // centavos
+    totalCardDebt:        v.number(),   // centavos
+    totalDebt:            v.number(),   // centavos
+    totalLoansReceivable: v.number(),   // centavos
+    netWorth:             v.number(),   // centavos
+    currency:             v.string(),
+    createdAt:            v.number(),
+  })
     .index("by_user_month", ["userId", "month"]),
 });

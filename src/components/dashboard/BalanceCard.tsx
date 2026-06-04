@@ -2,10 +2,9 @@
 
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, Eye, EyeOff, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import { useState } from "react";
 
-// Clave en localStorage para persistir la preferencia de visibilidad del saldo
 const STORAGE_KEY = "dashboard:balanceHidden";
 
 interface BalanceCardProps {
@@ -15,6 +14,11 @@ interface BalanceCardProps {
   accountCount?: number;
   loading?: boolean;
   onManageAccounts?: () => void;
+  // Desglose de patrimonio neto (2.1)
+  totalAssets?: number;
+  totalCardDebt?: number;
+  totalDebt?: number;
+  totalLoansReceivable?: number;
 }
 
 export function BalanceCard({
@@ -24,15 +28,15 @@ export function BalanceCard({
   accountCount = 0,
   loading,
   onManageAccounts,
+  totalAssets,
+  totalCardDebt,
+  totalDebt,
+  totalLoansReceivable,
 }: BalanceCardProps) {
-  // Lazy initializer: typeof window asegura que no falla en SSR.
-  // Es seguro porque cuando `total` es undefined (carga inicial), se muestra el Skeleton
-  // y el valor de hidden no afecta el HTML hidratado.
   const [hidden, setHidden] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem(STORAGE_KEY) === "true"
   );
 
-  // Alterna la visibilidad y persiste la nueva preferencia en localStorage
   const toggleHidden = () => {
     setHidden((h) => {
       const next = !h;
@@ -45,6 +49,8 @@ export function BalanceCard({
     return <Skeleton className="h-36 rounded-2xl" />;
   }
 
+  const hasBreakdown = totalAssets !== undefined;
+  const totalLiabilities = (totalCardDebt ?? 0) + (totalDebt ?? 0);
   const isNegative = (total ?? 0) < 0;
 
   return (
@@ -83,7 +89,7 @@ export function BalanceCard({
       {/* Contenido */}
       <div className="relative z-10">
         <div className="flex items-center gap-2" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>
-          <span>Patrimonio total · {accountCount} cuenta{accountCount !== 1 ? "s" : ""}</span>
+          <span>{hasBreakdown ? "Patrimonio neto" : "Patrimonio total"} · {accountCount} cuenta{accountCount !== 1 ? "s" : ""}</span>
           <span style={{ flex: 1 }} />
           {onManageAccounts && (
             <button
@@ -111,7 +117,7 @@ export function BalanceCard({
           style={{
             fontSize: 40, fontWeight: 800, lineHeight: 1,
             color: isNegative ? "oklch(0.35 0.15 27)" : "oklch(0.18 0.04 190)",
-            margin: "6px 0 4px",
+            margin: "6px 0 8px",
             whiteSpace: "nowrap",
             overflow: "hidden",
           }}
@@ -119,6 +125,27 @@ export function BalanceCard({
           {hidden ? <span aria-hidden="true">$ ••••••</span> : formatCents(total ?? 0, currency)}
         </p>
 
+        {/* Desglose activos / pasivos */}
+        {hasBreakdown && !hidden && (
+          <div className="flex items-center gap-3 flex-wrap" style={{ fontSize: 11, opacity: 0.75 }}>
+            <span className="flex items-center gap-1">
+              <TrendingUp size={11} />
+              <span>Activos: {formatCents(totalAssets!, currency)}</span>
+            </span>
+            {(totalLoansReceivable ?? 0) > 0 && (
+              <span className="flex items-center gap-1">
+                <TrendingUp size={11} />
+                <span>Prést. por cobrar: {formatCents(totalLoansReceivable!, currency)}</span>
+              </span>
+            )}
+            {totalLiabilities > 0 && (
+              <span className="flex items-center gap-1">
+                <TrendingDown size={11} />
+                <span>Deudas: {formatCents(totalLiabilities, currency)}</span>
+              </span>
+            )}
+          </div>
+        )}
 
         {missingRates.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2" style={{ fontSize: 11, opacity: 0.8 }}>

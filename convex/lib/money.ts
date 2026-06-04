@@ -77,9 +77,58 @@ export function calculateInstallment(
   };
 }
 
-/** Añade N meses a un timestamp. */
+// ─── Conversión multi-moneda ─────────────────────────────────────────────────
+
+/**
+ * Construye un mapa rápido fromCurrency → rate para conversiones a `toCurrency`.
+ * Filtra solo las tasas que apuntan a la moneda destino, reduciendo la búsqueda a O(1).
+ */
+export type RateMap = Map<string, number>;
+
+export function buildRateMap(
+  rates: { fromCurrency: string; toCurrency: string; rate: number }[],
+  toCurrency: string
+): RateMap {
+  return new Map(
+    rates.filter((r) => r.toCurrency === toCurrency).map((r) => [r.fromCurrency, r.rate])
+  );
+}
+
+/**
+ * Convierte `amountCents` de `fromCurrency` a `toCurrency` usando el mapa de tasas.
+ * Si no hay tasa disponible, devuelve el monto sin convertir y `hasRate: false`.
+ */
+export function convertAmount(
+  amountCents: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rateMap: RateMap
+): { converted: number; hasRate: boolean } {
+  if (fromCurrency === toCurrency) return { converted: amountCents, hasRate: true };
+  const rate = rateMap.get(fromCurrency);
+  if (rate === undefined) return { converted: amountCents, hasRate: false };
+  return { converted: Math.round(amountCents * rate), hasRate: true };
+}
+
+/**
+ * Añade N meses a un timestamp preservando la hora exacta.
+ * Si el día de origen no existe en el mes destino (ej: 31-ene + 1 mes),
+ * se clampea al último día del mes destino (28 feb, no 3 mar).
+ */
 export function addMonths(timestamp: number, months: number): number {
-  const date = new Date(timestamp);
-  date.setMonth(date.getMonth() + months);
-  return date.getTime();
+  const d = new Date(timestamp);
+  const originalDay = d.getDate();
+  const rawMonth = d.getMonth() + months;
+  const targetYear = d.getFullYear() + Math.floor(rawMonth / 12);
+  const targetMonth = ((rawMonth % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(
+    targetYear,
+    targetMonth,
+    Math.min(originalDay, lastDay),
+    d.getHours(),
+    d.getMinutes(),
+    d.getSeconds(),
+    d.getMilliseconds(),
+  ).getTime();
 }

@@ -11,22 +11,38 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
-import { generateCsv, downloadCsv } from "@/lib/reports";
-import type { ReportRow } from "@/lib/reports";
+import { BudgetHistoryTable } from "@/components/reports/BudgetHistoryTable";
+import { PillTabs } from "@/components/ui/pill-tabs";
+import { generateCsv, generateFullLedgerCsv, downloadCsv } from "@/lib/reports";
+import type { ReportRow, LedgerTx, LedgerMaps } from "@/lib/reports";
 import { currentMonth, formatMonth, formatCents } from "@/lib/money";
-import { FileDown, FileText } from "lucide-react";
+import { lastNMonths } from "@/lib/utils";
+import { BookOpen, FileDown, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 type FilterType = "todos" | "ingreso" | "gasto";
+type Tab = "extracto" | "historico";
+
+const HISTORY_MONTHS = 6;
 
 export default function ReportesPage() {
+  const [tab, setTab] = useState<Tab>("extracto");
   const [month, setMonth] = useState(() => currentMonth());
   const [filterType, setFilterType] = useState<FilterType>("todos");
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
+  const historyMonths = lastNMonths(HISTORY_MONTHS);
+
   const transactions = useQuery(api.transactions.listByMonth, { month });
+  const ledgerTxs    = useQuery(api.transactions.listForExport, { months: [month] });
   const categories   = useQuery(api.categories.list, {});
+  const accounts     = useQuery(api.accounts.list);
+  const cards        = useQuery(api.cards.list);
   const me           = useQuery(api.users.getMe);
+  const budgetHistory = useQuery(
+    api.budgets.historicalComparison,
+    tab === "historico" ? { months: historyMonths } : "skip"
+  );
 
   const catMap = Object.fromEntries(
     (categories ?? []).map((c) => [c._id, c.name])
@@ -55,6 +71,39 @@ export default function ReportesPage() {
     const csv = generateCsv(rows);
     downloadCsv(csv, `okany-sync_${month}.csv`);
     toast.success(`CSV exportado — ${rows.length} registros`);
+  }
+
+  function handleFullLedger() {
+    if (!ledgerTxs || ledgerTxs.length === 0) {
+      toast.error("No hay movimientos para exportar");
+      return;
+    }
+    const accMap: LedgerMaps["accounts"] = Object.fromEntries(
+      (accounts ?? []).map((a) => [a._id, a.name])
+    );
+    const cardMap: LedgerMaps["cards"] = Object.fromEntries(
+      (cards ?? []).map((c) => [c._id, { name: c.name, lastFour: c.lastFourDigits }])
+    );
+    const catMaps: LedgerMaps["cats"] = Object.fromEntries(
+      (categories ?? []).map((c) => [c._id, c.name])
+    );
+    const maps: LedgerMaps = { accounts: accMap, cards: cardMap, cats: catMaps };
+    const txs: LedgerTx[] = ledgerTxs.map((tx) => ({
+      _id:               tx._id,
+      date:              tx.date,
+      description:       tx.description,
+      type:              tx.type,
+      amount:            tx.amount,
+      currency:          tx.currency,
+      accountId:         tx.accountId,
+      cardId:            tx.cardId,
+      categoryId:        tx.categoryId,
+      transferDirection: tx.transferDirection,
+      notes:             tx.notes,
+    }));
+    const csv = generateFullLedgerCsv(txs, maps);
+    downloadCsv(csv, `libro_movimientos_${month}.csv`);
+    toast.success(`Libro exportado — ${txs.length} movimientos`);
   }
 
   async function handlePdf() {
@@ -91,10 +140,42 @@ export default function ReportesPage() {
 
   const isLoading = transactions === undefined;
 
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "extracto",  label: "Extracto" },
+    { key: "historico", label: "Pres. histórico" },
+  ];
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-foreground">Reportes</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-foreground">Reportes</h1>
+      </div>
 
+      {/* Navegación de tabs */}
+      <PillTabs
+        tabs={TABS}
+        active={tab}
+        onChange={setTab}
+        ariaLabel="Sección de reportes"
+      />
+
+      {/* ── Tab: Presupuesto histórico ──────────────────────────────────────── */}
+      {tab === "historico" && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Comparación de presupuesto vs. gasto real de los últimos {HISTORY_MONTHS} meses.
+            La tendencia (↓/↑) compara el % de ejecución del último mes vs. el anterior.
+          </p>
+          <BudgetHistoryTable
+            result={budgetHistory}
+            currency={currency}
+          />
+        </div>
+      )}
+
+      {/* ── Tab: Extracto (contenido existente) ────────────────────────────── */}
+      {tab === "extracto" && (
+      <>
       {/* Filtros */}
       <div className="rounded-xl bg-card border border-border p-4 space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -136,16 +217,27 @@ export default function ReportesPage() {
         )}
 
         {/* Botones de exportación */}
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1 gap-2" onClick={handleCsv}
-            disabled={isLoading || rows.length === 0}>
-            <FileDown className="h-4 w-4" />
-            Exportar CSV
-          </Button>
-          <Button variant="outline" className="flex-1 gap-2" onClick={handlePdf}
-            disabled={isLoading || rows.length === 0 || generatingPdf}>
-            <FileText className="h-4 w-4" />
-            {generatingPdf ? "Generando…" : "Exportar PDF"}
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1 gap-2" onClick={handleCsv}
+              disabled={isLoading || rows.length === 0}>
+              <FileDown className="h-4 w-4" />
+              Extracto CSV
+            </Button>
+            <Button variant="outline" className="flex-1 gap-2" onClick={handlePdf}
+              disabled={isLoading || rows.length === 0 || generatingPdf}>
+              <FileText className="h-4 w-4" />
+              {generatingPdf ? "Generando…" : "Extracto PDF"}
+            </Button>
+          </div>
+          <Button
+            variant="outline"
+            className="w-full gap-2 border-dashed"
+            onClick={handleFullLedger}
+            disabled={!ledgerTxs || ledgerTxs.length === 0}
+          >
+            <BookOpen className="h-4 w-4" />
+            Libro completo (todos los tipos · Debe/Haber)
           </Button>
         </div>
       </div>
@@ -178,6 +270,8 @@ export default function ReportesPage() {
           )}
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }

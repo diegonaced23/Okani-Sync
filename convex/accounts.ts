@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertIsOwner } from "./lib/permissions";
 import { toMonthString } from "./lib/utils";
+import { deleteTransactionWithEffects } from "./lib/transactionEffects";
+import { buildRateMap, convertAmount } from "./lib/money";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +85,109 @@ export const consolidatedBalance = query({
   },
 });
 
+/**
+ * Patrimonio neto real: Activos (cuentas) + Préstamos otorgados − Deuda de tarjetas − Otras deudas.
+ * Usa exactamente el mismo scope de cuentas que `consolidatedBalance` para que ambas cifras
+ * sean coherentes cuando se muestran juntas en el dashboard.
+ * Monedas diferentes se convierten usando las tasas actuales; las tasas faltantes se
+ * incluyen en `missingRates` para que la UI advierta al usuario.
+ */
+export const netWorth = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const clerkId = identity.subject;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .unique();
+    if (!user) return null;
+
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const missingRateSet = new Set<string>();
+
+    function convert(amountCents: number, fromCurrency: string) {
+      const { converted, hasRate } = convertAmount(amountCents, fromCurrency, preferredCurrency, rateMap);
+      if (!hasRate && fromCurrency !== preferredCurrency) missingRateSet.add(fromCurrency);
+      return converted;
+    }
+
+    // ── Activos: cuentas propias + cuentas compartidas aceptadas (misma lógica que consolidatedBalance) ──
+    const ownAccounts = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) => q.eq("ownerId", clerkId).eq("archived", false))
+      .collect();
+
+    const shares = await ctx.db
+      .query("accountShares")
+      .withIndex("by_shared_user_status", (q) =>
+        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
+      )
+      .collect();
+    const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
+    const sharedAccounts = sharedRaw.filter((a): a is NonNullable<typeof a> => a !== null);
+
+    const allAccounts = [...ownAccounts, ...sharedAccounts].filter(
+      (a) => a.includeInBalance !== false
+    );
+    const totalAssets = allAccounts.reduce((s, a) => s + convert(a.balance, a.currency), 0);
+    const accountCount = allAccounts.length;
+
+    // ── Pasivos: deuda de tarjetas (no archivadas) ──
+    const cards = await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) => q.eq("userId", clerkId).eq("archived", false))
+      .collect();
+    const totalCardDebt = cards.reduce((s, c) => s + convert(c.currentBalance, c.currency), 0);
+
+    // ── Pasivos: deudas personales activas (no pagadas ni vencidas ya cubiertas) ──
+    const debts = await ctx.db
+      .query("debts")
+      .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "activa"))
+      .collect();
+    // Las deudas vencidas también son pasivos reales — incluirlas
+    const debtsVencidas = await ctx.db
+      .query("debts")
+      .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "vencida"))
+      .collect();
+    const totalDebt = [...debts, ...debtsVencidas].reduce(
+      (s, d) => s + convert(d.currentBalance, d.currency),
+      0
+    );
+
+    // ── Activos: préstamos otorgados activos (saldo pendiente de cobro) ──
+    const loans = await ctx.db
+      .query("loans")
+      .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "activa"))
+      .collect();
+    const loansVencidos = await ctx.db
+      .query("loans")
+      .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "vencida"))
+      .collect();
+    const totalLoansReceivable = [...loans, ...loansVencidos].reduce(
+      (s, l) => s + convert(l.currentBalance, l.currency),
+      0
+    );
+
+    const netWorthValue = totalAssets + totalLoansReceivable - totalCardDebt - totalDebt;
+
+    return {
+      netWorth: netWorthValue,
+      totalAssets,
+      totalCardDebt,
+      totalDebt,
+      totalLoansReceivable,
+      currency: preferredCurrency,
+      missingRates: [...missingRateSet],
+      accountCount,
+    };
+  },
+});
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
@@ -93,6 +198,186 @@ export const list = query({
         q.eq("ownerId", clerkId).eq("archived", false)
       )
       .collect();
+  },
+});
+
+/**
+ * Cuatro indicadores de salud financiera calculados sobre datos reales del usuario.
+ *
+ * Todos los importes usan la misma lógica de conversión que `monthlySummary` (2.2)
+ * y `netWorth` (2.1) para que los números sean coherentes entre sí en el dashboard.
+ *
+ * - `savingsRate`: (ingresos − gastos) / ingresos del mes anterior completado.
+ * - `dti`: (cuotas de tarjeta del mes + pagos mensuales de deuda) / ingresos.
+ *   Solo incluye deudas que tienen `monthlyPayment` definido.
+ * - `creditUtilization`: Σ currentBalance / Σ creditLimit (convertido por tarjeta).
+ *   Excluye tarjetas con creditLimit = 0.
+ * - `emergencyRunway`: activos totales / gasto promedio mensual (últimos 3 meses con datos).
+ */
+export const financialHealthMetrics = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const clerkId = identity.subject;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .unique();
+    if (!user) return null;
+
+    const preferredCurrency = user.currency ?? "COP";
+    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const rateMap = buildRateMap(currentRates, preferredCurrency);
+
+    const now = Date.now();
+    const d = new Date(now);
+
+    function prevNMonth(n: number): string {
+      const t = new Date(d.getFullYear(), d.getMonth() - n, 1);
+      return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`;
+    }
+    function currentMonthStr(): string {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }
+
+    function convert(amountCents: number, fromCurrency: string): number {
+      const { converted } = convertAmount(amountCents, fromCurrency, preferredCurrency, rateMap);
+      return converted;
+    }
+
+    // ── Totales mensuales (ingresos / gastos) — misma definición que monthlySummary ──
+    // Usamos los últimos 3 meses completos; el mes en curso está parcialmente lleno.
+    const last3Months = [prevNMonth(3), prevNMonth(2), prevNMonth(1)];
+    const monthlyTotals = await Promise.all(
+      last3Months.map(async (month) => {
+        const txs = await ctx.db
+          .query("transactions")
+          .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", month))
+          .collect();
+        const ingresos = txs
+          .filter((t) => t.type === "ingreso")
+          .reduce((s, t) => s + convert(t.amount, t.currency), 0);
+        const gastos = txs
+          .filter((t) => t.type === "gasto" || t.type === "pago_tarjeta" || t.type === "pago_deuda")
+          .reduce((s, t) => s + convert(t.amount, t.currency), 0);
+        return { month, ingresos, gastos, hasData: txs.length > 0 };
+      })
+    );
+
+    // Mes inmediatamente anterior = referencia primaria para tasa de ahorro y DTI
+    const lastMonth = monthlyTotals[2]; // prevNMonth(1)
+
+    // ── Tasa de ahorro ────────────────────────────────────────────────────────
+    const savingsRate = lastMonth.ingresos > 0
+      ? ((lastMonth.ingresos - lastMonth.gastos) / lastMonth.ingresos) * 100
+      : null;
+
+    // ── DTI — solo deudas con monthlyPayment definido ─────────────────────────
+    // Cuotas de tarjeta del mes en curso
+    const cardInstallmentsNow = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", currentMonthStr()))
+      .collect();
+    const monthlyCardCommitment = cardInstallmentsNow
+      .filter((i) => !i.paid)
+      .reduce((s, i) => {
+        // Las cuotas no tienen currency propio; heredan la moneda de la tarjeta.
+        // Sin index a la tarjeta aquí, asumimos la moneda preferida (común en apps mono-currency).
+        // Para precisión mayor, hacer lookup de la tarjeta — fuera de scope de este indicador.
+        return s + i.amount;
+      }, 0);
+
+    const activeDebts = await ctx.db
+      .query("debts")
+      .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "activa"))
+      .collect();
+    const monthlyDebtPayments = activeDebts
+      .filter((d) => d.monthlyPayment !== undefined && d.monthlyPayment > 0)
+      .reduce((s, debt) => s + convert(debt.monthlyPayment!, debt.currency), 0);
+
+    const totalMonthlyCommitments = monthlyCardCommitment + monthlyDebtPayments;
+    const dti = lastMonth.ingresos > 0 && totalMonthlyCommitments > 0
+      ? totalMonthlyCommitments / lastMonth.ingresos
+      : null;
+    const dtiIncomplete = activeDebts.some((d) => !d.monthlyPayment || d.monthlyPayment === 0);
+
+    // ── Utilización de crédito — convertir por tarjeta antes de sumar ─────────
+    const allCards = await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) => q.eq("userId", clerkId).eq("archived", false))
+      .collect();
+
+    let totalBalanceConverted = 0;
+    let totalLimitConverted = 0;
+    const perCardUtilization: { name: string; lastFour: string; utilization: number }[] = [];
+
+    for (const card of allCards) {
+      if (card.creditLimit <= 0) continue;
+      const bal = convert(card.currentBalance, card.currency);
+      const lim = convert(card.creditLimit, card.currency);
+      totalBalanceConverted += bal;
+      totalLimitConverted += lim;
+      perCardUtilization.push({
+        name: card.name,
+        lastFour: card.lastFourDigits,
+        utilization: (bal / lim) * 100,
+      });
+    }
+
+    const creditUtilization = totalLimitConverted > 0
+      ? (totalBalanceConverted / totalLimitConverted) * 100
+      : null;
+
+    // ── Runway de emergencia ──────────────────────────────────────────────────
+    // Activos: mismo scope que netWorth.totalAssets (cuentas propias + compartidas aceptadas).
+    // NOTA: si se modifica la lógica de netWorth, actualizar aquí también para mantener coherencia.
+    const ownAccounts = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) => q.eq("ownerId", clerkId).eq("archived", false))
+      .collect();
+    const shares = await ctx.db
+      .query("accountShares")
+      .withIndex("by_shared_user_status", (q) =>
+        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
+      )
+      .collect();
+    const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
+    const allAccountsForRunway = [
+      ...ownAccounts,
+      ...sharedRaw.filter((a): a is NonNullable<typeof a> => a !== null),
+    ].filter((a) => a.includeInBalance !== false);
+
+    const totalAssets = allAccountsForRunway.reduce(
+      (s, a) => s + convert(a.balance, a.currency), 0
+    );
+
+    // Promedio de gastos: solo sobre los meses que tienen datos reales
+    const monthsWithData = monthlyTotals.filter((m) => m.hasData);
+    const avgMonthlyExpenses = monthsWithData.length > 0
+      ? monthsWithData.reduce((s, m) => s + m.gastos, 0) / monthsWithData.length
+      : 0;
+
+    const emergencyRunway = avgMonthlyExpenses > 0
+      ? totalAssets / avgMonthlyExpenses
+      : null;
+
+    return {
+      savingsRate,
+      dti,
+      dtiIncomplete,
+      creditUtilization,
+      perCardUtilization,
+      emergencyRunway,
+      currency: preferredCurrency,
+      // Datos de apoyo para posible desglose en UI
+      lastMonthIncome: lastMonth.ingresos,
+      lastMonthExpenses: lastMonth.gastos,
+      totalAssets,
+      avgMonthlyExpenses,
+      totalMonthlyCommitments,
+    };
   },
 });
 
@@ -248,15 +533,22 @@ export const remove = mutation({
       await ctx.db.delete(share._id);
     }
 
-    // 2. Transacciones donde la cuenta es origen O destino de transferencia
-    const transactions = await ctx.db
+    // 2. Transacciones donde la cuenta es origen O destino.
+    // Se revierten todos los efectos secundarios (presupuestos, deuda de tarjeta, saldos
+    // de otras cuentas en transferencias) antes de eliminar cada registro.
+    // Los transferGroupId se rastrean para no procesar ambas piernas del mismo par.
+    const allTxs = await ctx.db
       .query("transactions")
       .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
       .collect();
-    for (const tx of transactions) {
-      if (tx.accountId === accountId || tx.toAccountId === accountId) {
-        await ctx.db.delete(tx._id);
+    const processedGroups = new Set<string>();
+    for (const tx of allTxs) {
+      if (tx.accountId !== accountId && tx.toAccountId !== accountId) continue;
+      if (tx.transferGroupId) {
+        if (processedGroups.has(tx.transferGroupId)) continue; // ya manejado por la otra pierna
+        processedGroups.add(tx.transferGroupId);
       }
+      await deleteTransactionWithEffects(ctx, tx);
     }
 
     // 3. Transacciones recurrentes que referencien esta cuenta

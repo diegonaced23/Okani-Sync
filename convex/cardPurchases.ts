@@ -1,32 +1,10 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { calculateInstallment, addMonths } from "./lib/money";
-import { toMonthString } from "./lib/utils";
-
-// ─── Helpers locales ─────────────────────────────────────────────────────────
-
-async function applyBudgetDelta(
-  ctx: MutationCtx,
-  userId: string,
-  categoryId: Id<"categories">,
-  month: string,
-  delta: number
-) {
-  const budget = await ctx.db
-    .query("budgets")
-    .withIndex("by_user_category_month", (q) =>
-      q.eq("userId", userId).eq("categoryId", categoryId).eq("month", month)
-    )
-    .unique();
-  if (!budget) return;
-  await ctx.db.patch(budget._id, {
-    spent: Math.max(0, budget.spent + delta),
-    updatedAt: Date.now(),
-  });
-}
+import { toMonthString, getSystemInterestsCategoryId } from "./lib/utils";
+import { applyBudgetDelta } from "./lib/transactionEffects";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +94,11 @@ export const createPurchase = mutation({
       updatedAt: now,
     });
 
+    // Resolver categoría de intereses una vez antes del bucle
+    const interestsCatId = args.hasInterest
+      ? await getSystemInterestsCategoryId(ctx, user.clerkId)
+      : undefined;
+
     // Generar cronograma de cuotas + tx gasto_tarjeta por cada una
     for (const item of result.schedule) {
       const dueDate = addMonths(args.firstInstallmentDate, item.installmentNumber - 1);
@@ -159,9 +142,13 @@ export const createPurchase = mutation({
         updatedAt: now,
       });
 
-      // Actualizar presupuesto de la categoría en el mes de la cuota
+      // Presupuesto: principal → categoría del gasto, interés → "Gastos financieros"
       if (args.categoryId) {
-        await applyBudgetDelta(ctx, user.clerkId, args.categoryId, instMonth, item.amount);
+        const principalBudget = interestsCatId ? item.principalAmount : item.amount;
+        await applyBudgetDelta(ctx, user.clerkId, args.categoryId, instMonth, principalBudget, card.currency);
+      }
+      if (interestsCatId && item.interestAmount > 0) {
+        await applyBudgetDelta(ctx, user.clerkId, interestsCatId, instMonth, item.interestAmount, card.currency);
       }
     }
 
@@ -231,10 +218,19 @@ export const updatePurchase = mutation({
         .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
         .collect();
 
-      // Revertir presupuesto y eliminar txs gasto_tarjeta de cuotas anteriores
+      const updateInterestsCatId = hasInterest
+        ? await getSystemInterestsCategoryId(ctx, user.clerkId)
+        : undefined;
+
+      // Revertir presupuesto y eliminar txs gasto_tarjeta de cuotas anteriores.
+      // Usa split principal/interés para revertir correctamente compras post-2.5.
       for (const inst of oldInstallments) {
         if (purchase.categoryId) {
-          await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -inst.amount);
+          const principalToRevert = updateInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
+          await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -principalToRevert, purchase.currency);
+        }
+        if (updateInterestsCatId && (inst.interestAmount ?? 0) > 0) {
+          await applyBudgetDelta(ctx, user.clerkId, updateInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
         }
         // Buscar y eliminar la tx gasto_tarjeta asociada a esta cuota
         const oldTxs = await ctx.db
@@ -246,7 +242,7 @@ export const updatePurchase = mutation({
         await ctx.db.delete(inst._id);
       }
 
-      // Generar nuevas cuotas + txs gasto_tarjeta
+      // Generar nuevas cuotas + txs gasto_tarjeta con split de presupuesto
       for (const item of result.schedule) {
         const dueDate = addMonths(firstInstallmentDate, item.installmentNumber - 1);
         const instMonth = toMonthString(dueDate);
@@ -289,7 +285,11 @@ export const updatePurchase = mutation({
         });
 
         if (finalCategoryId) {
-          await applyBudgetDelta(ctx, user.clerkId, finalCategoryId, instMonth, item.amount);
+          const principalBudget = updateInterestsCatId ? item.principalAmount : item.amount;
+          await applyBudgetDelta(ctx, user.clerkId, finalCategoryId, instMonth, principalBudget, purchase.currency);
+        }
+        if (updateInterestsCatId && item.interestAmount > 0) {
+          await applyBudgetDelta(ctx, user.clerkId, updateInterestsCatId, instMonth, item.interestAmount, purchase.currency);
         }
       }
 
@@ -338,13 +338,24 @@ export const updatePurchase = mutation({
           .collect();
 
         const newCatId = clearCategory ? undefined : fields.categoryId;
+        const rotateCatInterestsCatId = purchase.hasInterest
+          ? await getSystemInterestsCategoryId(ctx, user.clerkId)
+          : undefined;
 
         for (const inst of installments) {
           if (purchase.categoryId) {
-            await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -inst.amount);
+            const principalToRevert = rotateCatInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
+            await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -principalToRevert, purchase.currency);
+          }
+          if (rotateCatInterestsCatId && (inst.interestAmount ?? 0) > 0) {
+            await applyBudgetDelta(ctx, user.clerkId, rotateCatInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
           }
           if (newCatId) {
-            await applyBudgetDelta(ctx, user.clerkId, newCatId, inst.month, inst.amount);
+            const principalToApply = rotateCatInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
+            await applyBudgetDelta(ctx, user.clerkId, newCatId, inst.month, principalToApply, purchase.currency);
+          }
+          if (rotateCatInterestsCatId && newCatId && (inst.interestAmount ?? 0) > 0) {
+            await applyBudgetDelta(ctx, user.clerkId, rotateCatInterestsCatId, inst.month, inst.interestAmount!, purchase.currency);
           }
           // Actualizar categoryId en las txs gasto_tarjeta
           const txs = await ctx.db
@@ -401,10 +412,18 @@ export const deletePurchase = mutation({
       .filter((i) => !i.paid)
       .reduce((sum, i) => sum + i.amount, 0);
 
-    // Revertir presupuesto y eliminar txs gasto_tarjeta de cada cuota
+    const deleteInterestsCatId = purchase.hasInterest
+      ? await getSystemInterestsCategoryId(ctx, user.clerkId)
+      : undefined;
+
+    // Revertir presupuesto con split principal/interés y eliminar txs gasto_tarjeta
     for (const inst of installments) {
       if (purchase.categoryId) {
-        await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -inst.amount);
+        const principalToRevert = deleteInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
+        await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -principalToRevert, purchase.currency);
+      }
+      if (deleteInterestsCatId && (inst.interestAmount ?? 0) > 0) {
+        await applyBudgetDelta(ctx, user.clerkId, deleteInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
       }
       const txs = await ctx.db
         .query("transactions")
@@ -506,7 +525,7 @@ export const createFromRecurring = internalMutation({
     });
 
     if (args.categoryId) {
-      await applyBudgetDelta(ctx, args.userId, args.categoryId, month, args.amount);
+      await applyBudgetDelta(ctx, args.userId, args.categoryId, month, args.amount, card.currency);
     }
 
     const newBalance = card.currentBalance + args.amount;
@@ -515,5 +534,97 @@ export const createFromRecurring = internalMutation({
       availableCredit: Math.max(0, card.creditLimit - newBalance),
       updatedAt: now,
     });
+  },
+});
+
+/**
+ * Interna: crea la compra recurrente con tarjeta Y avanza nextOccurrence en una sola
+ * mutación atómica, eliminando la ventana de fallo entre ambas operaciones.
+ */
+export const processRecurringCardOccurrence = internalMutation({
+  args: {
+    userId: v.string(),
+    cardId: v.id("cards"),
+    categoryId: v.optional(v.id("categories")),
+    description: v.string(),
+    amount: v.number(),
+    date: v.number(),
+    recurringId: v.id("recurringTransactions"),
+    nextOccurrence: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { recurringId, nextOccurrence, ...purchaseArgs } = args;
+    const card = await ctx.db.get(purchaseArgs.cardId);
+    if (!card || card.userId !== purchaseArgs.userId) return;
+
+    const month = toMonthString(purchaseArgs.date);
+    const now = Date.now();
+
+    const purchaseId = await ctx.db.insert("cardPurchases", {
+      userId: purchaseArgs.userId,
+      cardId: purchaseArgs.cardId,
+      categoryId: purchaseArgs.categoryId,
+      description: purchaseArgs.description,
+      totalAmount: purchaseArgs.amount,
+      totalWithInterest: purchaseArgs.amount,
+      totalInstallments: 1,
+      paidInstallments: 0,
+      amountPerInstallment: purchaseArgs.amount,
+      hasInterest: false,
+      totalInterest: 0,
+      currency: card.currency,
+      purchaseDate: purchaseArgs.date,
+      firstInstallmentDate: purchaseArgs.date,
+      status: "activa",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const installmentId = await ctx.db.insert("cardInstallments", {
+      userId: purchaseArgs.userId,
+      purchaseId,
+      cardId: purchaseArgs.cardId,
+      installmentNumber: 1,
+      amount: purchaseArgs.amount,
+      principalAmount: purchaseArgs.amount,
+      interestAmount: 0,
+      remainingPrincipal: 0,
+      dueDate: purchaseArgs.date,
+      month,
+      paid: false,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("transactions", {
+      userId: purchaseArgs.userId,
+      type: "gasto_tarjeta",
+      amount: purchaseArgs.amount,
+      description: purchaseArgs.description,
+      date: purchaseArgs.date,
+      month,
+      currency: card.currency,
+      cardId: purchaseArgs.cardId,
+      cardInstallmentId: installmentId,
+      cardPurchaseId: purchaseId,
+      categoryId: purchaseArgs.categoryId,
+      status: "completada",
+      isRecurring: true,
+      recurringId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (purchaseArgs.categoryId) {
+      await applyBudgetDelta(ctx, purchaseArgs.userId, purchaseArgs.categoryId, month, purchaseArgs.amount, card.currency);
+    }
+
+    const newBalance = card.currentBalance + purchaseArgs.amount;
+    await ctx.db.patch(purchaseArgs.cardId, {
+      currentBalance: newBalance,
+      availableCredit: Math.max(0, card.creditLimit - newBalance),
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(recurringId, { nextOccurrence, updatedAt: now });
   },
 });

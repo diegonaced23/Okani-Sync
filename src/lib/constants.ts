@@ -54,9 +54,11 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
 ];
 
 export const SYSTEM_CATEGORY_PAYMENT_NAME = "Pago de tarjeta";
+export const SYSTEM_CATEGORY_INTERESTS_NAME = "Gastos financieros";
 
 export const SYSTEM_CATEGORIES: DefaultCategory[] = [
-  { name: SYSTEM_CATEGORY_PAYMENT_NAME, type: "gasto", color: "#F97316", icon: "credit-card", isSystem: true },
+  { name: SYSTEM_CATEGORY_PAYMENT_NAME,   type: "gasto", color: "#F97316", icon: "credit-card", isSystem: true },
+  { name: SYSTEM_CATEGORY_INTERESTS_NAME, type: "gasto", color: "#6366F1", icon: "percent",     isSystem: true },
 ];
 
 // ─── Colores de categorías / deudas (sólidos) ────────────────────────────────

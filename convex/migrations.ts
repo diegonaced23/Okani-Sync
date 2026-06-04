@@ -10,10 +10,13 @@ import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 const SYSTEM_CATEGORIES = [
-  { name: "Pago de tarjeta", type: "gasto" as const, color: "#F97316", icon: "credit-card" },
+  { name: "Pago de tarjeta",   type: "gasto" as const, color: "#F97316", icon: "credit-card" },
+  { name: "Gastos financieros", type: "gasto" as const, color: "#6366F1", icon: "percent"     },
 ];
 
-// ─── Paso 1: Crear categoría sistema "Pago de tarjeta" para todos los usuarios ─
+// ─── Crear/actualizar categorías de sistema para todos los usuarios ───────────
+// Idempotente: comprueba cada categoría por nombre antes de insertar.
+// Ejecutar cada vez que se añada una nueva categoría de sistema.
 
 export const ensureSystemCategories = internalMutation({
   args: {},
@@ -26,7 +29,9 @@ export const ensureSystemCategories = internalMutation({
         const existing = await ctx.db
           .query("categories")
           .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
-          .filter((q) => q.eq(q.field("isSystem"), true))
+          .filter((q) =>
+            q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), sysCat.name))
+          )
           .first();
 
         if (!existing) {

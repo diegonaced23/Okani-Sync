@@ -43,6 +43,7 @@ import type * as lib_utils from "../lib/utils.js";
 import type * as loanRepayments from "../loanRepayments.js";
 import type * as loans from "../loans.js";
 import type * as migrations from "../migrations.js";
+import type * as netWorthSnapshots from "../netWorthSnapshots.js";
 import type * as notifications from "../notifications.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as recurringTransactions from "../recurringTransactions.js";
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   loanRepayments: typeof loanRepayments;
   loans: typeof loans;
   migrations: typeof migrations;
+  netWorthSnapshots: typeof netWorthSnapshots;
   notifications: typeof notifications;
   pushSubscriptions: typeof pushSubscriptions;
   recurringTransactions: typeof recurringTransactions;

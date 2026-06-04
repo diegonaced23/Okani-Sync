@@ -37,6 +37,7 @@ export function BudgetForm({ defaultMonth, editBudget, onSuccess }: BudgetFormPr
   const createBudget = useMutation(api.budgets.create);
   const updateBudget = useMutation(api.budgets.update);
   const categories = useQuery(api.categories.list, isEdit ? "skip" : { type: "gasto" });
+  const me = useQuery(api.users.getMe);
 
   const [categoryId, setCategoryId] = useState(editBudget?.categoryId ?? "");
   const [amount, setAmount] = useState(
@@ -75,7 +76,7 @@ export function BudgetForm({ defaultMonth, editBudget, onSuccess }: BudgetFormPr
         await createBudget({
           categoryId: categoryId as Id<"categories">,
           amount: toCents(amountNum),
-          currency: "COP",
+          currency: me?.currency ?? "COP",
           month: defaultMonth ?? currentMonth(),
           alertThreshold: parseInt(alertThreshold) || 80,
           recurring,

@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { toMonthString, getSystemPaymentCategoryId } from "./lib/utils";
 import { recomputeInstallmentsPaid, getBillingCycleDates, getNextPaymentTs } from "./lib/cardHelpers";
+import { deleteTransactionWithEffects } from "./lib/transactionEffects";
 
 export const list = query({
   args: {},
@@ -425,33 +426,37 @@ export const remove = mutation({
     const card = await ctx.db.get(cardId);
     if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
 
-    // 1. Compras y sus cuotas
+    const cardTxs = await ctx.db
+      .query("transactions")
+      .withIndex("by_card", (q) => q.eq("cardId", cardId))
+      .collect();
+
+    // 1. Primero los gasto_tarjeta: revierte presupuestos y elimina cuotas asociadas.
+    //    Deben procesarse antes que pago_tarjeta para que recomputeInstallmentsPaid
+    //    no encuentre cuotas a mitad de eliminación.
+    for (const tx of cardTxs) {
+      if (tx.type === "gasto_tarjeta") {
+        await deleteTransactionWithEffects(ctx, tx);
+      }
+    }
+
+    // 2. Después pago_tarjeta y demás: revierte saldos de cuentas bancarias que pagaron
+    //    esta tarjeta. En este punto las cuotas ya están eliminadas, así que
+    //    recomputeInstallmentsPaid no encuentra nada que actualizar (no-op seguro).
+    for (const tx of cardTxs) {
+      if (tx.type !== "gasto_tarjeta") {
+        await deleteTransactionWithEffects(ctx, tx);
+      }
+    }
+
+    // 3. Registros de compras — sus gasto_tarjeta e installments ya fueron eliminados.
     const purchases = await ctx.db
       .query("cardPurchases")
       .withIndex("by_card", (q) => q.eq("cardId", cardId))
       .collect();
+    for (const purchase of purchases) await ctx.db.delete(purchase._id);
 
-    for (const purchase of purchases) {
-      const installments = await ctx.db
-        .query("cardInstallments")
-        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
-        .collect();
-      for (const inst of installments) {
-        await ctx.db.delete(inst._id);
-      }
-      await ctx.db.delete(purchase._id);
-    }
-
-    // 2. Transacciones vinculadas a esta tarjeta
-    const transactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_card", (q) => q.eq("cardId", cardId))
-      .collect();
-    for (const tx of transactions) {
-      await ctx.db.delete(tx._id);
-    }
-
-    // 3. Transacciones recurrentes que referencien esta tarjeta
+    // 4. Transacciones recurrentes que referencien esta tarjeta
     const recurring = await ctx.db
       .query("recurringTransactions")
       .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
@@ -462,7 +467,7 @@ export const remove = mutation({
       }
     }
 
-    // 4. La tarjeta
+    // 5. La tarjeta
     await ctx.db.delete(cardId);
   },
 });

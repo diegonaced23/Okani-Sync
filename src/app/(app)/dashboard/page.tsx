@@ -8,6 +8,12 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { BalanceCard } from "@/components/dashboard/BalanceCard";
 import { BalanceAccountsSheet } from "@/components/dashboard/BalanceAccountsSheet";
+import { UpcomingCommitmentsCard } from "@/components/dashboard/UpcomingCommitmentsCard";
+import { HealthScoreCard } from "@/components/dashboard/HealthScoreCard";
+const NetWorthChart = dynamic(
+  () => import("@/components/dashboard/NetWorthChart").then((m) => ({ default: m.NetWorthChart })),
+  { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
+);
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,6 +83,10 @@ export default function DashboardPage() {
 
   const me             = useQuery(api.users.getMe);
   const balance        = useQuery(api.accounts.consolidatedBalance);
+  const nw             = useQuery(api.accounts.netWorth);
+  const health         = useQuery(api.accounts.financialHealthMetrics);
+  const nwHistory      = useQuery(api.netWorthSnapshots.listByUser);
+  const upcoming       = useQuery(api.transactions.upcomingCommitments, { days: 30 });
   const accounts       = useQuery(api.accounts.list);
   const sharedAccounts = useQuery(api.accounts.listSharedWithMe);
   const spending         = useQuery(api.transactions.spendingByCategory, { month: today });
@@ -134,12 +144,16 @@ export default function DashboardPage() {
       {/* ── Balance hero ── col 1 */}
       <div>
         <BalanceCard
-          total={balance?.total}
+          total={nw?.netWorth ?? balance?.total}
           currency={currency}
-          missingRates={balance?.missingRates}
-          accountCount={balance?.accountCount}
-          loading={balance === undefined}
+          missingRates={nw?.missingRates ?? balance?.missingRates}
+          accountCount={nw?.accountCount ?? balance?.accountCount}
+          loading={nw === undefined}
           onManageAccounts={() => setBalanceSheetOpen(true)}
+          totalAssets={nw?.totalAssets}
+          totalCardDebt={nw?.totalCardDebt}
+          totalDebt={nw?.totalDebt}
+          totalLoansReceivable={nw?.totalLoansReceivable}
         />
         <BalanceAccountsSheet
           open={balanceSheetOpen}
@@ -318,6 +332,11 @@ export default function DashboardPage() {
         )}
       </section>
 
+      {/* ── Evolución del patrimonio ── full width */}
+      <div className="md:col-span-2">
+        <NetWorthChart data={nwHistory} currency={currency} />
+      </div>
+
       {/* ── Gastos por categoría ── col 1 */}
       <div>
         <SpendingChart data={spending} currency={currency} />
@@ -331,6 +350,11 @@ export default function DashboardPage() {
       {/* ── Gastos por fuente ── full width */}
       <div className="md:col-span-2">
         <SpendingBySourceChart data={spendingBySource} currency={currency} />
+      </div>
+
+      {/* ── Salud financiera ── full width */}
+      <div className="md:col-span-2">
+        <HealthScoreCard data={health} loading={health === undefined} />
       </div>
 
       {/* ── Últimos movimientos ── col 1 */}
@@ -436,6 +460,11 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
+
+      {/* ── Próximos 30 días ── full width */}
+      <div className="md:col-span-2">
+        <UpcomingCommitmentsCard data={upcoming} loading={upcoming === undefined} />
+      </div>
 
     </div>
   );
