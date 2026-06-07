@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
+import { useAppData } from "@/contexts/app-data";
 
 type Account = Doc<"accounts">;
 import { Input } from "@/components/ui/input";
@@ -26,8 +27,9 @@ interface TransferFormProps {
 }
 
 export function TransferForm({ onSuccess }: TransferFormProps) {
+  const { accounts } = useAppData();
   const createTransfer = useMutation(api.transactions.createTransfer);
-  const accounts = useQuery(api.accounts.list);
+  // listSharedWithMe es un endpoint diferente; se combina con las cuentas propias del contexto
   const sharedAccounts = useQuery(api.accounts.listSharedWithMe);
 
   const allAccounts: Account[] = [
@@ -43,6 +45,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
   const [date, setDate] = useState(todayStr);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const fromAccount = allAccounts.find((a) => a._id === fromAccountId);
   const toAccount = allAccounts.find((a) => a._id === toAccountId);
@@ -54,22 +57,22 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // Validación de campos: errores inline (no toast) para feedback inmediato
+    const errors: Record<string, string> = {};
     if (!fromAccountId || !toAccountId) {
-      toast.error("Selecciona las cuentas de origen y destino");
+      errors.accounts = "Selecciona las cuentas de origen y destino";
+    } else if (fromAccountId === toAccountId) {
+      errors.accounts = "Las cuentas deben ser distintas";
+    }
+    if (amountNum <= 0) errors.amount = "El monto debe ser mayor que cero";
+    if (needsRate && !rateNum) errors.exchangeRate = "Ingresa la tasa de cambio";
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    if (fromAccountId === toAccountId) {
-      toast.error("Las cuentas deben ser distintas");
-      return;
-    }
-    if (amountNum <= 0) {
-      toast.error("El monto debe ser mayor que cero");
-      return;
-    }
-    if (needsRate && !rateNum) {
-      toast.error("Ingresa la tasa de cambio");
-      return;
-    }
+    setFieldErrors({});
 
     setLoading(true);
     try {
@@ -99,7 +102,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
           <p className="text-[12px] font-semibold text-foreground mb-2">Origen</p>
           <Select
             value={fromAccountId}
-            onValueChange={(v) => { if (v) setFromAccountId(v); }}
+            onValueChange={(v) => { if (v) { setFromAccountId(v); if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" })); } }}
           >
             <SelectTrigger className="w-full">
               <span className="flex-1 text-left text-sm truncate">
@@ -136,7 +139,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
           <p className="text-[12px] font-semibold text-foreground mb-2">Destino</p>
           <Select
             value={toAccountId}
-            onValueChange={(v) => { if (v) setToAccountId(v); }}
+            onValueChange={(v) => { if (v) { setToAccountId(v); if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" })); } }}
           >
             <SelectTrigger className="w-full">
               <span className="flex-1 text-left text-sm truncate">
@@ -156,6 +159,11 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
             </SelectContent>
           </Select>
         </div>
+        {fieldErrors.accounts && (
+          <p id="tf-accounts-error" role="alert" className="text-xs text-destructive mt-1.5">
+            {fieldErrors.accounts}
+          </p>
+        )}
       </div>
 
       {/* Monto */}
@@ -175,8 +183,10 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
             id="tf-amount"
             placeholder="0"
             value={amount}
-            onChange={setAmount}
+            onChange={(v) => { setAmount(v); if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" })); }}
             required
+            aria-invalid={!!fieldErrors.amount}
+            aria-describedby={fieldErrors.amount ? "tf-amount-error" : undefined}
             className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
             style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em" }}
           />
@@ -184,6 +194,11 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         {fromAccount && (
           <p className="text-xs text-muted-foreground mt-1.5">
             Saldo disponible: {formatCents(fromAccount.balance, fromAccount.currency)}
+          </p>
+        )}
+        {fieldErrors.amount && (
+          <p id="tf-amount-error" role="alert" className="text-xs text-destructive mt-1.5">
+            {fieldErrors.amount}
           </p>
         )}
       </div>
@@ -205,9 +220,16 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
               step="any"
               placeholder="Ej: 4200"
               value={exchangeRate}
-              onChange={(e) => setExchangeRate(e.target.value)}
+              onChange={(e) => { setExchangeRate(e.target.value); if (fieldErrors.exchangeRate) setFieldErrors((fe) => ({ ...fe, exchangeRate: "" })); }}
               required
+              aria-invalid={!!fieldErrors.exchangeRate}
+              aria-describedby={fieldErrors.exchangeRate ? "tf-rate-error" : undefined}
             />
+            {fieldErrors.exchangeRate && (
+              <p id="tf-rate-error" role="alert" className="text-xs text-destructive">
+                {fieldErrors.exchangeRate}
+              </p>
+            )}
             {amountNum > 0 && rateNum > 0 && (
               <p className="text-xs text-muted-foreground">
                 Recibirás: {formatCents(toCents(toAmount), toAccount!.currency)}

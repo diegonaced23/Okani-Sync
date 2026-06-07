@@ -103,6 +103,15 @@ export const createPurchase = mutation({
       throw new Error("Tarjeta no encontrada");
     }
 
+    // interestRate es decimal (ej: 0.08 = 8%); validar rango para prevenir cuotas astronómicas
+    if (
+      args.hasInterest &&
+      args.interestRate !== undefined &&
+      (args.interestRate < 0 || !Number.isFinite(args.interestRate) || args.interestRate > 2)
+    ) {
+      throw new Error("La tasa de interés debe ser un decimal entre 0 y 2 (0% a 200%)");
+    }
+
     const rate = args.hasInterest ? (args.interestRate ?? 0) : 0;
     const result = calculateInstallment(args.totalAmount, rate, args.totalInstallments);
 
@@ -260,6 +269,9 @@ export const updatePurchase = mutation({
 
       // Revertir presupuesto y eliminar txs gasto_tarjeta de cuotas anteriores.
       // Usa split principal/interés para revertir correctamente compras post-2.5.
+      //
+      // applyBudgetDelta hace read-modify-write sobre el mismo doc de presupuesto (cat+mes),
+      // así que debe quedar secuencial para evitar lost updates entre cuotas del mismo mes.
       for (const inst of oldInstallments) {
         if (purchase.categoryId) {
           const principalToRevert = updateInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
@@ -268,15 +280,21 @@ export const updatePurchase = mutation({
         if (updateInterestsCatId && (inst.interestAmount ?? 0) > 0) {
           await applyBudgetDelta(ctx, user.clerkId, updateInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
         }
-        // Buscar y eliminar la tx gasto_tarjeta asociada a esta cuota
-        const oldTxs = await ctx.db
-          .query("transactions")
-          .withIndex("by_card", (q) => q.eq("cardId", purchase.cardId))
-          .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
-          .collect();
-        for (const tx of oldTxs) await ctx.db.delete(tx._id);
-        await ctx.db.delete(inst._id);
       }
+
+      // Los deletes sí son independientes entre cuotas (cada tx e inst tienen _id distinto),
+      // por lo que se pueden paralelizar con Promise.all sin riesgo de lost update.
+      await Promise.all(
+        oldInstallments.map(async (inst) => {
+          const oldTxs = await ctx.db
+            .query("transactions")
+            .withIndex("by_card", (q) => q.eq("cardId", purchase.cardId))
+            .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
+            .collect();
+          await Promise.all(oldTxs.map((tx) => ctx.db.delete(tx._id)));
+          await ctx.db.delete(inst._id);
+        })
+      );
 
       // Generar nuevas cuotas + txs gasto_tarjeta con split de presupuesto
       for (const item of result.schedule) {

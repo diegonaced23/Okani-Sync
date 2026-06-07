@@ -23,6 +23,25 @@ export function formatRelative(timestamp: number): string {
   return formatDistanceToNow(new Date(timestamp), { addSuffix: true, locale: es });
 }
 
+// Formateadores cacheados a nivel de módulo: se crean una vez, no por llamada.
+const _monthShortFmt = new Intl.DateTimeFormat("es-CO", { month: "short", year: "numeric" });
+const _monthLongFmt  = new Intl.DateTimeFormat("es-CO", { month: "long",  year: "numeric" });
+
+/** Formatea un timestamp como mes abreviado + año: "abr. 2026" */
+export function formatMonthShort(timestamp: number): string {
+  return _monthShortFmt.format(new Date(timestamp));
+}
+
+/** Formatea un timestamp como mes completo + año: "abril de 2026" */
+export function formatMonthLong(timestamp: number): string {
+  return _monthLongFmt.format(new Date(timestamp));
+}
+
+/** @deprecated Usa `formatMonthShort` o `formatMonthLong` según el contexto */
+export function formatMonth(timestamp: number): string {
+  return formatMonthShort(timestamp);
+}
+
 /** Trunca un string largo añadiendo "..." al final. */
 export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;

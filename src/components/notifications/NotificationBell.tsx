@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useAuth } from "@clerk/nextjs";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,10 +19,10 @@ const TYPE_ICONS: Record<string, string> = {
 };
 
 export function NotificationBell() {
-  const { isSignedIn } = useAuth();
+  const { isAuthenticated } = useConvexAuth();
   const [open, setOpen] = useState(false);
-  const count       = useQuery(api.notifications.unreadCount, isSignedIn ? {} : "skip");
-  const recent      = useQuery(api.notifications.listRecent, isSignedIn ? { limit: 8 } : "skip");
+  const count       = useQuery(api.notifications.unreadCount, isAuthenticated ? {} : "skip");
+  const recent      = useQuery(api.notifications.listRecent, isAuthenticated ? { limit: 8 } : "skip");
   const markRead    = useMutation(api.notifications.markAsRead);
   const markAllRead = useMutation(api.notifications.markAllAsRead);
 

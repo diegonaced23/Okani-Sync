@@ -15,6 +15,7 @@ import type * as actions_deleteUserCascade from "../actions/deleteUserCascade.js
 import type * as actions_fetchExchangeRates from "../actions/fetchExchangeRates.js";
 import type * as actions_processRecurringTransactions from "../actions/processRecurringTransactions.js";
 import type * as actions_seedAdmin from "../actions/seedAdmin.js";
+import type * as actions_seedTestInvitation from "../actions/seedTestInvitation.js";
 import type * as actions_sendAlerts from "../actions/sendAlerts.js";
 import type * as actions_sendDailyReminder from "../actions/sendDailyReminder.js";
 import type * as actions_sendMonthlySummary from "../actions/sendMonthlySummary.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   "actions/fetchExchangeRates": typeof actions_fetchExchangeRates;
   "actions/processRecurringTransactions": typeof actions_processRecurringTransactions;
   "actions/seedAdmin": typeof actions_seedAdmin;
+  "actions/seedTestInvitation": typeof actions_seedTestInvitation;
   "actions/sendAlerts": typeof actions_sendAlerts;
   "actions/sendDailyReminder": typeof actions_sendDailyReminder;
   "actions/sendMonthlySummary": typeof actions_sendMonthlySummary;

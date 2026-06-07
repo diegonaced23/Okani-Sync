@@ -12,12 +12,14 @@ const clerkSrc = [
   ...(clerkCustomDomain ? [`https://${clerkCustomDomain}`] : []),
 ].join(" ");
 
+const isDev = process.env.NODE_ENV !== "production";
+
 const csp = [
   "default-src 'self'",
   // Clerk inyecta scripts inline; Cloudflare Turnstile es requerido por Clerk para bot detection.
-  // 'wasm-unsafe-eval' es necesario para @react-pdf/renderer (usa WebAssembly para fontkit/harfbuzz).
-  // Es más seguro que 'unsafe-eval' porque solo permite compilar WASM, no eval de JS arbitrario.
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${clerkSrc} https://challenges.cloudflare.com`,
+  // 'wasm-unsafe-eval': necesario para @react-pdf/renderer (WebAssembly). Más seguro que 'unsafe-eval'.
+  // 'unsafe-eval': requerido por React en desarrollo para reconstruir call stacks (solo dev).
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""} ${clerkSrc} https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://img.clerk.com https://images.clerk.dev",
   "font-src 'self' data:",

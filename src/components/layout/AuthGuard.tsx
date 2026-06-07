@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { useMutation, useAction, useQuery } from "convex/react";
+import { useMutation, useAction, useQuery, useConvexAuth } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { Ban } from "lucide-react";
@@ -43,6 +43,7 @@ function AccessDeniedScreen({ message, onSignOut }: { message: string; onSignOut
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
+  const { isAuthenticated } = useConvexAuth();
   const { signOut } = useClerk();
   const ensureExists = useMutation(api.users.ensureExists);
   const syncRole = useAction(api.actions.adminUsers.syncRoleToClerk);
@@ -61,7 +62,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     !pathname.startsWith("/perfil");
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded || !isSignedIn || !isAuthenticated) return;
     ensureExists()
       .then(async () => {
         await syncRole().catch(() => {}); // best-effort: no bloquea si Clerk falla

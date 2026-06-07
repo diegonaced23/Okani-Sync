@@ -4,6 +4,9 @@
  * Montos en centavos (×100) igual que en el schema.
  */
 
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
+
 export interface InstallmentScheduleItem {
   installmentNumber: number;
   amount: number;
@@ -108,6 +111,19 @@ export function convertAmount(
   const rate = rateMap.get(fromCurrency);
   if (rate === undefined) return { converted: amountCents, hasRate: false };
   return { converted: Math.round(amountCents * rate), hasRate: true };
+}
+
+/**
+ * Obtiene el mapa de tasas de cambio para la moneda preferida del usuario.
+ * Elimina el boilerplate repetido de query + buildRateMap en las queries del dashboard.
+ */
+export async function getUserRateMap(
+  ctx: QueryCtx | MutationCtx,
+  user: Doc<"users">
+): Promise<{ rateMap: RateMap; preferredCurrency: string }> {
+  const preferredCurrency = user.currency ?? "COP";
+  const currentRates = await ctx.db.query("currentExchangeRates").collect();
+  return { rateMap: buildRateMap(currentRates, preferredCurrency), preferredCurrency };
 }
 
 /**

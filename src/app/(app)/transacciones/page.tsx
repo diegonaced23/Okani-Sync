@@ -2,7 +2,8 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAppData } from "@/contexts/app-data";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,23 +53,8 @@ function TxSeparator() {
 
 // ─── Cabecera de agrupación por día ───────────────────────────────────────────
 
-function DayHeader({ dayKey, todayKey, yesterdayKey, dayMs }: {
-  dayKey: string;
-  todayKey: string;
-  yesterdayKey: string;
-  dayMs: number;
-}) {
-  let label: string;
-  if (dayKey === todayKey) {
-    label = "Hoy";
-  } else if (dayKey === yesterdayKey) {
-    label = "Ayer";
-  } else {
-    label = new Date(dayMs).toLocaleDateString("es-CO", {
-      weekday: "long", day: "numeric", month: "short",
-    }).replace(/^\w/, (c) => c.toUpperCase());
-  }
-
+// Recibe el label ya calculado desde groupedByDay (calculado una vez por grupo, no en cada render)
+function DayHeader({ label }: { label: string }) {
   return (
     <div
       className="flex items-center px-4 py-1.5"
@@ -102,18 +88,42 @@ export default function TransaccionesPage() {
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<Id<"cardPurchases"> | null>(null);
   const [purchaseDetailOpen, setPurchaseDetailOpen] = useState(false);
 
+  // Handler estable: los setters de useState son estables entre renders, por eso el array de deps está vacío.
+  // Sin esto, cada render crearía una función nueva por ítem y React.memo en TransactionItem no tendría efecto.
+  const handleTransactionPress = useCallback((tx: Doc<"transactions">) => {
+    if (tx.cardPurchaseId) {
+      setSelectedPurchaseId(tx.cardPurchaseId as Id<"cardPurchases">);
+      setPurchaseDetailOpen(true);
+    } else {
+      setSelectedTx(tx);
+      setDetailOpen(true);
+    }
+  }, []);
+
   // ── Estados de búsqueda y filtros avanzados ───────────────────────────────
+  // searchInput: valor inmediato del campo (se actualiza en cada pulsación de teclado)
+  // searchText:  valor debounced que se pasa a useQuery (se actualiza 300 ms después)
+  const [searchInput,  setSearchInput]  = useState("");
   const [searchText,   setSearchText]   = useState("");
   const [fromDate,     setFromDate]     = useState("");
   const [toDate,       setToDate]       = useState("");
   const [filterAccId,  setFilterAccId]  = useState("");
   const [filterCatId,  setFilterCatId]  = useState("");
 
+  // Debounce: evita disparar una query Convex en cada pulsación de teclado.
+  // La query de búsqueda solo se lanza 300 ms después de que el usuario deja de escribir.
+  useEffect(() => {
+    const id = setTimeout(() => setSearchText(searchInput), 300);
+    return () => clearTimeout(id);
+  }, [searchInput]);
+
+  // isSearchMode controla qué query se activa (usa el valor debounced)
   const isSearchMode = searchText.trim() !== "" || fromDate !== "" || toDate !== "" || filterAccId !== "" || filterCatId !== "";
-  const hasActiveFilters = isSearchMode;
+  // hasActiveFilters usa searchInput para que el indicador visual reaccione de inmediato
+  const hasActiveFilters = searchInput.trim() !== "" || fromDate !== "" || toDate !== "" || filterAccId !== "" || filterCatId !== "";
 
   function clearAllFilters() {
-    setSearchText(""); setFromDate(""); setToDate(""); setFilterAccId(""); setFilterCatId("");
+    setSearchInput(""); setSearchText(""); setFromDate(""); setToDate(""); setFilterAccId(""); setFilterCatId("");
   }
 
   // Convierte "YYYY-MM-DD" a timestamp (inicio/fin del día local)
@@ -140,12 +150,13 @@ export default function TransaccionesPage() {
   );
   const monthResults       = useQuery(api.transactions.listByMonth, !isSearchMode ? { month } : "skip");
   const purchasesOfMonth   = useQuery(api.cardPurchases.listByPurchaseMonth, !isSearchMode ? { month } : "skip");
+  // Totales del mes calculados en el servidor con conversión multi-moneda correcta
+  const summaries          = useQuery(api.transactions.monthlySummary, !isSearchMode ? { months: [month] } : "skip");
 
   const rawTransactions = isSearchMode ? searchResults : monthResults;
 
-  const categories   = useQuery(api.categories.list, {});
-  const accounts     = useQuery(api.accounts.list);
-  const cards        = useQuery(api.cards.list);
+  const { accounts, cards, categories } = useAppData();
+  const me           = useQuery(api.users.getMe);
 
   const catMap = useMemo(
     () => Object.fromEntries(
@@ -166,21 +177,13 @@ export default function TransaccionesPage() {
     [cards]
   );
 
-  // ── Totales (solo en modo browse — son cifras del mes) ────────────────────
-  const monthIngresos = useMemo(
-    () => !isSearchMode
-      ? (rawTransactions ?? []).filter((t) => t.type === "ingreso").reduce((s, t) => s + t.amount, 0)
-      : 0,
-    [rawTransactions, isSearchMode]
-  );
-  const monthGastos = useMemo(
-    () => !isSearchMode
-      ? (rawTransactions ?? [])
-          .filter((t) => ["gasto", "gasto_tarjeta", "pago_deuda"].includes(t.type))
-          .reduce((s, t) => s + t.amount, 0)
-      : 0,
-    [rawTransactions, isSearchMode]
-  );
+  // ── Totales del mes — calculados en el servidor con conversión multi-moneda ──
+  // monthlySummary convierte todos los montos a la moneda preferida del usuario (user.currency ?? "COP")
+  // antes de sumarlos, evitando comparar montos en divisas distintas sin conversión.
+  const monthSummary    = summaries?.[0];
+  const monthIngresos   = isSearchMode ? 0 : (monthSummary?.ingresos ?? 0);
+  const monthGastos     = isSearchMode ? 0 : (monthSummary?.gastos   ?? 0);
+  const displayCurrency = me?.currency ?? "COP";
 
   // ── Lista filtrada: tipo (pill) + texto client-side ────────────────────────
 
@@ -213,9 +216,11 @@ export default function TransaccionesPage() {
   const totalCount    = (rawTransactions ?? []).length;
   const filteredCount = filteredTxs.length;
   const isFiltered    = filter !== "all" || isSearchMode;
-  const currency      = "COP";
 
   const canGoForward  = month < today;
+  // Limite de navegación: 24 meses hacia el pasado para evitar confusión en usuarios nuevos
+  const oldestMonth   = shiftMonth(today, -24);
+  const canGoBack     = month > oldestMonth;
 
   // Claves del día de hoy y ayer para las cabeceras de grupo (calculadas una vez al montar)
   const [todayKey]     = useState<string>(() => {
@@ -228,7 +233,8 @@ export default function TransaccionesPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
 
-  // Combinar txs y compras padre, ordenados por fecha desc, agrupados por día
+  // Combinar txs y compras padre, ordenados por fecha desc, agrupados por día.
+  // El label de cada día se calcula aquí una vez (no en cada render de DayHeader).
   const groupedByDay = useMemo(() => {
     const allItems: { date: number; item: ListItem }[] = [
       ...filteredTxs.map((tx) => ({ date: tx.date,           item: { kind: "tx"       as const, item: tx } })),
@@ -236,7 +242,7 @@ export default function TransaccionesPage() {
     ];
     allItems.sort((a, b) => b.date - a.date);
 
-    const groups: { dayKey: string; dayMs: number; items: ListItem[] }[] = [];
+    const groups: { dayKey: string; label: string; items: ListItem[] }[] = [];
     for (const { date, item } of allItems) {
       const d   = new Date(date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -244,11 +250,21 @@ export default function TransaccionesPage() {
       if (last?.dayKey === key) {
         last.items.push(item);
       } else {
-        groups.push({ dayKey: key, dayMs: date, items: [item] });
+        let label: string;
+        if (key === todayKey) {
+          label = "Hoy";
+        } else if (key === yesterdayKey) {
+          label = "Ayer";
+        } else {
+          label = new Date(date).toLocaleDateString("es-CO", {
+            weekday: "long", day: "numeric", month: "short",
+          }).replace(/^\w/, (c) => c.toUpperCase());
+        }
+        groups.push({ dayKey: key, label, items: [item] });
       }
     }
     return groups;
-  }, [filteredTxs, filteredPurchases]);
+  }, [filteredTxs, filteredPurchases, todayKey, yesterdayKey]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-0">
@@ -264,7 +280,9 @@ export default function TransaccionesPage() {
             <button
               type="button"
               onClick={() => setMonth((m) => shiftMonth(m, -1))}
-              className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              disabled={!canGoBack}
+              title={!canGoBack ? "Límite de 24 meses alcanzado" : undefined}
+              className="w-11 h-11 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30"
               aria-label="Mes anterior"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -286,11 +304,27 @@ export default function TransaccionesPage() {
               type="button"
               onClick={() => setMonth((m) => shiftMonth(m, 1))}
               disabled={!canGoForward}
-              className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30"
+              className="w-11 h-11 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30"
               aria-label="Mes siguiente"
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
+            {/* Botón "Hoy": aparece cuando el mes seleccionado no es el actual */}
+            {month !== today && (
+              <button
+                type="button"
+                onClick={() => setMonth(today)}
+                aria-label="Volver al mes actual"
+                className="rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
+                style={{
+                  background: "color-mix(in oklch, var(--os-cyan) 15%, var(--surface))",
+                  color: "var(--os-cyan)",
+                  border: "1px solid color-mix(in oklch, var(--os-cyan) 30%, var(--border))",
+                }}
+              >
+                Hoy
+              </button>
+            )}
           </div>
         </div>
 
@@ -307,8 +341,8 @@ export default function TransaccionesPage() {
       {/* ── Búsqueda y filtros avanzados ────────────────────────────────────── */}
       <div className="pb-2">
         <TransactionFilters
-          searchText={searchText}
-          onSearchTextChange={setSearchText}
+          searchText={searchInput}
+          onSearchTextChange={setSearchInput}
           fromDate={fromDate}
           onFromDateChange={setFromDate}
           toDate={toDate}
@@ -317,8 +351,6 @@ export default function TransaccionesPage() {
           onAccountIdChange={setFilterAccId}
           categoryId={filterCatId}
           onCategoryIdChange={setFilterCatId}
-          accounts={accounts ?? []}
-          categories={categories ?? []}
           hasActiveFilters={hasActiveFilters}
           onClearAll={clearAllFilters}
         />
@@ -350,7 +382,7 @@ export default function TransaccionesPage() {
                 Ingresos
               </p>
               <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-lime)" }}>
-                {formatCents(monthIngresos, currency)}
+                {formatCents(monthIngresos, displayCurrency)}
               </p>
             </div>
             <div
@@ -369,7 +401,7 @@ export default function TransaccionesPage() {
                 Gastos
               </p>
               <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-magenta)" }}>
-                {formatCents(monthGastos, currency)}
+                {formatCents(monthGastos, displayCurrency)}
               </p>
             </div>
           </>
@@ -377,12 +409,27 @@ export default function TransaccionesPage() {
       </div>
       )}
 
-      {/* ── Filter pills ────────────────────────────────────────────────────── */}
+      {/* ── Filter pills — WAI-ARIA radiogroup con navegación por flechas ────── */}
       <div
-        role="group"
+        role="radiogroup"
         aria-label="Filtrar por tipo"
         className="flex gap-2 pb-4 overflow-x-auto"
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        onKeyDown={(e) => {
+          const current = FILTER_PILLS.findIndex((p) => p.key === filter);
+          let next = -1;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+            e.preventDefault();
+            next = (current + 1) % FILTER_PILLS.length;
+          } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+            e.preventDefault();
+            next = (current - 1 + FILTER_PILLS.length) % FILTER_PILLS.length;
+          }
+          if (next !== -1) {
+            setFilter(FILTER_PILLS[next].key);
+            (e.currentTarget.querySelectorAll('[role="radio"]')[next] as HTMLElement)?.focus();
+          }
+        }}
       >
         {FILTER_PILLS.map(({ key, label }) => {
           const isActive = filter === key;
@@ -392,6 +439,7 @@ export default function TransaccionesPage() {
               type="button"
               role="radio"
               aria-checked={isActive}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => setFilter(key)}
               className="flex-none whitespace-nowrap transition-all"
               style={{
@@ -449,6 +497,23 @@ export default function TransaccionesPage() {
               Ver todos
             </button>
           )}
+          {/* CTA para mobile: el FAB del bottom nav está oculto en esta vista vacía, así que
+              mostramos un botón visible solo en pantallas pequeñas */}
+          {!isSearchMode && filter === "all" && (
+            <button
+              type="button"
+              onClick={() => openModal()}
+              className="lg:hidden mt-4 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold transition-all active:scale-[0.97]"
+              style={{
+                background: "linear-gradient(135deg, var(--os-cyan), var(--os-lime))",
+                color: "var(--primary-foreground)",
+                boxShadow: "0 6px 16px -4px color-mix(in oklch, var(--os-cyan) 50%, transparent)",
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Agregar transacción
+            </button>
+          )}
         </div>
       ) : (
         <div
@@ -458,12 +523,7 @@ export default function TransaccionesPage() {
           {groupedByDay.map((group, gi) => (
             <div key={group.dayKey}>
               {gi > 0 && <div style={{ height: 1, background: "var(--border)" }} />}
-              <DayHeader
-                dayKey={group.dayKey}
-                todayKey={todayKey}
-                yesterdayKey={yesterdayKey}
-                dayMs={group.dayMs}
-              />
+              <DayHeader label={group.label} />
               {group.items.map((listItem, i) => (
                 <div key={listItem.kind === "tx" ? listItem.item._id : `purchase-${listItem.item._id}`}>
                   {listItem.kind === "tx" ? (
@@ -472,15 +532,7 @@ export default function TransaccionesPage() {
                       category={listItem.item.categoryId ? catMap[listItem.item.categoryId] : undefined}
                       accountMap={accountMap}
                       cardMap={cardMap}
-                      onPress={() => {
-                        if (listItem.item.cardPurchaseId) {
-                          setSelectedPurchaseId(listItem.item.cardPurchaseId as Id<"cardPurchases">);
-                          setPurchaseDetailOpen(true);
-                        } else {
-                          setSelectedTx(listItem.item);
-                          setDetailOpen(true);
-                        }
-                      }}
+                      onPress={handleTransactionPress}
                     />
                   ) : (
                     <CardPurchaseItem
@@ -508,7 +560,6 @@ export default function TransaccionesPage() {
           setDetailOpen(o);
           if (!o) setSelectedTx(null);
         }}
-        categories={categories ?? []}
       />
 
       {/* ── Sheet de detalle de compra con tarjeta ───────────────────────────── */}

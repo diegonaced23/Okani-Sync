@@ -75,6 +75,30 @@ export async function applyBudgetDelta(
   });
 }
 
+/**
+ * Aplica un delta al acumulado de una meta de ahorro manual.
+ * Solo afecta metas sin `linkedAccountId` (las vinculadas a cuenta se actualizan
+ * vía el saldo de la cuenta). Si la meta no existe, retorna silenciosamente.
+ *
+ * @param delta - Positivo para abonar, negativo para revertir (centavos).
+ */
+export async function applyGoalDelta(
+  ctx: MutationCtx,
+  goalId: Id<"goals">,
+  delta: number
+) {
+  const goal = await ctx.db.get(goalId);
+  if (!goal || goal.linkedAccountId) return;
+  const newAmount = Math.max(0, goal.currentAmount + delta);
+  const completed = newAmount >= goal.targetAmount;
+  await ctx.db.patch(goalId, {
+    currentAmount: newAmount,
+    status: completed ? "completada" : "activa",
+    completedAt: completed && goal.status === "activa" ? Date.now() : goal.completedAt,
+    updatedAt: Date.now(),
+  });
+}
+
 // ─── Eliminación con reversión de efectos ────────────────────────────────────
 
 /**
@@ -168,19 +192,9 @@ export async function deleteTransactionWithEffects(
     await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount, tx.currency);
   }
 
-  // Revertir contribución a meta de ahorro (solo metas manuales, no las vinculadas a cuenta)
+  // Revertir contribución a meta de ahorro (solo metas manuales)
   if (tx.type === "gasto" && tx.goalId) {
-    const goal = await ctx.db.get(tx.goalId);
-    if (goal && goal.userId === tx.userId && !goal.linkedAccountId) {
-      const newAmount = Math.max(0, goal.currentAmount - tx.amount);
-      const stillCompleted = newAmount >= goal.targetAmount;
-      await ctx.db.patch(tx.goalId, {
-        currentAmount: newAmount,
-        status: stillCompleted ? "completada" : "activa",
-        completedAt: stillCompleted ? goal.completedAt : undefined,
-        updatedAt: Date.now(),
-      });
-    }
+    await applyGoalDelta(ctx, tx.goalId, -tx.amount);
   }
 
   // Revertir pago_tarjeta: recalcular FIFO de cuotas pagadas

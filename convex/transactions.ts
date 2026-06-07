@@ -10,9 +10,10 @@ import {
   applyAccountDelta,
   applyCardDelta,
   applyBudgetDelta,
+  applyGoalDelta,
   deleteTransactionWithEffects,
 } from "./lib/transactionEffects";
-import { buildRateMap, convertAmount } from "./lib/money";
+import { getUserRateMap, convertAmount } from "./lib/money";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -21,13 +22,16 @@ export const listByMonth = query({
   handler: async (ctx, { month }) => {
     assertValidMonth(month);
     const clerkId = await getCurrentUserId(ctx);
+    // Techo de 300 registros para prevenir payloads reactivos ilimitados.
+    // La paginación real (paginate/usePaginatedQuery) queda en P3 porque los
+    // totales del mes se calculan en el cliente sobre el array completo.
     return await ctx.db
       .query("transactions")
       .withIndex("by_user_month", (q) =>
         q.eq("userId", clerkId).eq("month", month)
       )
       .order("desc")
-      .collect();
+      .take(300);
   },
 });
 
@@ -160,9 +164,7 @@ export const upcomingCommitments = query({
   args: { days: v.optional(v.number()) },
   handler: async (ctx, { days = 30 }) => {
     const user = await getCurrentUser(ctx);
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
     const missingRateSet = new Set<string>();
 
     const safeDays = Math.min(Math.max(1, Math.floor(days)), 365);
@@ -335,9 +337,7 @@ export const spendingByCategory = query({
   handler: async (ctx, { month }) => {
     assertValidMonth(month);
     const user = await getCurrentUser(ctx);
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
 
     // Gastos directos de cuenta — base caja, sin cuotas de tarjeta
     const gastos = await ctx.db
@@ -406,9 +406,7 @@ export const spendingBySource = query({
   handler: async (ctx, { month }) => {
     assertValidMonth(month);
     const user = await getCurrentUser(ctx);
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
 
     const gastos = await ctx.db
       .query("transactions")
@@ -521,9 +519,7 @@ export const monthlySummary = query({
     // Validar formato antes de consultar el índice — un valor malformado corrompería la query
     safeMonths.forEach(assertValidMonth);
     const user = await getCurrentUser(ctx);
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
 
     return await Promise.all(
       safeMonths.map(async (month) => {
@@ -672,17 +668,7 @@ export const create = mutation({
 
     // Abonar a la meta de ahorro (ahorro en casa / efectivo)
     if (args.goalId && args.type === "gasto") {
-      const goal = await ctx.db.get(args.goalId);
-      if (goal) {
-        const newAmount = Math.max(0, goal.currentAmount + args.amount);
-        const completed = newAmount >= goal.targetAmount;
-        await ctx.db.patch(args.goalId, {
-          currentAmount: newAmount,
-          status: completed ? "completada" : "activa",
-          completedAt: completed && goal.status === "activa" ? now : goal.completedAt,
-          updatedAt: now,
-        });
-      }
+      await applyGoalDelta(ctx, args.goalId, args.amount);
     }
 
     return txId;
@@ -714,6 +700,17 @@ export const update = mutation({
     }
 
     const user = await getCurrentUser(ctx);
+
+    // Rate limiting: máximo 30 modificaciones por minuto por usuario
+    const latestTxsUpdate = await ctx.db
+      .query("transactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .order("desc")
+      .take(31);
+    if (latestTxsUpdate.filter((t) => t.createdAt >= Date.now() - 60_000).length >= 30) {
+      throw new Error("Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.");
+    }
+
     const tx = await ctx.db.get(transactionId);
     if (!tx || tx.userId !== user.clerkId) throw new Error("Transacción no encontrada");
 
@@ -839,18 +836,7 @@ export const update = mutation({
 
     // Sincronizar meta de ahorro si cambió el monto de un gasto vinculado
     if (tx.type === "gasto" && tx.goalId && amountChanged) {
-      const goal = await ctx.db.get(tx.goalId);
-      if (goal && !goal.linkedAccountId) {
-        const diff = newAmount - tx.amount;
-        const newGoalAmount = Math.max(0, goal.currentAmount + diff);
-        const completed = newGoalAmount >= goal.targetAmount;
-        await ctx.db.patch(tx.goalId, {
-          currentAmount: newGoalAmount,
-          status: completed ? "completada" : "activa",
-          completedAt: completed && goal.status === "activa" ? Date.now() : goal.completedAt,
-          updatedAt: Date.now(),
-        });
-      }
+      await applyGoalDelta(ctx, tx.goalId, newAmount - tx.amount);
     }
 
     await ctx.db.patch(transactionId, patch);
@@ -861,6 +847,17 @@ export const remove = mutation({
   args: { transactionId: v.id("transactions") },
   handler: async (ctx, { transactionId }) => {
     const user = await getCurrentUser(ctx);
+
+    // Rate limiting: máximo 30 eliminaciones por minuto por usuario
+    const latestTxsRemove = await ctx.db
+      .query("transactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .order("desc")
+      .take(31);
+    if (latestTxsRemove.filter((t) => t.createdAt >= Date.now() - 60_000).length >= 30) {
+      throw new Error("Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.");
+    }
+
     const tx = await ctx.db.get(transactionId);
     if (!tx || tx.userId !== user.clerkId) {
       throw new Error("Transacción no encontrada");
@@ -900,6 +897,16 @@ export const createTransfer = mutation({
 
     const user = await getCurrentUser(ctx);
 
+    // Rate limiting: máximo 30 transferencias por minuto por usuario
+    const latestTxsTransfer = await ctx.db
+      .query("transactions")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .order("desc")
+      .take(31);
+    if (latestTxsTransfer.filter((t) => t.createdAt >= Date.now() - 60_000).length >= 30) {
+      throw new Error("Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.");
+    }
+
     // Verificar permisos en ambas cuentas
     await assertCanWrite(ctx, args.fromAccountId);
     await assertCanWrite(ctx, args.toAccountId);
@@ -916,6 +923,13 @@ export const createTransfer = mutation({
       throw new Error(
         "Debes proporcionar la tasa de cambio para transferir entre cuentas con distinta moneda"
       );
+    }
+    // Rechazar tasas fuera de rango para prevenir montos resultantes astronómicos o negativos
+    if (
+      args.exchangeRate !== undefined &&
+      (args.exchangeRate <= 0 || !Number.isFinite(args.exchangeRate) || args.exchangeRate > 10_000_000)
+    ) {
+      throw new Error("La tasa de cambio debe ser un número positivo (máx. 10.000.000)");
     }
 
     const toAmount = sameCurrency
@@ -982,81 +996,6 @@ export const createTransfer = mutation({
     }
 
     return { transferGroupId, outTxId };
-  },
-});
-
-/** Interna: crea transacción sin verificar auth (para crons de recurrentes). */
-export const createInternal = internalMutation({
-  args: {
-    userId: v.string(),
-    type: v.union(
-      v.literal("ingreso"),
-      v.literal("gasto"),
-      v.literal("pago_tarjeta"),
-      v.literal("pago_deuda")
-    ),
-    amount: v.number(),
-    description: v.string(),
-    date: v.number(),
-    currency: v.string(),
-    accountId: v.optional(v.id("accounts")),
-    cardId: v.optional(v.id("cards")),
-    categoryId: v.optional(v.id("categories")),
-    recurringId: v.optional(v.id("recurringTransactions")),
-  },
-  handler: async (ctx, args) => {
-    const month = toMonthString(args.date);
-    const now = Date.now();
-
-    const txId = await ctx.db.insert("transactions", {
-      userId: args.userId,
-      type: args.type,
-      amount: args.amount,
-      description: args.description,
-      date: args.date,
-      month,
-      currency: args.currency,
-      accountId: args.accountId,
-      cardId: args.cardId,
-      categoryId: args.categoryId,
-      status: "completada",
-      isRecurring: true,
-      recurringId: args.recurringId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Actualizar saldo de cuenta
-    if (args.accountId) {
-      const account = await ctx.db.get(args.accountId);
-      if (account) {
-        const delta = args.type === "ingreso" ? args.amount : -args.amount;
-        await ctx.db.patch(args.accountId, {
-          balance: account.balance + delta,
-          updatedAt: now,
-        });
-      }
-    }
-
-    // Actualizar budget.spent si es gasto con categoría
-    if (args.type === "gasto" && args.categoryId) {
-      const budget = await ctx.db
-        .query("budgets")
-        .withIndex("by_user_category_month", (q) =>
-          q.eq("userId", args.userId)
-            .eq("categoryId", args.categoryId!)
-            .eq("month", month)
-        )
-        .unique();
-      if (budget) {
-        await ctx.db.patch(budget._id, {
-          spent: budget.spent + args.amount,
-          updatedAt: now,
-        });
-      }
-    }
-
-    return txId;
   },
 });
 
@@ -1158,12 +1097,11 @@ export const processRecurringOccurrence = internalMutation({
       updatedAt: now,
     });
 
+    // Usar el helper centralizado: garantiza consistencia y lanza error si la cuenta no existe,
+    // lo que hace que el cron omita la tx entera (rollback atómico) en lugar de crear un orphan.
     if (txArgs.accountId) {
-      const account = await ctx.db.get(txArgs.accountId);
-      if (account) {
-        const delta = txArgs.type === "ingreso" ? txArgs.amount : -txArgs.amount;
-        await ctx.db.patch(txArgs.accountId, { balance: account.balance + delta, updatedAt: now });
-      }
+      const delta = txArgs.type === "ingreso" ? txArgs.amount : -txArgs.amount;
+      await applyAccountDelta(ctx, txArgs.accountId, delta);
     }
 
     if (txArgs.type === "gasto" && txArgs.categoryId) {

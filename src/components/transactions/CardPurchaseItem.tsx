@@ -2,18 +2,13 @@
 
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { formatCents } from "@/lib/money";
+import { formatMonthShort } from "@/lib/utils";
 import { ShoppingCart } from "lucide-react";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 
 interface CardPurchaseItemProps {
   purchase: Doc<"cardPurchases">;
   cardName?: string;
   onPress?: () => void;
-}
-
-function formatMonth(ts: number): string {
-  return format(new Date(ts), "MMM. yyyy", { locale: es });
 }
 
 export function CardPurchaseItem({ purchase, cardName, onPress }: CardPurchaseItemProps) {
@@ -22,9 +17,9 @@ export function CardPurchaseItem({ purchase, cardName, onPress }: CardPurchaseIt
 
   const subtitleParts: string[] = [];
   if (purchase.totalInstallments > 1) {
-    subtitleParts.push(`${purchase.totalInstallments} cuotas · 1ª en ${formatMonth(purchase.firstInstallmentDate)}`);
+    subtitleParts.push(`${purchase.totalInstallments} cuotas · 1ª en ${formatMonthShort(purchase.firstInstallmentDate)}`);
   } else {
-    subtitleParts.push(`1 cuota · ${formatMonth(purchase.firstInstallmentDate)}`);
+    subtitleParts.push(`1 cuota · ${formatMonthShort(purchase.firstInstallmentDate)}`);
   }
   if (cardName) subtitleParts.push(cardName);
 

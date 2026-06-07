@@ -5,10 +5,9 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { formatCents } from "@/lib/money";
-import { formatDateShort } from "@/lib/utils";
-import { Check, Clock, CalendarDays } from "lucide-react";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { formatDateShort, formatMonthLong } from "@/lib/utils";
+import { Check, Clock, CalendarDays, CreditCard } from "lucide-react";
+import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
 interface CardPurchaseDetailSheetProps {
   purchaseId: Id<"cardPurchases"> | null;
@@ -16,15 +15,12 @@ interface CardPurchaseDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function formatMonth(ts: number): string {
-  return format(new Date(ts), "MMMM 'de' yyyy", { locale: es });
-}
-
 export function CardPurchaseDetailSheet({
   purchaseId,
   open,
   onOpenChange,
 }: CardPurchaseDetailSheetProps) {
+  const { openWithCard } = useNewTransactionModal();
   const data = useQuery(
     api.cardPurchases.getWithInstallments,
     purchaseId ? { purchaseId } : "skip"
@@ -99,6 +95,11 @@ export function CardPurchaseDetailSheet({
             </div>
 
             <div
+              role="progressbar"
+              aria-valuenow={Math.round(progress)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`${paidCount} de ${totalCount} cuotas pagadas`}
               className="h-2 rounded-full overflow-hidden"
               style={{ background: "var(--muted)" }}
             >
@@ -122,7 +123,7 @@ export function CardPurchaseDetailSheet({
 
             {currentInstallment && amountPending > 0 && (
               <p className="text-xs text-muted-foreground">
-                Próxima cuota en {formatMonth(currentInstallment.dueDate)}
+                Próxima cuota en {formatMonthLong(currentInstallment.dueDate)}
               </p>
             )}
           </div>
@@ -150,6 +151,7 @@ export function CardPurchaseDetailSheet({
                   >
                     <span
                       className="flex-shrink-0 flex items-center justify-center rounded-full"
+                      aria-label={inst.paid ? "Pagada" : isCurrent ? "Cuota actual" : "Pendiente"}
                       style={{
                         width: 28, height: 28,
                         background: inst.paid
@@ -165,8 +167,8 @@ export function CardPurchaseDetailSheet({
                       }}
                     >
                       {inst.paid
-                        ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-                        : <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+                        ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />
+                        : <Clock className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
                       }
                     </span>
 
@@ -209,6 +211,25 @@ export function CardPurchaseDetailSheet({
                 ({((purchase.interestRate ?? 0) * 100).toFixed(1)}% mensual)
               </p>
             </div>
+          )}
+
+          {/* ── CTA: registrar pago — solo visible mientras haya cuotas pendientes ── */}
+          {amountPending > 0 && card && (
+            <button
+              type="button"
+              onClick={() => {
+                openWithCard(card._id);
+                onOpenChange(false);
+              }}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold transition-opacity active:opacity-70"
+              style={{
+                background: "linear-gradient(135deg, var(--os-cyan), var(--os-lime))",
+                color: "var(--background)",
+              }}
+            >
+              <CreditCard className="h-4 w-4" aria-hidden="true" />
+              Registrar pago
+            </button>
           )}
 
         </div>

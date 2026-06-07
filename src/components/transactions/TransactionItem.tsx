@@ -1,10 +1,11 @@
 "use client";
 
+import { memo } from "react";
 import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, HandCoins, Scale, Banknote } from "lucide-react";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { CategoryIcon } from "@/components/ui/category-icon";
+import { TX_TYPE_CONFIG as TYPE_CONFIG } from "./tx-type-config";
 
 interface CategoryInfo {
   name: string;
@@ -23,76 +24,12 @@ interface TransactionItemProps {
   categoryName?: string; // compatibilidad con páginas que solo tienen el nombre
   accountMap?: Record<string, string>;
   cardMap?: Record<string, CardInfo>;
-  onPress?: () => void;
+  // Recibe la transacción para que el padre pueda usar un handler estable (useCallback)
+  onPress?: (tx: Doc<"transactions">) => void;
 }
 
-const TYPE_CONFIG = {
-  ingreso: {
-    icon: ArrowDownLeft,
-    iconColor: "var(--os-lime)",
-    iconBg: "color-mix(in oklch, var(--os-lime) 18%, transparent)",
-    amountColor: "var(--os-lime)",
-    sign: "+",
-  },
-  gasto: {
-    icon: ArrowUpRight,
-    iconColor: "var(--os-magenta)",
-    iconBg: "color-mix(in oklch, var(--os-magenta) 16%, transparent)",
-    amountColor: "var(--os-magenta)",
-    sign: "-",
-  },
-  transferencia: {
-    icon: ArrowLeftRight,
-    iconColor: "var(--os-cyan)",
-    iconBg: "color-mix(in oklch, var(--os-cyan) 16%, transparent)",
-    amountColor: "var(--muted-foreground)",
-    sign: "",
-  },
-  pago_tarjeta: {
-    icon: ArrowLeftRight,
-    iconColor: "var(--os-cyan)",
-    iconBg: "color-mix(in oklch, var(--os-cyan) 16%, transparent)",
-    amountColor: "var(--muted-foreground)",
-    sign: "-",
-  },
-  gasto_tarjeta: {
-    icon: CreditCard,
-    iconColor: "var(--os-cyan)",
-    iconBg: "color-mix(in oklch, var(--os-cyan) 18%, transparent)",
-    amountColor: "var(--os-magenta)",
-    sign: "-",
-  },
-  pago_deuda: {
-    icon: HandCoins,
-    iconColor: "var(--os-orange)",
-    iconBg: "color-mix(in oklch, var(--os-orange) 18%, transparent)",
-    amountColor: "var(--os-magenta)",
-    sign: "-",
-  },
-  ajuste: {
-    icon: Scale,
-    iconColor: "var(--muted-foreground)",
-    iconBg: "color-mix(in oklch, var(--muted-foreground) 12%, transparent)",
-    amountColor: "var(--muted-foreground)",
-    sign: "",
-  },
-  prestamo_otorgado: {
-    icon: Banknote,
-    iconColor: "#6366F1",
-    iconBg: "color-mix(in oklch, #6366F1 15%, transparent)",
-    amountColor: "var(--os-magenta)",
-    sign: "-",
-  },
-  prestamo_cobrado: {
-    icon: Banknote,
-    iconColor: "var(--os-lime)",
-    iconBg: "color-mix(in oklch, var(--os-lime) 15%, transparent)",
-    amountColor: "var(--os-lime)",
-    sign: "+",
-  },
-};
-
-export function TransactionItem({
+// memo: evita re-renders cuando el padre actualiza estado no relacionado (ej. abrir modales)
+export const TransactionItem = memo(function TransactionItem({
   transaction: tx,
   category,
   categoryName: categoryNameFallback,
@@ -100,7 +37,7 @@ export function TransactionItem({
   cardMap,
   onPress,
 }: TransactionItemProps) {
-  const config = TYPE_CONFIG[tx.type];
+  const config = TYPE_CONFIG[tx.type] ?? TYPE_CONFIG.gasto;
   const Icon = config.icon;
 
   // ── Icono: emoji de categoría si existe, si no el icono de tipo ─────────────
@@ -157,7 +94,7 @@ export function TransactionItem({
   return (
     <button
       type="button"
-      onClick={onPress}
+      onClick={onPress ? () => onPress(tx) : undefined}
       className="w-full flex items-center gap-3 px-4 py-3 transition-colors text-left"
       style={{ background: "none" }}
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--muted)"; }}
@@ -193,4 +130,4 @@ export function TransactionItem({
       </p>
     </button>
   );
-}
+});
