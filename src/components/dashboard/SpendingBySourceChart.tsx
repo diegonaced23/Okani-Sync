@@ -4,8 +4,10 @@ import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SpendingBySourceChartProps {
-  data: { name: string; amount: number; color: string }[] | undefined;
+  // color se omite: los colores de cuenta son gradientes CSS incompatibles con esta barra; se usa CHART_COLORS fijo
+  data: { name: string; amount: number }[] | undefined;
   currency: string;
+  monthName: string;
 }
 
 // Paleta fija para las barras del chart — ignora los colores de cuenta (son gradientes CSS)
@@ -22,15 +24,15 @@ function truncate(s: string, max = 18): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-export function SpendingBySourceChart({ data, currency }: SpendingBySourceChartProps) {
+export function SpendingBySourceChart({ data, currency, monthName }: SpendingBySourceChartProps) {
   if (data === undefined) return <Skeleton className="h-48 rounded-xl" />;
 
-  const filtered = (data ?? []).filter((d) => d.amount > 0);
+  const filtered = data.filter((d) => d.amount > 0);
 
   if (filtered.length === 0) {
     return (
       <div className="h-48 flex items-center justify-center rounded-xl bg-card border border-border">
-        <p className="text-sm text-muted-foreground">Sin gastos este mes.</p>
+        <p className="text-sm text-muted-foreground">Sin gastos en {monthName}.</p>
       </div>
     );
   }

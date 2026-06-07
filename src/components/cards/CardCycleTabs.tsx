@@ -33,6 +33,9 @@ import type { PaymentStatementRow } from "@/lib/reports";
 
 type TabId = "ciclo-actual" | "a-pagar" | "plan-completo";
 
+// Capturado al cargar el módulo — Date.now() en render es impuro para el React Compiler
+const SESSION_NOW = Date.now();
+
 // Tipo del resultado de getCardDetailData usando el helper oficial de Convex
 type CardDetailData = NonNullable<FunctionReturnType<typeof api.cards.getCardDetailData>>;
 
@@ -215,7 +218,7 @@ export function CardCycleTabs({
   });
   const daysUntilPayment = Math.max(
     0,
-    Math.ceil((relevantPaymentTs - Date.now()) / (1000 * 60 * 60 * 24))
+    Math.ceil((relevantPaymentTs - SESSION_NOW) / (1000 * 60 * 60 * 24))
   );
 
   // ── Tab 3: Plan completo (con filtros) ─────────────────────────────────────

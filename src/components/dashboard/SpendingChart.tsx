@@ -6,21 +6,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface SpendingChartProps {
   data: { name: string; amount: number; color: string }[] | undefined;
   currency: string;
+  monthName: string;
 }
 
 function truncate(s: string, max = 22): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-export function SpendingChart({ data, currency }: SpendingChartProps) {
+export function SpendingChart({ data, currency, monthName }: SpendingChartProps) {
   if (data === undefined) return <Skeleton className="h-56 rounded-xl" />;
 
-  const filtered = (data ?? []).filter((d) => d.amount > 0);
+  const filtered = data.filter((d) => d.amount > 0);
 
   if (filtered.length === 0) {
     return (
       <div className="h-56 flex items-center justify-center rounded-xl bg-card border border-border">
-        <p className="text-sm text-muted-foreground">Sin gastos este mes.</p>
+        <p className="text-sm text-muted-foreground">Sin gastos en {monthName}.</p>
       </div>
     );
   }

@@ -4,8 +4,8 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanRead, assertCanWrite } from "./lib/permissions";
-import { toMonthString, generateId } from "./lib/utils";
-import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
+import { toMonthString, generateId, assertValidMonth } from "./lib/utils";
+
 import {
   applyAccountDelta,
   applyCardDelta,
@@ -19,6 +19,7 @@ import { buildRateMap, convertAmount } from "./lib/money";
 export const listByMonth = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
+    assertValidMonth(month);
     const clerkId = await getCurrentUserId(ctx);
     return await ctx.db
       .query("transactions")
@@ -56,6 +57,7 @@ export const listForExport = query({
 export const listByAccountMonth = query({
   args: { accountId: v.id("accounts"), month: v.string() },
   handler: async (ctx, { accountId, month }) => {
+    assertValidMonth(month);
     await assertCanRead(ctx, accountId);
     return await ctx.db
       .query("transactions")
@@ -83,22 +85,38 @@ export const listRecent = query({
       .take(Math.min(safeLimit * 15, 300));
 
     type TxWithEffectiveDate = (typeof candidates)[number] & { date: number };
-    const enriched: TxWithEffectiveDate[] = [];
 
-    for (const tx of candidates) {
-      if (tx.type === "gasto_tarjeta") {
-        // Solo cuota #1: representa el momento de compra; las siguientes son cargos futuros.
-        if (!tx.cardInstallmentId) continue;
-        const installment = await ctx.db.get(tx.cardInstallmentId);
-        if (!installment || installment.installmentNumber !== 1) continue;
+    // Separar gasto_tarjeta del resto para batch-resolverlos en paralelo
+    const cardCandidates = candidates.filter(
+      tx => tx.type === "gasto_tarjeta" && tx.cardInstallmentId != null
+    );
+    const nonCardTxs = candidates.filter(
+      tx => tx.type !== "gasto_tarjeta"
+    ) as TxWithEffectiveDate[];
 
-        // Reemplazar date (vencimiento de cuota) por la fecha real de la compra.
-        const purchase = tx.cardPurchaseId ? await ctx.db.get(tx.cardPurchaseId) : null;
-        enriched.push({ ...tx, date: purchase?.purchaseDate ?? tx._creationTime });
-      } else {
-        enriched.push(tx as TxWithEffectiveDate);
-      }
-    }
+    // Batch 1: resolver todas las cuotas a la vez (evita N awaits serializados)
+    const installments = await Promise.all(
+      cardCandidates.map(tx => ctx.db.get(tx.cardInstallmentId!))
+    );
+
+    // Solo cuota #1 representa el momento de compra; las siguientes son cargos futuros
+    const firstPairs = cardCandidates
+      .map((tx, i) => ({ tx, inst: installments[i] }))
+      .filter(({ inst }) => inst?.installmentNumber === 1);
+
+    // Batch 2: resolver compras originales a la vez
+    const purchases = await Promise.all(
+      firstPairs.map(({ tx }) =>
+        tx.cardPurchaseId ? ctx.db.get(tx.cardPurchaseId) : null
+      )
+    );
+
+    const enrichedCardTxs: TxWithEffectiveDate[] = firstPairs.map(({ tx }, i) => ({
+      ...tx,
+      date: purchases[i]?.purchaseDate ?? tx._creationTime,
+    }));
+
+    const enriched: TxWithEffectiveDate[] = [...nonCardTxs, ...enrichedCardTxs];
 
     // Re-ordenar por fecha efectiva porque las gasto_tarjeta tenían fechas futuras.
     enriched.sort((a, b) => b.date - a.date);
@@ -112,8 +130,20 @@ export const getById = query({
   handler: async (ctx, { transactionId }) => {
     const clerkId = await getCurrentUserId(ctx);
     const tx = await ctx.db.get(transactionId);
-    if (!tx || tx.userId !== clerkId) return null;
-    return tx;
+    if (!tx) return null;
+    // Acceso directo si es el dueño
+    if (tx.userId === clerkId) return tx;
+    // Para cuentas compartidas: verificar permiso de lectura sobre la cuenta de la transacción.
+    // assertCanRead lanza si no hay acceso; retornamos null para mantener el contrato de fetch-one.
+    if (tx.accountId) {
+      try {
+        await assertCanRead(ctx, tx.accountId);
+        return tx;
+      } catch {
+        return null;
+      }
+    }
+    return null;
   },
 });
 
@@ -303,6 +333,7 @@ export const search = query({
 export const spendingByCategory = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
+    assertValidMonth(month);
     const user = await getCurrentUser(ctx);
     const preferredCurrency = user.currency ?? "COP";
     const currentRates = await ctx.db.query("currentExchangeRates").collect();
@@ -328,19 +359,24 @@ export const spendingByCategory = query({
       }
     }
 
-    const items = await Promise.all(
-      [...grouped.entries()].map(async ([key, data]) => {
-        if (key === "__none__" || !data.categoryId) {
-          return { name: "Sin categoría", amount: data.amount, color: "#6B7280" };
-        }
-        const cat = await ctx.db.get(data.categoryId as Id<"categories">);
-        return {
-          name: cat?.name ?? "Sin categoría",
-          amount: data.amount,
-          color: cat?.color ?? "#6B7280",
-        };
-      })
-    );
+    // Batch-load de categorías del usuario: evita N round-trips individuales.
+    const allCats = await ctx.db
+      .query("categories")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .collect();
+    const catMap = new Map(allCats.map((c) => [c._id.toString(), c]));
+
+    const items = [...grouped.entries()].map(([key, data]) => {
+      if (key === "__none__" || !data.categoryId) {
+        return { name: "Sin categoría", amount: data.amount, color: "#6B7280" };
+      }
+      const cat = catMap.get(data.categoryId.toString());
+      return {
+        name: cat?.name ?? "Sin categoría",
+        amount: data.amount,
+        color: cat?.color ?? "#6B7280",
+      };
+    });
 
     // Pagos de tarjeta del mes — base caja: el efectivo salió de la cuenta.
     // Se agrupan como un solo bucket para reconciliar con monthlySummary.gastos.
@@ -368,6 +404,7 @@ export const spendingByCategory = query({
 export const spendingBySource = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
+    assertValidMonth(month);
     const user = await getCurrentUser(ctx);
     const preferredCurrency = user.currency ?? "COP";
     const currentRates = await ctx.db.query("currentExchangeRates").collect();
@@ -427,27 +464,49 @@ export const spendingBySource = query({
       }
     }
 
-    const results = await Promise.all(
-      [...grouped.entries()].map(async ([key, data]) => {
-        if (key === "__none__") {
-          return { name: "Sin fuente", amount: data.amount, color: "#6B7280" };
-        }
-        if (data.sourceType === "account") {
-          const acc = await ctx.db.get(data.sourceId as Id<"accounts">);
-          return {
-            name: acc?.name ?? "Cuenta eliminada",
-            amount: data.amount,
-            color: acc?.color ?? "#6B7280",
-          };
-        }
-        const card = await ctx.db.get(data.sourceId as Id<"cards">);
-        return {
-          name: card ? `${card.name} ····${card.lastFourDigits}` : "Tarjeta eliminada",
-          amount: data.amount,
-          color: card?.color ?? "#6B7280",
-        };
-      })
+    // Batch-load de cuentas y tarjetas: evita N round-trips individuales.
+    // Se usan los IDs ya presentes en `grouped` para cubrir cuentas compartidas sin asumir ownership.
+    const accountIds = new Set<string>();
+    const cardIds = new Set<string>();
+    for (const [key, data] of grouped.entries()) {
+      if (key === "__none__") continue;
+      if (data.sourceType === "account") accountIds.add(data.sourceId!);
+      else if (data.sourceType === "card") cardIds.add(data.sourceId!);
+    }
+    const [accountsRaw, cardsRaw] = await Promise.all([
+      Promise.all([...accountIds].map((id) => ctx.db.get(id as Id<"accounts">))),
+      Promise.all([...cardIds].map((id) => ctx.db.get(id as Id<"cards">))),
+    ]);
+    const accountMap = new Map(
+      accountsRaw
+        .filter((a): a is NonNullable<typeof a> => a !== null)
+        .map((a) => [a._id.toString(), a])
     );
+    const cardMap = new Map(
+      cardsRaw
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+        .map((c) => [c._id.toString(), c])
+    );
+
+    const results = [...grouped.entries()].map(([key, data]) => {
+      if (key === "__none__") {
+        return { name: "Sin fuente", amount: data.amount, color: "#6B7280" };
+      }
+      if (data.sourceType === "account") {
+        const acc = accountMap.get(data.sourceId!);
+        return {
+          name: acc?.name ?? "Cuenta eliminada",
+          amount: data.amount,
+          color: acc?.color ?? "#6B7280",
+        };
+      }
+      const card = cardMap.get(data.sourceId!);
+      return {
+        name: card ? `${card.name} ····${card.lastFourDigits}` : "Tarjeta eliminada",
+        amount: data.amount,
+        color: card?.color ?? "#6B7280",
+      };
+    });
 
     return results.sort((a, b) => b.amount - a.amount);
   },
@@ -457,11 +516,14 @@ export const spendingBySource = query({
 export const monthlySummary = query({
   args: { months: v.array(v.string()) },
   handler: async (ctx, { months }) => {
+    // Cap en 12 — el dashboard usa 6 meses (lastNMonths(6)); 12 es el techo razonable para exportes
+    const safeMonths = months.slice(0, 12);
+    // Validar formato antes de consultar el índice — un valor malformado corrompería la query
+    safeMonths.forEach(assertValidMonth);
     const user = await getCurrentUser(ctx);
     const preferredCurrency = user.currency ?? "COP";
     const currentRates = await ctx.db.query("currentExchangeRates").collect();
     const rateMap = buildRateMap(currentRates, preferredCurrency);
-    const safeMonths = months.slice(0, 24);
 
     return await Promise.all(
       safeMonths.map(async (month) => {

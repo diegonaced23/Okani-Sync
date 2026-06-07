@@ -52,7 +52,7 @@ export default function DebtDetailPage({
       debt.monthlyPayment,
       currentMonth(),
     );
-  }, [debt?.currentBalance, debt?.interestRate, debt?.monthlyPayment]);
+  }, [debt]);
 
   const hasAmortization = amortization !== null;
   const tabs: { key: Tab; label: string }[] = hasAmortization

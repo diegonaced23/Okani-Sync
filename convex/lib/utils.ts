@@ -14,6 +14,17 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * Lanza si `month` no tiene formato "YYYY-MM" válido.
+ * Los validadores de Convex no soportan regex, por lo que esta verificación
+ * debe hacerse a nivel de handler para proteger los índices by_user_month.
+ */
+export function assertValidMonth(month: string): void {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw new Error(`Formato de mes inválido: "${month}" (esperado: YYYY-MM)`);
+  }
+}
+
 // Nombres canónicos de las categorías de sistema — usados para lookup por nombre.
 export const SYSTEM_CATEGORY_PAYMENT_NAME   = "Pago de tarjeta";
 export const SYSTEM_CATEGORY_INTERESTS_NAME = "Gastos financieros";

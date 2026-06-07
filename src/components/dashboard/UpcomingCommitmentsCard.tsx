@@ -2,7 +2,7 @@
 
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, CreditCard, RefreshCw, Wallet, Clock } from "lucide-react";
+import { AlertTriangle, CreditCard, RefreshCw, HandCoins, Clock } from "lucide-react";
 import Link from "next/link";
 
 type CommitmentItem = {
@@ -23,18 +23,20 @@ interface UpcomingCommitmentsCardProps {
   loading?: boolean;
 }
 
+// Capturado al cargar el módulo — Date.now() en render es impuro para el React Compiler
+const SESSION_NOW = Date.now();
+const MS_PER_DAY = 86_400_000;
+
 const MAX_VISIBLE = 8;
 
 function ItemIcon({ type }: { type: CommitmentItem["type"] }) {
   if (type === "cuota_tarjeta") return <CreditCard size={14} />;
-  if (type === "deuda")        return <Wallet size={14} />;
+  if (type === "deuda")        return <HandCoins size={14} />;
   return <RefreshCw size={14} />;
 }
 
 function DateBadge({ dueDate }: { dueDate: number }) {
-  const now = Date.now();
-  const diff = dueDate - now;
-  const days = Math.ceil(diff / 86_400_000);
+  const days = Math.ceil((dueDate - SESSION_NOW) / MS_PER_DAY);
 
   let text: string;
   let color: string;
@@ -47,10 +49,11 @@ function DateBadge({ dueDate }: { dueDate: number }) {
     color = "var(--destructive)";
   } else if (days === 1) {
     text = "Mañana";
-    color = "#F59E0B";
+    // var(--warning-text) garantiza contraste ≥4.5:1 en texto sobre fondo de tarjeta
+    color = "var(--warning-text)";
   } else if (days <= 7) {
     text = `En ${days} días`;
-    color = "#F59E0B";
+    color = "var(--warning-text)";
   } else {
     const date = new Date(dueDate).toLocaleDateString("es-CO", { day: "numeric", month: "short" });
     text = date;
@@ -65,7 +68,8 @@ function DateBadge({ dueDate }: { dueDate: number }) {
 }
 
 export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCardProps) {
-  if (loading || data === undefined || data === null) {
+  // undefined = consulta cargando → skeleton; null = sin datos disponibles → mensaje vacío
+  if (loading || data === undefined) {
     return (
       <section className="space-y-2.5">
         <div className="flex items-baseline justify-between">
@@ -73,6 +77,21 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
         </div>
         <div className="rounded-xl bg-card border border-border overflow-hidden p-4 space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
+        </div>
+      </section>
+    );
+  }
+
+  if (data === null) {
+    return (
+      <section className="space-y-2.5">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-bold text-foreground">Próximos 30 días</h2>
+        </div>
+        <div className="rounded-xl bg-card border border-border overflow-hidden">
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            No se pudieron cargar los compromisos próximos.
+          </p>
         </div>
       </section>
     );
@@ -98,8 +117,13 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
           )}
         </h2>
         {totalAmount > 0 && (
-          <span className="text-xs font-bold text-foreground">
-            {formatCents(totalAmount, currency)}
+          // Muestra "≈" e ícono cuando faltan tasas; title detalla qué monedas y cuándo se actualizan
+          <span
+            className="flex items-center gap-1 text-xs font-bold text-foreground"
+            title={missingRates.length > 0 ? `Total aproximado — tasas de ${missingRates.join(", ")} no disponibles. Se actualizan automáticamente cada día.` : undefined}
+          >
+            {missingRates.length > 0 && <AlertTriangle size={11} aria-hidden="true" className="text-muted-foreground" />}
+            {missingRates.length > 0 ? "≈ " : ""}{formatCents(totalAmount, currency)}
           </span>
         )}
       </div>
@@ -113,9 +137,10 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
           <>
             <ul className="divide-y divide-border">
               {visible.map((item: CommitmentItem, idx: number) => (
-                <li key={idx} className="px-4 py-3 flex items-center gap-3">
-                  {/* Icono de tipo */}
+                <li key={idx} className="px-4 py-3 flex items-center gap-3 transition-colors hover:bg-muted/40">
+                  {/* Icono decorativo — el tipo se anuncia con sr-only en la descripción */}
                   <span
+                    aria-hidden="true"
                     className="flex items-center justify-center shrink-0"
                     style={{
                       width: 32, height: 32, borderRadius: 10,
@@ -136,6 +161,10 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
 
                   {/* Descripción + subtítulo */}
                   <div className="flex-1 min-w-0">
+                    {/* sr-only: tipo de compromiso — el icono es decorativo y no lo anuncia */}
+                    <span className="sr-only">
+                      {item.type === "cuota_tarjeta" ? "Cuota de tarjeta" : item.type === "deuda" ? "Deuda" : "Recurrente"}:{" "}
+                    </span>
                     <p className="text-sm font-semibold text-foreground truncate">
                       {item.description}
                     </p>
@@ -162,18 +191,17 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
                 <span className="text-xs text-muted-foreground">
                   {hidden} compromiso{hidden !== 1 ? "s" : ""} más
                 </span>
-                <Link href="/tarjetas" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
-                  Ver todo
-                </Link>
+                <div className="flex items-center gap-3">
+                  <Link href="/tarjetas" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
+                    Ver tarjetas
+                  </Link>
+                  <Link href="/deudas" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
+                    Ver deudas
+                  </Link>
+                </div>
               </div>
             )}
 
-            {missingRates.length > 0 && (
-              <div className="px-4 py-2 border-t border-border flex items-center gap-1.5" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
-                <AlertTriangle size={11} />
-                <span>Total aproximado — sin tasa para: {missingRates.join(", ")}</span>
-              </div>
-            )}
           </>
         )}
       </div>

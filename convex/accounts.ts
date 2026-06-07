@@ -1,10 +1,39 @@
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertIsOwner } from "./lib/permissions";
-import { toMonthString } from "./lib/utils";
+import { toMonthString, assertValidMonth } from "./lib/utils";
 import { deleteTransactionWithEffects } from "./lib/transactionEffects";
 import { buildRateMap, convertAmount } from "./lib/money";
+
+// ─── Helpers internos ─────────────────────────────────────────────────────────
+
+/**
+ * Devuelve cuentas propias (no archivadas) + cuentas compartidas aceptadas,
+ * filtradas por `includeInBalance !== false`. Centraliza la lógica que antes
+ * se repetía en consolidatedBalance, netWorth y financialHealthMetrics.
+ */
+async function getAccountsWithShared(ctx: QueryCtx, clerkId: string) {
+  const [ownAccounts, shares] = await Promise.all([
+    ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) => q.eq("ownerId", clerkId).eq("archived", false))
+      .collect(),
+    ctx.db
+      .query("accountShares")
+      .withIndex("by_shared_user_status", (q) =>
+        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
+      )
+      .collect(),
+  ]);
+  const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
+  // Excluir archivadas — las propias ya filtran por archived=false en el índice
+  const sharedAccounts = sharedRaw.filter(
+    (a): a is NonNullable<typeof a> => a !== null && !a.archived
+  );
+  return [...ownAccounts, ...sharedAccounts].filter((a) => a.includeInBalance !== false);
+}
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -16,40 +45,15 @@ import { buildRateMap, convertAmount } from "./lib/money";
 export const consolidatedBalance = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-    const clerkId = identity.subject;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
-      .unique();
-    if (!user) return null;
-
+    // getCurrentUser verifica JWT + existencia + user.active (bloquea cuentas desactivadas)
+    const user = await getCurrentUser(ctx);
+    const clerkId = user.clerkId;
     const preferredCurrency = user.currency ?? "COP";
 
-    // Cuentas propias
-    const ownAccounts = await ctx.db
-      .query("accounts")
-      .withIndex("by_owner_archived", (q) =>
-        q.eq("ownerId", clerkId).eq("archived", false)
-      )
-      .collect();
-
-    // Cuentas compartidas aceptadas
-    const shares = await ctx.db
-      .query("accountShares")
-      .withIndex("by_shared_user_status", (q) =>
-        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
-      )
-      .collect();
-    const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
-    const sharedAccounts = sharedRaw.filter(
-      (a): a is NonNullable<typeof a> => a !== null
-    );
-
-    // Tasas actuales
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
+    const [includedAccounts, currentRates] = await Promise.all([
+      getAccountsWithShared(ctx, clerkId),
+      ctx.db.query("currentExchangeRates").collect(),
+    ]);
     const rateMap = new Map(
       currentRates.map((r) => [`${r.fromCurrency}→${r.toCurrency}`, r.rate])
     );
@@ -63,10 +67,6 @@ export const consolidatedBalance = query({
 
     let total = 0;
     const missingRates: string[] = [];
-
-    const includedAccounts = [...ownAccounts, ...sharedAccounts].filter(
-      (a) => a.includeInBalance !== false
-    );
 
     for (const account of includedAccounts) {
       const { converted, hasRate } = convert(account.balance, account.currency);
@@ -95,16 +95,9 @@ export const consolidatedBalance = query({
 export const netWorth = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-    const clerkId = identity.subject;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
-      .unique();
-    if (!user) return null;
-
+    // getCurrentUser verifica JWT + existencia + user.active (bloquea cuentas desactivadas)
+    const user = await getCurrentUser(ctx);
+    const clerkId = user.clerkId;
     const preferredCurrency = user.currency ?? "COP";
     const currentRates = await ctx.db.query("currentExchangeRates").collect();
     const rateMap = buildRateMap(currentRates, preferredCurrency);
@@ -116,24 +109,8 @@ export const netWorth = query({
       return converted;
     }
 
-    // ── Activos: cuentas propias + cuentas compartidas aceptadas (misma lógica que consolidatedBalance) ──
-    const ownAccounts = await ctx.db
-      .query("accounts")
-      .withIndex("by_owner_archived", (q) => q.eq("ownerId", clerkId).eq("archived", false))
-      .collect();
-
-    const shares = await ctx.db
-      .query("accountShares")
-      .withIndex("by_shared_user_status", (q) =>
-        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
-      )
-      .collect();
-    const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
-    const sharedAccounts = sharedRaw.filter((a): a is NonNullable<typeof a> => a !== null);
-
-    const allAccounts = [...ownAccounts, ...sharedAccounts].filter(
-      (a) => a.includeInBalance !== false
-    );
+    // ── Activos: cuentas propias + cuentas compartidas aceptadas ──
+    const allAccounts = await getAccountsWithShared(ctx, clerkId);
     const totalAssets = allAccounts.reduce((s, a) => s + convert(a.balance, a.currency), 0);
     const accountCount = allAccounts.length;
 
@@ -217,16 +194,9 @@ export const list = query({
 export const financialHealthMetrics = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-    const clerkId = identity.subject;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
-      .unique();
-    if (!user) return null;
-
+    // getCurrentUser verifica JWT + existencia + user.active (bloquea cuentas desactivadas)
+    const user = await getCurrentUser(ctx);
+    const clerkId = user.clerkId;
     const preferredCurrency = user.currency ?? "COP";
     const currentRates = await ctx.db.query("currentExchangeRates").collect();
     const rateMap = buildRateMap(currentRates, preferredCurrency);
@@ -328,7 +298,6 @@ export const financialHealthMetrics = query({
 
     let totalBalanceConverted = 0;
     let totalLimitConverted = 0;
-    const perCardUtilization: { name: string; lastFour: string; utilization: number }[] = [];
 
     for (const card of allCards) {
       if (card.creditLimit <= 0) continue;
@@ -336,11 +305,6 @@ export const financialHealthMetrics = query({
       const lim = convert(card.creditLimit, card.currency);
       totalBalanceConverted += bal;
       totalLimitConverted += lim;
-      perCardUtilization.push({
-        name: card.name,
-        lastFour: card.lastFourDigits,
-        utilization: (bal / lim) * 100,
-      });
     }
 
     const creditUtilization = totalLimitConverted > 0
@@ -348,24 +312,8 @@ export const financialHealthMetrics = query({
       : null;
 
     // ── Runway de emergencia ──────────────────────────────────────────────────
-    // Activos: mismo scope que netWorth.totalAssets (cuentas propias + compartidas aceptadas).
-    // NOTA: si se modifica la lógica de netWorth, actualizar aquí también para mantener coherencia.
-    const ownAccounts = await ctx.db
-      .query("accounts")
-      .withIndex("by_owner_archived", (q) => q.eq("ownerId", clerkId).eq("archived", false))
-      .collect();
-    const shares = await ctx.db
-      .query("accountShares")
-      .withIndex("by_shared_user_status", (q) =>
-        q.eq("sharedWithUserId", clerkId).eq("status", "aceptada")
-      )
-      .collect();
-    const sharedRaw = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
-    const allAccountsForRunway = [
-      ...ownAccounts,
-      ...sharedRaw.filter((a): a is NonNullable<typeof a> => a !== null),
-    ].filter((a) => a.includeInBalance !== false);
-
+    // Activos: mismo scope que netWorth.totalAssets — centralizado en getAccountsWithShared.
+    const allAccountsForRunway = await getAccountsWithShared(ctx, clerkId);
     const totalAssets = allAccountsForRunway.reduce(
       (s, a) => s + convert(a.balance, a.currency), 0
     );
@@ -385,7 +333,6 @@ export const financialHealthMetrics = query({
       dti,
       dtiIncomplete,
       creditUtilization,
-      perCardUtilization,
       emergencyRunway,
       currency: preferredCurrency,
       // Datos de apoyo para posible desglose en UI
@@ -405,6 +352,7 @@ export const financialHealthMetrics = query({
 export const monthlySavingsSummary = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
+    assertValidMonth(month);
     const user = await getCurrentUser(ctx);
     const preferredCurrency = user.currency ?? "COP";
     const currentRates = await ctx.db.query("currentExchangeRates").collect();
@@ -462,7 +410,6 @@ export const monthlySavingsSummary = query({
         id: a._id,
         name: a.name,
         balance: convert(a.balance, a.currency),
-        originalBalance: a.balance,
         currency: a.currency,
         color: a.color,
       })),
@@ -503,7 +450,8 @@ export const listSharedWithMe = query({
       )
       .collect();
     const accounts = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
-    return accounts.filter(Boolean);
+    // Excluir archivadas — el gestor de shares las muestra, pero no el balance ni las listas activas
+    return accounts.filter((a): a is NonNullable<typeof a> => a !== null && !a.archived);
   },
 });
 
@@ -593,7 +541,7 @@ export const update = mutation({
     const user = await getCurrentUser(ctx);
     const account = await ctx.db.get(accountId);
     if (!account || account.ownerId !== user.clerkId) {
-      throw new Error("Cuenta no encontrada o sin permisos");
+      throw new Error("Cuenta no encontrada");
     }
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [k, v] of Object.entries(fields)) {
@@ -610,7 +558,7 @@ export const remove = mutation({
     const user = await getCurrentUser(ctx);
     const account = await ctx.db.get(accountId);
     if (!account || account.ownerId !== user.clerkId) {
-      throw new Error("Cuenta no encontrada o sin permisos");
+      throw new Error("Cuenta no encontrada");
     }
 
     // 1. Compartidos
@@ -662,7 +610,7 @@ export const archive = mutation({
     const user = await getCurrentUser(ctx);
     const account = await ctx.db.get(accountId);
     if (!account || account.ownerId !== user.clerkId) {
-      throw new Error("Cuenta no encontrada o sin permisos");
+      throw new Error("Cuenta no encontrada");
     }
     if (account.isDefault) {
       throw new Error("No se puede archivar la cuenta por defecto");
@@ -818,7 +766,7 @@ export const toggleBalanceInclusion = mutation({
     const user = await getCurrentUser(ctx);
     const account = await ctx.db.get(accountId);
     if (!account || account.ownerId !== user.clerkId) {
-      throw new Error("Cuenta no encontrada o sin permisos");
+      throw new Error("Cuenta no encontrada");
     }
     await ctx.db.patch(accountId, {
       includeInBalance: include,

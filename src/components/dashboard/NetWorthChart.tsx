@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { fromCents, formatCurrency } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, CalendarClock } from "lucide-react";
 
 interface Snapshot {
   month: string;
@@ -28,8 +28,27 @@ function shortMonth(month: string): string {
   return d.toLocaleDateString("es-CO", { month: "short", year: "2-digit" });
 }
 
+// Estilo constante del tooltip de Recharts — externo al render para evitar nueva referencia en cada ciclo
+const TOOLTIP_STYLE = {
+  backgroundColor: "var(--card)",
+  border: "1px solid var(--border)",
+  borderRadius: "8px",
+  fontSize: "12px",
+} as const;
+
 export function NetWorthChart({ data, currency }: NetWorthChartProps) {
-  if (data === undefined) return <Skeleton className="h-56 rounded-xl" />;
+  // Skeleton estructurado para evitar CLS: imita el header + gráfico del componente real
+  if (data === undefined) {
+    return (
+      <div className="rounded-xl bg-card border border-border p-4">
+        <div className="flex justify-between items-center mb-3">
+          <Skeleton className="h-3 w-52" />
+          <Skeleton className="h-4 w-14 rounded-full" />
+        </div>
+        <Skeleton className="h-[200px] w-full rounded-lg" />
+      </div>
+    );
+  }
 
   if (data.length === 0) {
     return (
@@ -37,10 +56,14 @@ export function NetWorthChart({ data, currency }: NetWorthChartProps) {
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
           Evolución del patrimonio
         </p>
-        <p className="text-sm text-muted-foreground mt-3">
-          El primer snapshot se capturará automáticamente el día 1 del próximo mes.
-          A partir de entonces, el gráfico mostrará la evolución histórica.
-        </p>
+        {/* CalendarClock refuerza que la acción es automática — el usuario no necesita hacer nada */}
+        <div className="flex items-start gap-2 mt-3">
+          <CalendarClock size={15} className="text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">
+            El primer snapshot se capturará automáticamente el día 1 del próximo mes.
+            A partir de entonces, el gráfico mostrará la evolución histórica.
+          </p>
+        </div>
       </div>
     );
   }
@@ -137,12 +160,7 @@ export function NetWorthChart({ data, currency }: NetWorthChartProps) {
             />
             <Tooltip
               formatter={(value) => [formatCurrency(Number(value ?? 0), currency), "Patrimonio neto"]}
-              contentStyle={{
-                backgroundColor: "var(--card)",
-                border: "1px solid var(--border)",
-                borderRadius: "8px",
-                fontSize: "12px",
-              }}
+              contentStyle={TOOLTIP_STYLE}
             />
             <Area
               type="monotone"

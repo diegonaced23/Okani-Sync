@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatCents } from "@/lib/money";
 import { toast } from "sonner";
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 interface BalanceAccountsSheetProps {
   open: boolean;
@@ -82,13 +83,18 @@ export function BalanceAccountsSheet({
                         </p>
                       </div>
 
-                      {/* Switch */}
-                      <Switch
-                        checked={included}
-                        disabled={pending === acc._id}
-                        onCheckedChange={(checked) => handleToggle(acc, checked)}
-                        aria-label={`${included ? "Excluir" : "Incluir"} ${acc.name} del patrimonio`}
-                      />
+                      {/* Switch + spinner mientras la mutación está en vuelo */}
+                      <div className="flex items-center gap-1.5">
+                        {pending === acc._id && (
+                          <Loader2 size={14} className="animate-spin text-muted-foreground" aria-hidden="true" />
+                        )}
+                        <Switch
+                          checked={included}
+                          disabled={pending === acc._id}
+                          onCheckedChange={(checked) => handleToggle(acc, checked)}
+                          aria-label={`${included ? "Excluir" : "Incluir"} ${acc.name} del patrimonio`}
+                        />
+                      </div>
                     </li>
                   );
                 })}

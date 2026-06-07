@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+
 import { formatCents, formatMonth } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingUp, TrendingDown, Minus, FileDown } from "lucide-react";
@@ -72,7 +72,7 @@ function TrendBadge({ trend }: { trend: Trend }) {
 
 // ── Exportación CSV ───────────────────────────────────────────────────────────
 
-function exportCsv(result: NonNullable<BudgetHistoryTableProps["result"]>, currency: string) {
+function exportCsv(result: NonNullable<BudgetHistoryTableProps["result"]>) {
   const { rows, months } = result;
   const headers = [
     "Categoría",
@@ -150,7 +150,7 @@ export function BudgetHistoryTable({ result, currency }: BudgetHistoryTableProps
           variant="outline"
           size="sm"
           className="gap-2"
-          onClick={() => exportCsv(result, currency)}
+          onClick={() => exportCsv(result)}
         >
           <FileDown size={14} />
           Exportar CSV

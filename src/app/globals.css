@@ -14,12 +14,14 @@
   /* ── Paleta nombrada ─────────────────────────────────────────────────── */
   --os-lime:      oklch(0.78 0.19 142);
   --os-lime-2:    oklch(0.88 0.16 142);
+  --os-lime-text: oklch(0.42 0.16 142); /* variante accesible para texto (≥4.5:1 sobre fondo claro) */
   --os-cyan:      oklch(0.78 0.14 215);
   --os-cyan-2:    oklch(0.88 0.10 215);
   --os-magenta:   oklch(0.55 0.22 27);   /* rojo · gastos */
   --os-magenta-2: oklch(0.65 0.20 25);
   --os-orange:    oklch(0.76 0.18 55);
   --os-orange-2:  oklch(0.86 0.14 55);
+  --warning-text: #B45309;               /* amber-700: contraste ≥4.5:1 sobre fondos claros */
   --os-violet:    oklch(0.65 0.22 295);
   --os-violet-2:  oklch(0.80 0.14 295);
   --os-yellow:    oklch(0.88 0.17 95);
@@ -82,12 +84,14 @@
 .dark {
   --os-lime:      oklch(0.85 0.22 142);
   --os-lime-2:    oklch(0.55 0.18 142);
+  --os-lime-text: oklch(0.78 0.19 142); /* en dark, el lime claro tiene buen contraste sobre fondos oscuros */
   --os-cyan:      oklch(0.82 0.16 215);
   --os-cyan-2:    oklch(0.50 0.14 215);
   --os-magenta:   oklch(0.72 0.22 25);
   --os-magenta-2: oklch(0.50 0.20 25);
   --os-orange:    oklch(0.82 0.20 55);
   --os-orange-2:  oklch(0.55 0.16 55);
+  --warning-text: #FCD34D;               /* amber-300: contraste suficiente sobre fondos oscuros */
   --os-violet:    oklch(0.78 0.22 295);
   --os-violet-2:  oklch(0.50 0.18 295);
   --os-yellow:    oklch(0.92 0.18 95);
@@ -148,11 +152,13 @@
   --color-ring:               var(--ring);
   --color-danger:             var(--danger);
   --color-warning:            var(--warning);
+  --color-warning-text:       var(--warning-text);
   --color-info:               var(--info);
 
   /* Paleta nombrada (bg-lime, text-cyan, etc.) */
   --color-lime:      var(--os-lime);
   --color-lime-2:    var(--os-lime-2);
+  --color-lime-text: var(--os-lime-text);
   --color-cyan:      var(--os-cyan);
   --color-cyan-2:    var(--os-cyan-2);
   --color-magenta:   var(--os-magenta);
@@ -327,3 +333,6 @@
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2, var(--border)); border-radius: 9999px; }
+
+/* Oculta el scrollbar del carousel de cuentas en Safari/WebKit (Firefox usa scrollbarWidth: "none" inline) */
+.accounts-carousel::-webkit-scrollbar { display: none; }

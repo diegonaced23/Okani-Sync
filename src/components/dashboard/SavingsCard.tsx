@@ -5,28 +5,22 @@ import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 
-interface SavingsCardProps {
-  totalAhorrado: number;
-  transferenciasAhorro: number;
-  gastosMetaVinculada: number;
-  tasaAhorro: number | null;
-  totalIngresos: number;
-  currency: string;
-  cuentasAhorro: { id: string; name: string; balance: number; color: string }[];
-  loading?: boolean;
-}
+// Unión discriminada: { loading: true } no requiere datos; la rama de datos no acepta loading=true
+type SavingsCardProps =
+  | { loading: true }
+  | {
+      loading?: false;
+      totalAhorrado: number;
+      transferenciasAhorro: number;
+      gastosMetaVinculada: number;
+      tasaAhorro: number | null;
+      totalIngresos: number;
+      currency: string;
+      cuentasAhorro: { id: string; name: string; balance: number; color: string }[];
+    };
 
-export function SavingsCard({
-  totalAhorrado,
-  transferenciasAhorro,
-  gastosMetaVinculada,
-  tasaAhorro,
-  totalIngresos,
-  currency,
-  cuentasAhorro,
-  loading,
-}: SavingsCardProps) {
-  if (loading) {
+export function SavingsCard(props: SavingsCardProps) {
+  if (props.loading) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 space-y-3">
         <Skeleton className="h-4 w-28" />
@@ -40,6 +34,8 @@ export function SavingsCard({
     );
   }
 
+  // Después del guard de loading, TypeScript estrecha props a la rama de datos
+  const { totalAhorrado, transferenciasAhorro, gastosMetaVinculada, tasaAhorro, totalIngresos, currency, cuentasAhorro } = props;
   const hasSavings = totalAhorrado > 0;
   const tasa = tasaAhorro !== null ? Math.round(tasaAhorro) : null;
 
@@ -60,9 +56,9 @@ export function SavingsCard({
         </div>
         <Link
           href="/presupuestos"
-          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1"
         >
-          Ver metas <ArrowRight className="h-3 w-3" />
+          Ver presupuestos <ArrowRight className="h-3 w-3" />
         </Link>
       </div>
 

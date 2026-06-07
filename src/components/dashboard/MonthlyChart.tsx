@@ -18,10 +18,18 @@ interface MonthlyChartProps {
   currency: string;
 }
 
+// Estilo del tooltip de Recharts — reutiliza los tokens CSS del tema (ver TOOLTIP_STYLE en NetWorthChart)
+const TOOLTIP_STYLE = {
+  backgroundColor: "var(--card)",
+  border: "1px solid var(--border)",
+  borderRadius: "8px",
+  fontSize: "12px",
+} as const;
+
 export function MonthlyChart({ data, currency }: MonthlyChartProps) {
   if (data === undefined) return <Skeleton className="h-56 rounded-xl" />;
 
-  const chartData = (data ?? []).map((d) => ({
+  const chartData = data.map((d) => ({
     ...d,
     name: formatMonth(d.month).split(" ")[0].slice(0, 3), // "Abr"
     ingresos: fromCents(d.ingresos),
@@ -76,12 +84,7 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
               formatCurrency(Number(value ?? 0), currency),
               name === "ingresos" ? "Ingresos" : "Gastos",
             ]}
-            contentStyle={{
-              backgroundColor: "var(--card)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              fontSize: "12px",
-            }}
+            contentStyle={TOOLTIP_STYLE}
           />
           <Legend
             formatter={(value) => (

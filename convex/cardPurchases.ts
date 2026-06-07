@@ -1,6 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { calculateInstallment, addMonths } from "./lib/money";
 import { toMonthString, getSystemInterestsCategoryId } from "./lib/utils";
