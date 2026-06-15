@@ -69,7 +69,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         setSetup("done");
       })
       .catch(() => setSetup("denied"));
-  }, [isLoaded, isSignedIn, ensureExists, syncRole]);
+  }, [isLoaded, isSignedIn, isAuthenticated, ensureExists, syncRole]);
 
   useEffect(() => {
     if (isAdminOnRestrictedRoute) router.replace("/admin");
