@@ -338,18 +338,39 @@ export const spendingByCategory = query({
     assertValidMonth(month);
     const user = await getCurrentUser(ctx);
     const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    // Sin tasa disponible: se excluye del total en vez de sumar el monto crudo sin convertir.
+    function toPreferred(amount: number, currency: string): number {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      return hasRate ? converted : 0;
+    }
 
-    // Gastos directos de cuenta — base caja, sin cuotas de tarjeta
-    const gastos = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
-      )
-      .collect();
+    // Gastos del mes en base devengo — misma definición que monthlySummary.gastos y
+    // financialHealthMetrics: gasto directo de cuenta + gasto_tarjeta (compra a crédito,
+    // se cuenta en el momento de la compra, no cuando se paga la tarjeta).
+    const [gastos, gastosTarjeta, pagosDeuda] = await Promise.all([
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
+        )
+        .collect(),
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", "gasto_tarjeta").eq("month", month)
+        )
+        .collect(),
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", "pago_deuda").eq("month", month)
+        )
+        .collect(),
+    ]);
 
     const grouped = new Map<string, { amount: number; categoryId: string | null }>();
-    for (const tx of gastos) {
-      const { converted } = convertAmount(tx.amount, tx.currency, preferredCurrency, rateMap);
+    for (const tx of [...gastos, ...gastosTarjeta]) {
+      const converted = toPreferred(tx.amount, tx.currency);
       const key = tx.categoryId ?? "__none__";
       const existing = grouped.get(key);
       if (existing) {
@@ -378,22 +399,12 @@ export const spendingByCategory = query({
       };
     });
 
-    // Pagos de tarjeta del mes — base caja: el efectivo salió de la cuenta.
-    // Se agrupan como un solo bucket para reconciliar con monthlySummary.gastos.
-    const pagosTarjeta = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", user.clerkId).eq("type", "pago_tarjeta").eq("month", month)
-      )
-      .collect();
+    // Pagos de deuda del mes — no tienen categoría propia, se agrupan como un solo bucket
+    // (igual patrón que usaba antes "Pago de tarjeta"), para reconciliar con monthlySummary.gastos.
+    const totalPagosDeuda = pagosDeuda.reduce((s, t) => s + toPreferred(t.amount, t.currency), 0);
 
-    const totalPagosTarjeta = pagosTarjeta.reduce((s, t) => {
-      const { converted } = convertAmount(t.amount, t.currency, preferredCurrency, rateMap);
-      return s + converted;
-    }, 0);
-
-    if (totalPagosTarjeta > 0) {
-      items.push({ name: "Pago de tarjeta", amount: totalPagosTarjeta, color: "#6366F1" });
+    if (totalPagosDeuda > 0) {
+      items.push({ name: "Pago de deuda", amount: totalPagosDeuda, color: "#EF4444" });
     }
 
     return items.sort((a, b) => b.amount - a.amount);
@@ -407,7 +418,14 @@ export const spendingBySource = query({
     assertValidMonth(month);
     const user = await getCurrentUser(ctx);
     const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    // Sin tasa disponible: se excluye del total en vez de sumar el monto crudo sin convertir.
+    function toPreferred(amount: number, currency: string): number {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      return hasRate ? converted : 0;
+    }
 
+    // Misma definición base devengo que spendingByCategory/monthlySummary: gasto directo +
+    // gasto_tarjeta (compra a crédito, fuente real es la tarjeta) + pago_deuda (fuente: cuenta).
     const gastos = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
@@ -415,11 +433,11 @@ export const spendingBySource = query({
       )
       .collect();
 
-    // Pagos de tarjeta: el efectivo sale de la cuenta (accountId)
-    const pagosTarjeta = await ctx.db
+    // Compras a crédito: la fuente real es la tarjeta (no descuentan cuenta)
+    const gastosTarjeta = await ctx.db
       .query("transactions")
       .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", user.clerkId).eq("type", "pago_tarjeta").eq("month", month)
+        q.eq("userId", user.clerkId).eq("type", "gasto_tarjeta").eq("month", month)
       )
       .collect();
 
@@ -431,11 +449,10 @@ export const spendingBySource = query({
       )
       .collect();
 
-    // Para pago_tarjeta y pago_deuda la fuente es la cuenta debitada (accountId),
-    // no la tarjeta destino
+    // Para pago_deuda la fuente es la cuenta debitada (accountId), no una tarjeta destino
     const txs = [
       ...gastos,
-      ...pagosTarjeta.map((t) => ({ ...t, cardId: undefined })),
+      ...gastosTarjeta,
       ...pagosDeuda.map((t) => ({ ...t, cardId: undefined })),
     ];
 
@@ -447,7 +464,7 @@ export const spendingBySource = query({
     }>();
 
     for (const tx of txs) {
-      const { converted } = convertAmount(tx.amount, tx.currency, preferredCurrency, rateMap);
+      const converted = toPreferred(tx.amount, tx.currency);
       const key = tx.accountId ?? tx.cardId ?? "__none__";
       const sourceType = tx.accountId ? "account" : tx.cardId ? "card" : "none";
       const existing = grouped.get(key);
@@ -520,6 +537,11 @@ export const monthlySummary = query({
     safeMonths.forEach(assertValidMonth);
     const user = await getCurrentUser(ctx);
     const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    // Sin tasa disponible: se excluye del total en vez de sumar el monto crudo sin convertir.
+    function toPreferred(amount: number, currency: string): number {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      return hasRate ? converted : 0;
+    }
 
     return await Promise.all(
       safeMonths.map(async (month) => {
@@ -532,10 +554,10 @@ export const monthlySummary = query({
 
         const ingresos = txs
           .filter((t) => t.type === "ingreso")
-          .reduce((s, t) => s + convertAmount(t.amount, t.currency, preferredCurrency, rateMap).converted, 0);
+          .reduce((s, t) => s + toPreferred(t.amount, t.currency), 0);
         const gastos = txs
           .filter((t) => t.type === "gasto" || t.type === "gasto_tarjeta" || t.type === "pago_deuda")
-          .reduce((s, t) => s + convertAmount(t.amount, t.currency, preferredCurrency, rateMap).converted, 0);
+          .reduce((s, t) => s + toPreferred(t.amount, t.currency), 0);
 
         return { month, ingresos, gastos };
       })

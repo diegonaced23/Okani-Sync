@@ -5,6 +5,7 @@ import { ClerkThemeProvider } from "@/components/providers/ClerkThemeProvider";
 import { ConvexClientProvider } from "@/components/providers/ConvexClientProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { SWRegistration } from "@/components/SWRegistration";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const geist = Geist({
@@ -52,6 +53,7 @@ export default function RootLayout({
           <ClerkThemeProvider>
             <ConvexClientProvider>{children}</ConvexClientProvider>
           </ClerkThemeProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

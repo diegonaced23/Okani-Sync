@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -26,7 +27,7 @@ const TOOLTIP_STYLE = {
   fontSize: "12px",
 } as const;
 
-export function MonthlyChart({ data, currency }: MonthlyChartProps) {
+export const MonthlyChart = memo(function MonthlyChart({ data, currency }: MonthlyChartProps) {
   if (data === undefined) return <Skeleton className="h-56 rounded-xl" />;
 
   const chartData = data.map((d) => ({
@@ -38,9 +39,9 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
 
   return (
     <div className="rounded-xl bg-card border border-border p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
         Tendencia — últimos 6 meses
-      </p>
+      </h3>
       {/* Tabla de datos accesible para lectores de pantalla */}
       <table className="sr-only">
         <caption className="sr-only">Resumen mensual — últimos 6 meses</caption>
@@ -114,4 +115,4 @@ export function MonthlyChart({ data, currency }: MonthlyChartProps) {
       </div>
     </div>
   );
-}
+});

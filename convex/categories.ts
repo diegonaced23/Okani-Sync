@@ -43,6 +43,7 @@ export const create = mutation({
     parentId: v.optional(v.id("categories")),
   },
   handler: async (ctx, args) => {
+    if (!/^#[0-9A-Fa-f]{6}$/.test(args.color)) throw new Error("El color debe ser un hex válido (#RRGGBB)");
     const user = await getCurrentUser(ctx);
     const now = Date.now();
     const existing = await ctx.db
@@ -76,6 +77,7 @@ export const update = mutation({
     icon: v.optional(v.string()),
   },
   handler: async (ctx, { categoryId, ...fields }) => {
+    if (fields.color !== undefined && !/^#[0-9A-Fa-f]{6}$/.test(fields.color)) throw new Error("El color debe ser un hex válido (#RRGGBB)");
     const user = await getCurrentUser(ctx);
     const cat = await ctx.db.get(categoryId);
     if (!cat || cat.userId !== user.clerkId) {

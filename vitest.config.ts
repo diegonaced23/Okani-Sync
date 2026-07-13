@@ -4,10 +4,10 @@ import path from "path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "convex/**/*.test.ts"],
     coverage: {
       provider: "v8",
-      include: ["src/lib/**"],
+      include: ["src/lib/**", "convex/lib/money.ts"],
     },
   },
   resolve: {

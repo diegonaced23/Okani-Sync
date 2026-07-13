@@ -1,6 +1,7 @@
 "use client";
 
-import { PiggyBank, ArrowRight } from "lucide-react";
+import { memo } from "react";
+import { PiggyBank, ArrowRight, AlertTriangle } from "lucide-react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
@@ -16,10 +17,11 @@ type SavingsCardProps =
       tasaAhorro: number | null;
       totalIngresos: number;
       currency: string;
+      missingRates?: string[];
       cuentasAhorro: { id: string; name: string; balance: number; color: string }[];
     };
 
-export function SavingsCard(props: SavingsCardProps) {
+export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
   if (props.loading) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 space-y-3">
@@ -35,7 +37,7 @@ export function SavingsCard(props: SavingsCardProps) {
   }
 
   // Después del guard de loading, TypeScript estrecha props a la rama de datos
-  const { totalAhorrado, transferenciasAhorro, gastosMetaVinculada, tasaAhorro, totalIngresos, currency, cuentasAhorro } = props;
+  const { totalAhorrado, transferenciasAhorro, gastosMetaVinculada, tasaAhorro, totalIngresos, currency, cuentasAhorro, missingRates = [] } = props;
   const hasSavings = totalAhorrado > 0;
   const tasa = tasaAhorro !== null ? Math.round(tasaAhorro) : null;
 
@@ -50,9 +52,9 @@ export function SavingsCard(props: SavingsCardProps) {
           >
             <PiggyBank className="h-[18px] w-[18px]" style={{ color: "var(--os-cyan)" }} />
           </span>
-          <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted-foreground)" }}>
+          <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Ahorro este mes
-          </p>
+          </h3>
         </div>
         <Link
           href="/presupuestos"
@@ -65,13 +67,7 @@ export function SavingsCard(props: SavingsCardProps) {
       {/* ── Monto total ─────────────────────────────────────────────────────── */}
       <div>
         <p
-          className="font-mono-num"
-          style={{
-            fontSize: 28,
-            fontWeight: 800,
-            letterSpacing: "-0.03em",
-            color: hasSavings ? "var(--os-cyan)" : "var(--muted-foreground)",
-          }}
+          className={`font-mono-num text-[28px] font-extrabold tracking-[-0.03em] ${hasSavings ? "text-cyan-text" : "text-muted-foreground"}`}
         >
           {formatCents(totalAhorrado, currency)}
         </p>
@@ -166,6 +162,16 @@ export function SavingsCard(props: SavingsCardProps) {
           Transfiere a una cuenta de ahorro o crea una meta para empezar a registrar tu ahorro.
         </p>
       )}
+
+      {missingRates.length > 0 && (
+        <div
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          title={`Tasas no disponibles para ${missingRates.join(", ")}. Se actualizan automáticamente cada día.`}
+        >
+          <AlertTriangle size={12} aria-hidden="true" />
+          <span>Tasas no disponibles: {missingRates.join(", ")} — total puede ser inexacto</span>
+        </div>
+      )}
     </div>
   );
-}
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
@@ -55,37 +55,34 @@ import {
 import { useNewTransactionModal, type TxTab } from "@/contexts/new-transaction-modal";
 
 type QuickAction =
-  | { label: string; icon: React.ElementType; gradient: string; textColor: string; tab: TxTab }
-  | { label: string; icon: React.ElementType; gradient: string; textColor: string; href: string };
+  | { label: string; icon: React.ElementType; iconClassName: string; tab: TxTab }
+  | { label: string; icon: React.ElementType; iconClassName: string; href: string };
 
+// iconClassName debe ser un literal completo (no interpolado) para que Tailwind lo detecte.
 const QUICK_ACTIONS: QuickAction[] = [
   {
     label: "Ingreso",
     icon: ArrowDownLeft,
     tab: "ingreso",
-    gradient: "linear-gradient(135deg, var(--os-lime), var(--os-lime-2))",
-    textColor: "var(--primary-foreground)",
+    iconClassName: "bg-[linear-gradient(135deg,var(--os-lime),var(--os-lime-2))] text-primary-foreground",
   },
   {
     label: "Gasto",
     icon: ArrowUpRight,
     tab: "gasto",
-    gradient: "linear-gradient(135deg, var(--os-magenta), var(--os-magenta-2))",
-    textColor: "white",
+    iconClassName: "bg-[linear-gradient(135deg,var(--os-magenta),var(--os-magenta-2))] text-white",
   },
   {
     label: "Transferir",
     icon: ArrowLeftRight,
     tab: "transferencia",
-    gradient: "linear-gradient(135deg, var(--os-cyan), var(--os-cyan-2))",
-    textColor: "oklch(0.18 0.02 260)",
+    iconClassName: "bg-[linear-gradient(135deg,var(--os-cyan),var(--os-cyan-2))] text-[oklch(0.18_0.02_260)]",
   },
   {
     label: "Tarjeta",
     icon: CreditCard,
     href: "/tarjetas",
-    gradient: "linear-gradient(135deg, var(--os-orange), var(--os-orange-2))",
-    textColor: "oklch(0.18 0.02 260)",
+    iconClassName: "bg-[linear-gradient(135deg,var(--os-orange),var(--os-orange-2))] text-[oklch(0.18_0.02_260)]",
   },
 ];
 
@@ -94,6 +91,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { openModal } = useNewTransactionModal();
   const [balanceSheetOpen, setBalanceSheetOpen] = useState(false);
+  const openBalanceSheet = useCallback(() => setBalanceSheetOpen(true), []);
   const today = currentMonth();
   const last6 = lastNMonths(6);
 
@@ -154,8 +152,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={() => openModal()}
-          className="hidden md:inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90 active:scale-95"
-          style={{ background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))", boxShadow: "0 4px 14px -2px color-mix(in oklch, var(--os-lime) 45%, transparent)" }}
+          className="hidden md:inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90 active:scale-95 bg-[linear-gradient(135deg,var(--os-lime),var(--os-cyan))] shadow-[0_4px_14px_-2px_color-mix(in_oklch,var(--os-lime)_45%,transparent)]"
         >
           <Plus className="h-4 w-4" strokeWidth={2.5} />
           Nuevo movimiento
@@ -170,7 +167,7 @@ export default function DashboardPage() {
           missingRates={nw?.missingRates ?? []}
           accountCount={nw?.accountCount ?? 0}
           loading={nw === undefined}
-          onManageAccounts={() => setBalanceSheetOpen(true)}
+          onManageAccounts={openBalanceSheet}
           totalAssets={nw?.totalAssets}
           totalCardDebt={nw?.totalCardDebt}
           totalDebt={nw?.totalDebt}
@@ -187,14 +184,11 @@ export default function DashboardPage() {
       {/* ── Quick actions ── mobile only */}
       <div className="md:hidden grid grid-cols-4 gap-2.5">
         {QUICK_ACTIONS.map((action) => {
-          const { label, icon: Icon, gradient, textColor } = action;
+          const { label, icon: Icon, iconClassName } = action;
           const sharedClass = "flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-xl border border-border bg-card transition-all active:scale-95 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
           const inner = (
             <>
-              <span
-                className="flex items-center justify-center"
-                style={{ width: 40, height: 40, borderRadius: 12, background: gradient, color: textColor }}
-              >
+              <span className={`flex items-center justify-center w-10 h-10 rounded-sm ${iconClassName}`}>
                 <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
               </span>
               <span className="text-[11px] font-semibold text-muted-foreground">{label}</span>
@@ -237,8 +231,8 @@ export default function DashboardPage() {
         <UpcomingCommitmentsCard data={upcoming} loading={upcoming === undefined} />
       </div>
 
-      {/* ── Mis cuentas ── mobile only */}
-      <section className="md:hidden">
+      {/* ── Mis cuentas ── full width; visible en todos los tamaños de pantalla */}
+      <section className="md:col-span-2">
         <div className="flex items-baseline justify-between mb-2.5">
           <h2 className="text-sm font-bold text-foreground">Mis cuentas</h2>
           <Link href="/cuentas" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
@@ -246,7 +240,7 @@ export default function DashboardPage() {
           </Link>
         </div>
         {accounts === undefined ? (
-          <div className="flex gap-3 overflow-x-auto w-full" style={{ scrollbarWidth: "none" }}>
+          <div className="flex gap-3 overflow-x-auto w-full accounts-carousel [scrollbar-width:none]">
             <Skeleton className="flex-none w-[220px] h-[130px] rounded-2xl" />
             <Skeleton className="flex-none w-[220px] h-[130px] rounded-2xl" />
           </div>
@@ -255,11 +249,10 @@ export default function DashboardPage() {
         ) : (
           <ul
             role="list"
-            className="flex gap-3 overflow-x-auto pb-1 w-full accounts-carousel"
-            style={{ scrollSnapType: "x mandatory", scrollbarWidth: "none", WebkitOverflowScrolling: "touch", minWidth: 0, listStyle: "none", padding: 0, margin: 0 }}
+            className="flex gap-3 overflow-x-auto pb-1 w-full min-w-0 list-none p-0 m-0 accounts-carousel snap-x snap-mandatory [scrollbar-width:none] [-webkit-overflow-scrolling:touch]"
           >
             {accounts.map((account) => (
-              <li key={account._id} style={{ flex: "0 0 220px", scrollSnapAlign: "start", listStyle: "none" }}>
+              <li key={account._id} className="flex-none w-[220px] snap-start list-none">
                 <AccountCard account={account} onClick={() => router.push(`/cuentas/${account._id}`)} />
               </li>
             ))}

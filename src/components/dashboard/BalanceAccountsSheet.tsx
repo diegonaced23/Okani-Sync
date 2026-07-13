@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
+import type { AccountSummary } from "@/components/accounts/AccountCard";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { Switch } from "@/components/ui/switch";
 import { formatCents } from "@/lib/money";
@@ -14,7 +15,7 @@ interface BalanceAccountsSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accounts: Doc<"accounts">[];
-  sharedAccounts: (Doc<"accounts"> | null)[];
+  sharedAccounts: (Pick<AccountSummary, "_id" | "name" | "balance" | "currency" | "color"> | null)[];
 }
 
 export function BalanceAccountsSheet({
@@ -37,7 +38,9 @@ export function BalanceAccountsSheet({
     }
   }
 
-  const validShared = sharedAccounts.filter((a): a is Doc<"accounts"> => a !== null);
+  const validShared = sharedAccounts.filter(
+    (a): a is Pick<AccountSummary, "_id" | "name" | "balance" | "currency" | "color"> => a !== null
+  );
 
   return (
     <AppSheet

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/money";
 import { DEFAULT_ALERT_THRESHOLD } from "@/lib/constants";
@@ -20,7 +21,7 @@ interface BudgetRowProps {
 }
 
 /** Fila de presupuesto individual: calcula pct/remaining/alertas y muestra barra de progreso. */
-export function BudgetRow({ budget }: BudgetRowProps) {
+export const BudgetRow = memo(function BudgetRow({ budget }: BudgetRowProps) {
   const pct = budget.amount > 0
     ? Math.min(100, (budget.spent / budget.amount) * 100)
     : 0;
@@ -41,8 +42,10 @@ export function BudgetRow({ budget }: BudgetRowProps) {
         </div>
         <div className="text-right shrink-0">
           <p
-            className={cn("text-sm font-bold", isOver ? "text-danger" : !isWarning ? "text-foreground" : undefined)}
-            style={isWarning ? { color: "var(--warning-text)" } : undefined}
+            className={cn(
+              "text-sm font-bold",
+              isOver ? "text-danger" : isWarning ? "text-warning-text" : "text-foreground"
+            )}
           >
             {formatCents(budget.spent, budget.currency)}
           </p>
@@ -55,8 +58,7 @@ export function BudgetRow({ budget }: BudgetRowProps) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`${budget.categoryName ?? "Presupuesto"}: ${Math.round(pct)}% gastado`}
-        className="h-1.5 w-full rounded-full overflow-hidden"
-        style={{ background: "var(--muted)" }}
+        className="h-1.5 w-full rounded-full overflow-hidden bg-muted"
       >
         <div
           className="h-full rounded-full transition-all"
@@ -68,4 +70,4 @@ export function BudgetRow({ budget }: BudgetRowProps) {
       </div>
     </li>
   );
-}
+});

@@ -28,9 +28,6 @@ export default async function AppLayout({
           >
             Ir al contenido principal
           </a>
-          {/* Región live para anuncios de AT */}
-          <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" />
-
           {/* Aurora de fondo — efecto sutil de profundidad */}
           <div aria-hidden className="os-aurora" />
           <Sidebar />

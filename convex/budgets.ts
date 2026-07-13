@@ -94,19 +94,25 @@ export const listByMonthWithCategory = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
     const clerkId = await getCurrentUserId(ctx);
-    const budgets = await ctx.db
-      .query("budgets")
-      .withIndex("by_user_month", (q) =>
-        q.eq("userId", clerkId).eq("month", month)
-      )
-      .collect();
+    const [budgets, allCats] = await Promise.all([
+      ctx.db
+        .query("budgets")
+        .withIndex("by_user_month", (q) =>
+          q.eq("userId", clerkId).eq("month", month)
+        )
+        .collect(),
+      // Batch-load de categorías del usuario: evita N round-trips individuales.
+      ctx.db
+        .query("categories")
+        .withIndex("by_user", (q) => q.eq("userId", clerkId))
+        .collect(),
+    ]);
+    const catMap = new Map(allCats.map((c) => [c._id.toString(), c]));
 
-    return await Promise.all(
-      budgets.map(async (b) => {
-        const category = await ctx.db.get(b.categoryId);
-        return { ...b, categoryName: category?.name, categoryColor: category?.color };
-      })
-    );
+    return budgets.map((b) => {
+      const category = catMap.get(b.categoryId.toString());
+      return { ...b, categoryName: category?.name, categoryColor: category?.color };
+    });
   },
 });
 

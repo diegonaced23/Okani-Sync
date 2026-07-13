@@ -10,7 +10,6 @@
  *  formatCurrency(n, c)  → mostrar en UI (recibe valor humano, no centavos)
  *  formatCents(n, c)     → mostrar en UI (recibe centavos de BD)
  *  calculateInstallment  → cuota con interés compuesto
- *  convertCurrency       → convierte entre monedas usando tasa dada
  */
 
 // ─── Conversión BD ↔ UI ───────────────────────────────────────────────────────
@@ -46,40 +45,6 @@ export function formatCurrency(amount: number, currency = "COP"): string {
  */
 export function formatCents(cents: number, currency = "COP"): string {
   return formatCurrency(fromCents(cents), currency);
-}
-
-// ─── Conversión multi-moneda ─────────────────────────────────────────────────
-
-/**
- * Construye un mapa rápido fromCurrency → rate para conversiones a `toCurrency`.
- * Usar este mapa permite búsquedas O(1) en lugar de escanear el array cada vez.
- */
-export type RateMap = Map<string, number>;
-
-export function buildRateMap(
-  rates: { fromCurrency: string; toCurrency: string; rate: number }[],
-  toCurrency: string
-): RateMap {
-  return new Map(
-    rates.filter((r) => r.toCurrency === toCurrency).map((r) => [r.fromCurrency, r.rate])
-  );
-}
-
-/**
- * Convierte `amountCents` de `fromCurrency` a `toCurrency` usando el mapa de tasas.
- * Si no hay tasa disponible, devuelve el monto sin convertir y `hasRate: false`
- * para que el caller pueda acumular `missingRates` y advertir al usuario.
- */
-export function convertAmount(
-  amountCents: number,
-  fromCurrency: string,
-  toCurrency: string,
-  rateMap: RateMap
-): { converted: number; hasRate: boolean } {
-  if (fromCurrency === toCurrency) return { converted: amountCents, hasRate: true };
-  const rate = rateMap.get(fromCurrency);
-  if (rate === undefined) return { converted: amountCents, hasRate: false };
-  return { converted: Math.round(amountCents * rate), hasRate: true };
 }
 
 // ─── Cálculo de cuota con interés compuesto ───────────────────────────────────
@@ -249,18 +214,6 @@ export function calculateLoanAmortization(
     totalPayments: schedule.length,
     payoffDate: schedule[schedule.length - 1]?.month ?? startMonth,
   };
-}
-
-// ─── Conversión multi-moneda ─────────────────────────────────────────────────
-
-/**
- * Convierte un monto en centavos de una moneda a otra usando la tasa dada.
- * La tasa expresa cuántas unidades de `toCurrency` equivalen a 1 de `fromCurrency`.
- *
- * Ejemplo: convertCurrency(100000, 4200) → 1 USD a 4200 COP = 4.200.000 centavos COP
- */
-export function convertCurrency(amountCents: number, rate: number): number {
-  return Math.round(amountCents * rate);
 }
 
 // ─── Utilidades de fecha/mes ──────────────────────────────────────────────────

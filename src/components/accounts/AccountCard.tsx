@@ -6,8 +6,13 @@ import { GRADIENT_MAP, ACCOUNT_GRADIENTS } from "@/lib/constants";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { Wallet } from "lucide-react";
 
+export type AccountSummary = Pick<
+  Doc<"accounts">,
+  "_id" | "name" | "type" | "balance" | "currency" | "color" | "bankName" | "accountNumber"
+>;
+
 interface AccountCardProps {
-  account: Doc<"accounts">;
+  account: AccountSummary;
   isShared?: boolean;
   onClick?: () => void;
 }

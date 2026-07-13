@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
@@ -36,7 +37,7 @@ const TOOLTIP_STYLE = {
   fontSize: "12px",
 } as const;
 
-export function NetWorthChart({ data, currency }: NetWorthChartProps) {
+export const NetWorthChart = memo(function NetWorthChart({ data, currency }: NetWorthChartProps) {
   // Skeleton estructurado para evitar CLS: imita el header + gráfico del componente real
   if (data === undefined) {
     return (
@@ -53,9 +54,9 @@ export function NetWorthChart({ data, currency }: NetWorthChartProps) {
   if (data.length === 0) {
     return (
       <div className="rounded-xl bg-card border border-border p-5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
           Evolución del patrimonio
-        </p>
+        </h3>
         {/* CalendarClock refuerza que la acción es automática — el usuario no necesita hacer nada */}
         <div className="flex items-start gap-2 mt-3">
           <CalendarClock size={15} className="text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
@@ -91,9 +92,9 @@ export function NetWorthChart({ data, currency }: NetWorthChartProps) {
   return (
     <div className="rounded-xl bg-card border border-border p-4">
       <div className="flex items-start justify-between mb-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Evolución del patrimonio — últimos {data.length} meses
-        </p>
+        </h3>
         {data.length >= 2 && (
           <div className="flex items-center gap-1" style={{ color: trendColor }}>
             <TrendIcon size={13} />
@@ -108,7 +109,7 @@ export function NetWorthChart({ data, currency }: NetWorthChartProps) {
       <table className="sr-only">
         <caption>Evolución del patrimonio neto</caption>
         <thead>
-          <tr><th>Mes</th><th>Patrimonio neto</th><th>Activos</th></tr>
+          <tr><th scope="col">Mes</th><th scope="col">Patrimonio neto</th><th scope="col">Activos</th></tr>
         </thead>
         <tbody>
           {chartData.map((d) => (
@@ -182,4 +183,4 @@ export function NetWorthChart({ data, currency }: NetWorthChartProps) {
       )}
     </div>
   );
-}
+});

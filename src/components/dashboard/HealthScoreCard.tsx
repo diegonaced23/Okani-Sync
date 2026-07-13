@@ -1,8 +1,9 @@
 "use client";
 
+import { memo } from "react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, CreditCard, Shield } from "lucide-react";
+import { TrendingUp, TrendingDown, CreditCard, Shield, AlertTriangle } from "lucide-react";
 
 type MetricStatus = "good" | "warn" | "bad" | "neutral";
 
@@ -24,24 +25,19 @@ interface HealthScoreCardProps {
     currency: string;
     avgMonthlyExpenses: number;
     totalMonthlyCommitments: number;
+    missingRates?: string[];
   } | null | undefined;
   loading?: boolean;
 }
 
-// Colores decorativos (bordes, iconos): pueden ser vivos
-const STATUS_DECO_COLORS: Record<MetricStatus, string> = {
-  good:    "var(--os-lime)",
-  warn:    "var(--warning)",
-  bad:     "var(--destructive)",
-  neutral: "var(--muted-foreground)",
-};
-
-// Colores para texto de valores numéricos: garantizan contraste ≥4.5:1
-const STATUS_TEXT_COLORS: Record<MetricStatus, string> = {
-  good:    "var(--os-lime-text)",
-  warn:    "var(--warning-text)",
-  bad:     "var(--destructive)",
-  neutral: "var(--muted-foreground)",
+// Clases estáticas (Tailwind necesita el nombre completo en el código fuente para generarlas
+// — no se pueden interpolar dinámicamente). Deco = borde izq./ícono, pueden ser vivos.
+// Text = color de valores numéricos, garantiza contraste ≥4.5:1.
+const STATUS_CLASSES: Record<MetricStatus, { border: string; icon: string; text: string }> = {
+  good:    { border: "border-l-lime",             icon: "text-lime",             text: "text-lime-text" },
+  warn:    { border: "border-l-warning",          icon: "text-warning",          text: "text-warning-text" },
+  bad:     { border: "border-l-destructive",      icon: "text-destructive",      text: "text-destructive" },
+  neutral: { border: "border-l-muted-foreground", icon: "text-muted-foreground", text: "text-muted-foreground" },
 };
 
 // Etiquetas de estado en español para lectores de pantalla (neutral omitido: el valor ya es "—")
@@ -52,23 +48,19 @@ const STATUS_SR_LABELS: Partial<Record<MetricStatus, string>> = {
 };
 
 function MetricChip({ metric }: { metric: HealthMetric }) {
-  const decoColor = STATUS_DECO_COLORS[metric.status];
-  const textColor = STATUS_TEXT_COLORS[metric.status];
+  const classes = STATUS_CLASSES[metric.status];
   const { label, value, subtext, Icon } = metric;
   const srStatus = STATUS_SR_LABELS[metric.status];
   return (
     // min-w-0: evita desbordamiento del chip en viewports de 320px dentro del grid de 2 columnas
-    <div
-      className="rounded-xl border border-border bg-card p-3 space-y-2 min-w-0"
-      style={{ borderLeft: `3px solid ${decoColor}` }}
-    >
+    <div className={`rounded-xl border border-border bg-card p-3 space-y-2 min-w-0 border-l-[3px] ${classes.border}`}>
       <div className="flex items-center gap-1.5">
-        <Icon size={13} style={{ color: decoColor }} aria-hidden="true" />
+        <Icon size={13} className={classes.icon} aria-hidden="true" />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
       </div>
-      <p className="text-xl font-bold tabular-nums leading-none" style={{ color: textColor }}>
+      <p className={`text-xl font-bold tabular-nums leading-none ${classes.text}`}>
         {value}
         {srStatus && <span className="sr-only">, estado {srStatus}</span>}
       </p>
@@ -103,7 +95,7 @@ function runwayStatus(months: number): MetricStatus {
   return "bad";
 }
 
-export function HealthScoreCard({ data, loading }: HealthScoreCardProps) {
+export const HealthScoreCard = memo(function HealthScoreCard({ data, loading }: HealthScoreCardProps) {
   if (loading || data === undefined) {
     return (
       <section className="space-y-2.5">
@@ -121,6 +113,7 @@ export function HealthScoreCard({ data, loading }: HealthScoreCardProps) {
     savingsRate, dti, dtiIncomplete,
     creditUtilization, emergencyRunway,
     currency, avgMonthlyExpenses,
+    missingRates = [],
   } = data;
 
   const metrics: HealthMetric[] = [
@@ -181,6 +174,15 @@ export function HealthScoreCard({ data, loading }: HealthScoreCardProps) {
           <MetricChip key={m.label} metric={m} />
         ))}
       </div>
+      {missingRates.length > 0 && (
+        <div
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          title={`Tasas no disponibles para ${missingRates.join(", ")}. Se actualizan automáticamente cada día.`}
+        >
+          <AlertTriangle size={12} aria-hidden="true" />
+          <span>Tasas no disponibles: {missingRates.join(", ")} — indicadores pueden ser inexactos</span>
+        </div>
+      )}
     </section>
   );
-}
+});

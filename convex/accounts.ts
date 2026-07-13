@@ -5,7 +5,13 @@ import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertIsOwner } from "./lib/permissions";
 import { toMonthString, assertValidMonth } from "./lib/utils";
 import { deleteTransactionWithEffects } from "./lib/transactionEffects";
-import { buildRateMap, convertAmount } from "./lib/money";
+import { convertAmount, getUserRateMap } from "./lib/money";
+
+// Debe reflejar las keys de ACCOUNT_GRADIENTS en src/lib/constants.ts — el color de una cuenta
+// no es un hex, es la key de un gradiente predefinido.
+const ACCOUNT_GRADIENT_KEYS = new Set([
+  "g-night", "g-red", "g-ember", "g-lime", "g-ocean", "g-violet", "g-rose", "g-gold",
+]);
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
@@ -98,14 +104,15 @@ export const netWorth = query({
     // getCurrentUser verifica JWT + existencia + user.active (bloquea cuentas desactivadas)
     const user = await getCurrentUser(ctx);
     const clerkId = user.clerkId;
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
     const missingRateSet = new Set<string>();
 
     function convert(amountCents: number, fromCurrency: string) {
       const { converted, hasRate } = convertAmount(amountCents, fromCurrency, preferredCurrency, rateMap);
-      if (!hasRate && fromCurrency !== preferredCurrency) missingRateSet.add(fromCurrency);
+      if (!hasRate && fromCurrency !== preferredCurrency) {
+        missingRateSet.add(fromCurrency);
+        return 0; // sin tasa: se excluye del total en vez de sumar el monto crudo sin convertir
+      }
       return converted;
     }
 
@@ -197,9 +204,8 @@ export const financialHealthMetrics = query({
     // getCurrentUser verifica JWT + existencia + user.active (bloquea cuentas desactivadas)
     const user = await getCurrentUser(ctx);
     const clerkId = user.clerkId;
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    const missingRateSet = new Set<string>();
 
     const now = Date.now();
     const d = new Date(now);
@@ -213,7 +219,11 @@ export const financialHealthMetrics = query({
     }
 
     function convert(amountCents: number, fromCurrency: string): number {
-      const { converted } = convertAmount(amountCents, fromCurrency, preferredCurrency, rateMap);
+      const { converted, hasRate } = convertAmount(amountCents, fromCurrency, preferredCurrency, rateMap);
+      if (!hasRate && fromCurrency !== preferredCurrency) {
+        missingRateSet.add(fromCurrency);
+        return 0; // sin tasa: se excluye del total en vez de sumar el monto crudo sin convertir
+      }
       return converted;
     }
 
@@ -261,8 +271,16 @@ export const financialHealthMetrics = query({
         ? 0
         : null;
 
+    // ── Tarjetas del usuario — se necesitan para convertir cuotas y utilización por su moneda real ──
+    const allCards = await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) => q.eq("userId", clerkId).eq("archived", false))
+      .collect();
+    const cardMap = new Map(allCards.map((c) => [c._id.toString(), c]));
+
     // ── DTI — solo deudas con monthlyPayment definido ─────────────────────────
-    // Cuotas de tarjeta del mes en curso
+    // Cuotas de tarjeta del mes en curso. Se convierten por la moneda real de cada tarjeta
+    // (igual que creditUtilization), en vez de asumir la moneda preferida del usuario.
     const cardInstallmentsNow = await ctx.db
       .query("cardInstallments")
       .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", currentMonthStr()))
@@ -270,10 +288,8 @@ export const financialHealthMetrics = query({
     const monthlyCardCommitment = cardInstallmentsNow
       .filter((i) => !i.paid)
       .reduce((s, i) => {
-        // Las cuotas no tienen currency propio; heredan la moneda de la tarjeta.
-        // Sin index a la tarjeta aquí, asumimos la moneda preferida (común en apps mono-currency).
-        // Para precisión mayor, hacer lookup de la tarjeta — fuera de scope de este indicador.
-        return s + i.amount;
+        const card = cardMap.get(i.cardId.toString());
+        return s + convert(i.amount, card?.currency ?? preferredCurrency);
       }, 0);
 
     const activeDebts = await ctx.db
@@ -291,11 +307,6 @@ export const financialHealthMetrics = query({
     const dtiIncomplete = activeDebts.some((d) => !d.monthlyPayment || d.monthlyPayment === 0);
 
     // ── Utilización de crédito — convertir por tarjeta antes de sumar ─────────
-    const allCards = await ctx.db
-      .query("cards")
-      .withIndex("by_user_archived", (q) => q.eq("userId", clerkId).eq("archived", false))
-      .collect();
-
     let totalBalanceConverted = 0;
     let totalLimitConverted = 0;
 
@@ -335,6 +346,7 @@ export const financialHealthMetrics = query({
       creditUtilization,
       emergencyRunway,
       currency: preferredCurrency,
+      missingRates: [...missingRateSet],
       // Datos de apoyo para posible desglose en UI
       lastMonthIncome: lastMonth.ingresos,
       lastMonthExpenses: lastMonth.gastos,
@@ -354,12 +366,15 @@ export const monthlySavingsSummary = query({
   handler: async (ctx, { month }) => {
     assertValidMonth(month);
     const user = await getCurrentUser(ctx);
-    const preferredCurrency = user.currency ?? "COP";
-    const currentRates = await ctx.db.query("currentExchangeRates").collect();
-    const rateMap = buildRateMap(currentRates, preferredCurrency);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    const missingRateSet = new Set<string>();
 
     function convert(amount: number, fromCurrency: string): number {
-      const { converted } = convertAmount(amount, fromCurrency, preferredCurrency, rateMap);
+      const { converted, hasRate } = convertAmount(amount, fromCurrency, preferredCurrency, rateMap);
+      if (!hasRate && fromCurrency !== preferredCurrency) {
+        missingRateSet.add(fromCurrency);
+        return 0; // sin tasa: se excluye del total en vez de sumar el monto crudo sin convertir
+      }
       return converted;
     }
 
@@ -406,6 +421,7 @@ export const monthlySavingsSummary = query({
       tasaAhorro,
       totalIngresos,
       currency: preferredCurrency,
+      missingRates: [...missingRateSet],
       cuentasAhorro: savingsAccounts.map((a) => ({
         id: a._id,
         name: a.name,
@@ -450,8 +466,21 @@ export const listSharedWithMe = query({
       )
       .collect();
     const accounts = await Promise.all(shares.map((s) => ctx.db.get(s.accountId)));
-    // Excluir archivadas — el gestor de shares las muestra, pero no el balance ni las listas activas
-    return accounts.filter((a): a is NonNullable<typeof a> => a !== null && !a.archived);
+    // Excluir archivadas — el gestor de shares las muestra, pero no el balance ni las listas activas.
+    // Se proyecta un shape público: accountNumber/bankName ya se muestran enmascarados en la UI,
+    // pero notes/ownerId/isDefault y demás campos internos del dueño no deben viajar a un colaborador.
+    return accounts
+      .filter((a): a is NonNullable<typeof a> => a !== null && !a.archived)
+      .map((a) => ({
+        _id: a._id,
+        name: a.name,
+        type: a.type,
+        balance: a.balance,
+        currency: a.currency,
+        color: a.color,
+        bankName: a.bankName,
+        accountNumber: a.accountNumber,
+      }));
   },
 });
 
@@ -491,7 +520,8 @@ export const create = mutation({
     if (args.name.length === 0 || args.name.length > 100) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
     if (!Number.isFinite(args.initialBalance) || args.initialBalance < 0) throw new Error("El saldo inicial debe ser mayor o igual a cero");
     if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
-    if (args.accountNumber !== undefined && args.accountNumber.length > 50) throw new Error("El número de cuenta no puede superar 50 caracteres");
+    if (!ACCOUNT_GRADIENT_KEYS.has(args.color)) throw new Error("Color de cuenta inválido");
+    if (args.accountNumber !== undefined && !/^\d{0,4}$/.test(args.accountNumber)) throw new Error("El número de cuenta debe tener máximo 4 dígitos (los últimos de la cuenta real)");
     if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
 
     const user = await getCurrentUser(ctx);
@@ -535,7 +565,8 @@ export const update = mutation({
   },
   handler: async (ctx, { accountId, ...fields }) => {
     if (fields.name !== undefined && (fields.name.length === 0 || fields.name.length > 100)) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
-    if (fields.accountNumber !== undefined && fields.accountNumber.length > 50) throw new Error("El número de cuenta no puede superar 50 caracteres");
+    if (fields.color !== undefined && !ACCOUNT_GRADIENT_KEYS.has(fields.color)) throw new Error("Color de cuenta inválido");
+    if (fields.accountNumber !== undefined && !/^\d{0,4}$/.test(fields.accountNumber)) throw new Error("El número de cuenta debe tener máximo 4 dígitos (los últimos de la cuenta real)");
     if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
 
     const user = await getCurrentUser(ctx);

@@ -5,7 +5,6 @@ import {
   formatCurrency,
   formatCents,
   calculateInstallment,
-  convertCurrency,
   toMonthString,
   currentMonth,
 } from "../money";
@@ -120,21 +119,6 @@ describe("calculateInstallment — con interés compuesto", () => {
         result.schedule[i - 1].interestAmount
       );
     }
-  });
-});
-
-// ─── convertCurrency ─────────────────────────────────────────────────────────
-
-describe("convertCurrency", () => {
-  it("convierte COP a USD con tasa dada", () => {
-    // 1 USD = 4200 COP → 4200 COP = 1 USD → en centavos: 420000 COP ÷ 4200
-    // pero la función multiplica: amount * rate
-    // 100 centavos USD × 4200 = 420000 centavos COP
-    expect(convertCurrency(100, 4200)).toBe(420000);
-  });
-
-  it("respeta el redondeo", () => {
-    expect(convertCurrency(1, 3.14159)).toBe(3);
   });
 });
 

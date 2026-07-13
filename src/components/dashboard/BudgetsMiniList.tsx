@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { Plus } from "lucide-react";
@@ -22,7 +23,21 @@ interface BudgetsMiniListProps {
 }
 
 /** Top-5 presupuestos del mes ordenados por porcentaje gastado (mayor primero). */
-export function BudgetsMiniList({ budgets }: BudgetsMiniListProps) {
+export const BudgetsMiniList = memo(function BudgetsMiniList({ budgets }: BudgetsMiniListProps) {
+  // Spread para evitar mutar el array original de Convex
+  const top5 = useMemo(
+    () =>
+      budgets === undefined
+        ? []
+        : [...budgets]
+            .sort(
+              (a, b) =>
+                (b.amount > 0 ? b.spent / b.amount : 0) - (a.amount > 0 ? a.spent / a.amount : 0)
+            )
+            .slice(0, 5),
+    [budgets]
+  );
+
   return (
     <section className="space-y-2.5">
       <div className="flex items-baseline justify-between">
@@ -55,16 +70,12 @@ export function BudgetsMiniList({ budgets }: BudgetsMiniListProps) {
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {/* Spread para evitar mutar el array original de Convex */}
-            {[...budgets]
-              .sort((a, b) => (b.spent / b.amount) - (a.spent / a.amount))
-              .slice(0, 5)
-              .map((budget) => (
-                <BudgetRow key={budget._id} budget={budget} />
-              ))}
+            {top5.map((budget) => (
+              <BudgetRow key={budget._id} budget={budget} />
+            ))}
           </ul>
         )}
       </div>
     </section>
   );
-}
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -16,15 +17,15 @@ const CHART_COLORS: [string, string][] = [
   ["var(--os-cyan)",    "var(--os-cyan-2)"],
   ["var(--os-orange)",  "var(--os-orange-2)"],
   ["var(--os-magenta)", "var(--os-magenta-2)"],
-  ["oklch(0.65 0.18 300)", "oklch(0.75 0.14 300)"],  // violeta
-  ["oklch(0.72 0.16 180)", "oklch(0.82 0.12 180)"],  // esmeralda
+  ["var(--os-violet)",  "var(--os-violet-2)"],
+  ["oklch(0.72 0.16 180)", "oklch(0.82 0.12 180)"],  // esmeralda — sin token propio aún
 ];
 
 function truncate(s: string, max = 18): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-export function SpendingBySourceChart({ data, currency, monthName }: SpendingBySourceChartProps) {
+export const SpendingBySourceChart = memo(function SpendingBySourceChart({ data, currency, monthName }: SpendingBySourceChartProps) {
   if (data === undefined) return <Skeleton className="h-48 rounded-xl" />;
 
   const filtered = data.filter((d) => d.amount > 0);
@@ -42,9 +43,9 @@ export function SpendingBySourceChart({ data, currency, monthName }: SpendingByS
 
   return (
     <div className="rounded-xl bg-card border border-border p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
         Gastos por fuente
-      </p>
+      </h3>
 
       <div role="img" aria-label="Gastos por cuenta y tarjeta este mes" className="space-y-3">
         {filtered.map((d, i) => {
@@ -134,4 +135,4 @@ export function SpendingBySourceChart({ data, currency, monthName }: SpendingByS
       </table>
     </div>
   );
-}
+});

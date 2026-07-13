@@ -14,9 +14,9 @@ export default function Loading() {
       <div className="md:hidden grid grid-cols-4 gap-2.5">
         {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[78px] rounded-xl" />)}
       </div>
-      {/* Cuentas */}
-      <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+      {/* Cuentas — carrusel horizontal, visible en todos los tamaños */}
+      <div className="md:col-span-2 flex gap-3 overflow-x-hidden">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="flex-none w-[220px] h-[130px] rounded-2xl" />)}
       </div>
       {/* Charts */}
       <Skeleton className="h-56 rounded-xl" />

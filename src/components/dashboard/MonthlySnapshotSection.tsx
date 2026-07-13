@@ -1,7 +1,9 @@
 "use client";
 
+import { memo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 interface MonthlySnapshotSectionProps {
@@ -20,7 +22,7 @@ interface MonthlySnapshotSectionProps {
  * Sección "Mes en curso": versión desktop (tarjeta + barra de progreso) y
  * versión mobile (dos mini-tarjetas lado a lado).
  */
-export function MonthlySnapshotSection({
+export const MonthlySnapshotSection = memo(function MonthlySnapshotSection({
   loading,
   monthIngresos,
   monthGastos,
@@ -33,7 +35,7 @@ export function MonthlySnapshotSection({
       {/* Desktop: tarjeta combinada con barra de progreso */}
       <div className="hidden md:flex flex-col rounded-xl border border-border bg-card p-5 h-full gap-4">
         {/* h2 para coherencia con los demás sections del dashboard que usan h2 */}
-        <h2 style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted-foreground)", margin: 0 }}>
+        <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground m-0">
           Mes en curso
         </h2>
         {loading ? (
@@ -47,19 +49,19 @@ export function MonthlySnapshotSection({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <span style={{ width: 8, height: 8, borderRadius: 9999, background: "var(--os-lime)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: "var(--muted-foreground)", fontWeight: 600 }}>Ingresos</span>
+                  <span className="w-2 h-2 rounded-full bg-lime shrink-0" />
+                  <span className="text-[11px] text-muted-foreground font-semibold">Ingresos</span>
                 </div>
-                <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, color: "var(--os-lime-text)", letterSpacing: "-0.025em" }}>
+                <p className="font-mono-num text-[22px] font-extrabold text-lime-text tracking-[-0.025em]">
                   {formatCents(monthIngresos, currency)}
                 </p>
               </div>
               <div>
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <span style={{ width: 8, height: 8, borderRadius: 9999, background: "var(--os-magenta)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: "var(--muted-foreground)", fontWeight: 600 }}>Gastos</span>
+                  <span className="w-2 h-2 rounded-full bg-magenta shrink-0" />
+                  <span className="text-[11px] text-muted-foreground font-semibold">Gastos</span>
                 </div>
-                <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, color: "var(--os-magenta)", letterSpacing: "-0.025em" }}>
+                <p className="font-mono-num text-[22px] font-extrabold text-magenta tracking-[-0.025em]">
                   {formatCents(monthGastos, currency)}
                 </p>
               </div>
@@ -72,18 +74,17 @@ export function MonthlySnapshotSection({
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-label={`Has gastado el ${spentPct}% de tus ingresos este mes`}
-                className="h-2 w-full rounded-full overflow-hidden"
-                style={{ background: "var(--muted)" }}
+                className="h-2 w-full rounded-full overflow-hidden bg-muted"
               >
                 <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, spentPct)}%`,
-                    background: spentPct >= 100 ? "var(--danger)" : spentPct >= 80 ? "var(--warning)" : "var(--os-lime)",
-                  }}
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    spentPct >= 100 ? "bg-danger" : spentPct >= 80 ? "bg-warning" : "bg-lime"
+                  )}
+                  style={{ width: `${Math.min(100, spentPct)}%` }}
                 />
               </div>
-              <p style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+              <p className="text-xs text-muted-foreground">
                 Has gastado <strong>{spentPct}%</strong> de tus ingresos
               </p>
             </div>
@@ -107,21 +108,21 @@ export function MonthlySnapshotSection({
             </>
           ) : (
             <>
-              <div className="rounded-xl p-4" style={{ background: "color-mix(in oklch, var(--os-lime) 12%, var(--card))", border: "1px solid color-mix(in oklch, var(--os-lime) 28%, var(--border))" }}>
-                <div className="flex items-center gap-2 mb-1.5" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-foreground)" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 9999, background: "var(--os-lime)", boxShadow: "0 0 0 3px color-mix(in oklch, var(--os-lime) 28%, transparent)", flexShrink: 0 }} />
+              <div className="rounded-xl p-4 bg-[color-mix(in_oklch,var(--os-lime)_12%,var(--card))] border border-[color-mix(in_oklch,var(--os-lime)_28%,var(--border))]">
+                <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                  <span className="w-2 h-2 rounded-full bg-lime shrink-0 shadow-[0_0_0_3px_color-mix(in_oklch,var(--os-lime)_28%,transparent)]" />
                   Ingresos
                 </div>
-                <p className="font-mono-num" style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-lime-text)" }}>
+                <p className="font-mono-num text-[20px] font-extrabold tracking-[-0.025em] text-lime-text">
                   {formatCents(monthIngresos, currency)}
                 </p>
               </div>
-              <div className="rounded-xl p-4" style={{ background: "color-mix(in oklch, var(--os-magenta) 12%, var(--card))", border: "1px solid color-mix(in oklch, var(--os-magenta) 28%, var(--border))" }}>
-                <div className="flex items-center gap-2 mb-1.5" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-foreground)" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 9999, background: "var(--os-magenta)", boxShadow: "0 0 0 3px color-mix(in oklch, var(--os-magenta) 25%, transparent)", flexShrink: 0 }} />
+              <div className="rounded-xl p-4 bg-[color-mix(in_oklch,var(--os-magenta)_12%,var(--card))] border border-[color-mix(in_oklch,var(--os-magenta)_28%,var(--border))]">
+                <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                  <span className="w-2 h-2 rounded-full bg-magenta shrink-0 shadow-[0_0_0_3px_color-mix(in_oklch,var(--os-magenta)_25%,transparent)]" />
                   Gastos
                 </div>
-                <p className="font-mono-num" style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-magenta)" }}>
+                <p className="font-mono-num text-[20px] font-extrabold tracking-[-0.025em] text-magenta">
                   {formatCents(monthGastos, currency)}
                 </p>
               </div>
@@ -131,4 +132,4 @@ export function MonthlySnapshotSection({
       </div>
     </section>
   );
-}
+});

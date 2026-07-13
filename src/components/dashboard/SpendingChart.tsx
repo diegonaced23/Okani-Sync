@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -13,7 +14,7 @@ function truncate(s: string, max = 22): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-export function SpendingChart({ data, currency, monthName }: SpendingChartProps) {
+export const SpendingChart = memo(function SpendingChart({ data, currency, monthName }: SpendingChartProps) {
   if (data === undefined) return <Skeleton className="h-56 rounded-xl" />;
 
   const filtered = data.filter((d) => d.amount > 0);
@@ -32,9 +33,9 @@ export function SpendingChart({ data, currency, monthName }: SpendingChartProps)
 
   return (
     <div className="rounded-xl bg-card border border-border p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
         Gastos por categoría
-      </p>
+      </h3>
 
       <div role="img" aria-label="Gastos por categoría este mes" className="space-y-3">
         {sorted.map((d) => {
@@ -119,4 +120,4 @@ export function SpendingChart({ data, currency, monthName }: SpendingChartProps)
       </table>
     </div>
   );
-}
+});

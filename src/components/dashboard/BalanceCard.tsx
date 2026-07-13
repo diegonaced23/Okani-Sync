@@ -1,9 +1,10 @@
 "use client";
 
 import { formatCents } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Eye, EyeOff, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
-import { useEffect, useState, startTransition } from "react";
+import { useEffect, useState, startTransition, memo } from "react";
 
 // Solo persiste una preferencia booleana de UI — ningún dato financiero toca localStorage
 const STORAGE_KEY = "dashboard:balanceHidden";
@@ -22,7 +23,7 @@ interface BalanceCardProps {
   totalLoansReceivable?: number;
 }
 
-export function BalanceCard({
+export const BalanceCard = memo(function BalanceCard({
   total,
   currency,
   missingRates = [],
@@ -52,7 +53,7 @@ export function BalanceCard({
   };
 
   if (loading || total === undefined) {
-    return <Skeleton className="h-40" style={{ borderRadius: 38 }} />;
+    return <Skeleton className="h-40 rounded-2xl" />;
   }
 
   const hasBreakdown = totalAssets !== undefined;
@@ -61,10 +62,8 @@ export function BalanceCard({
 
   return (
     <div
-      className="relative overflow-hidden"
+      className="relative overflow-hidden rounded-2xl px-[22px] pt-[22px] pb-5"
       style={{
-        borderRadius: 38,
-        padding: "22px 22px 20px",
         background: `
           radial-gradient(120% 100% at 0% 0%, var(--os-lime-2) 0%, transparent 55%),
           radial-gradient(120% 100% at 100% 100%, var(--os-cyan-2) 0%, transparent 60%),
@@ -94,15 +93,15 @@ export function BalanceCard({
 
       {/* Contenido */}
       <div className="relative z-10">
-        <div className="flex items-center gap-2" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>
+        <div className="flex items-center gap-2 text-[11px] font-bold tracking-[0.10em] uppercase opacity-70 mb-1.5">
           <span>{hasBreakdown ? "Patrimonio neto" : "Patrimonio total"} · {accountCount} cuenta{accountCount !== 1 ? "s" : ""}</span>
-          <span style={{ flex: 1 }} />
+          <span className="flex-1" />
           {onManageAccounts && (
             <button
               type="button"
               aria-label="Configurar cuentas del patrimonio"
               onClick={onManageAccounts}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", opacity: 0.8, padding: "15px 12px", margin: "-13px 0", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}
+              className="flex items-center justify-center bg-transparent border-0 cursor-pointer text-inherit opacity-80 py-[15px] px-3 -my-[13px] rounded-xs"
             >
               <SlidersHorizontal size={14} />
             </button>
@@ -111,7 +110,7 @@ export function BalanceCard({
             type="button"
             aria-label={hidden ? "Mostrar saldo" : "Ocultar saldo"}
             onClick={toggleHidden}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", opacity: 0.8, padding: "15px 12px", margin: "-13px 0", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}
+            className="flex items-center justify-center bg-transparent border-0 cursor-pointer text-inherit opacity-80 py-[15px] px-3 -my-[13px] rounded-xs"
           >
             {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
@@ -123,15 +122,11 @@ export function BalanceCard({
         </span>
 
         <p
-          className="font-mono-num tracking-display"
+          className={cn(
+            "font-mono-num tracking-display text-[40px] font-extrabold leading-none mt-1.5 mb-2 whitespace-nowrap overflow-hidden",
+            isNegative ? "text-[oklch(0.35_0.15_27)]" : "text-[oklch(0.18_0.04_190)]"
+          )}
           aria-label={hidden ? "Saldo oculto" : undefined}
-          style={{
-            fontSize: 40, fontWeight: 800, lineHeight: 1,
-            color: isNegative ? "oklch(0.35 0.15 27)" : "oklch(0.18 0.04 190)",
-            margin: "6px 0 8px",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-          }}
         >
           {hidden ? <span aria-hidden="true">$ ••••••</span> : formatCents(total ?? 0, currency)}
         </p>
@@ -139,7 +134,7 @@ export function BalanceCard({
         {/* Desglose activos / pasivos */}
         {hasBreakdown && !hidden && (
           // role="list" para semántica de lista; iconos decorativos con aria-hidden
-          <div role="list" className="flex items-center gap-3 flex-wrap" style={{ fontSize: 11, opacity: 0.75 }}>
+          <div role="list" className="flex items-center gap-3 flex-wrap text-[11px] opacity-75">
             <span role="listitem" className="flex items-center gap-1">
               <TrendingUp size={11} aria-hidden="true" />
               <span>Activos: {formatCents(totalAssets!, currency)}</span>
@@ -162,8 +157,7 @@ export function BalanceCard({
         {missingRates.length > 0 && (
           // 12px + opacidad 1 para legibilidad sobre el gradiente; title explica qué son y cuándo se actualizan
           <div
-            className="flex items-center gap-1.5 mt-2"
-            style={{ fontSize: 12 }}
+            className="flex items-center gap-1.5 mt-2 text-xs"
             title={`Tasas no disponibles para ${missingRates.join(", ")}. Se actualizan automáticamente cada día.`}
           >
             <AlertTriangle size={12} aria-hidden="true" />
@@ -173,4 +167,4 @@ export function BalanceCard({
       </div>
     </div>
   );
-}
+});

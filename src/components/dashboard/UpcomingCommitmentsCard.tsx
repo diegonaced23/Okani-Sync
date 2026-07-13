@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, CreditCard, RefreshCw, HandCoins, Clock } from "lucide-react";
@@ -67,7 +68,7 @@ function DateBadge({ dueDate }: { dueDate: number }) {
   );
 }
 
-export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCardProps) {
+export const UpcomingCommitmentsCard = memo(function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCardProps) {
   // undefined = consulta cargando → skeleton; null = sin datos disponibles → mensaje vacío
   if (loading || data === undefined) {
     return (
@@ -145,12 +146,12 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
                     style={{
                       width: 32, height: 32, borderRadius: 10,
                       background: item.type === "cuota_tarjeta"
-                        ? "color-mix(in oklch, #6366F1 15%, var(--card))"
+                        ? "color-mix(in oklch, var(--os-violet) 15%, var(--card))"
                         : item.type === "deuda"
                         ? "color-mix(in oklch, var(--destructive) 15%, var(--card))"
                         : "color-mix(in oklch, var(--os-lime) 15%, var(--card))",
                       color: item.type === "cuota_tarjeta"
-                        ? "#6366F1"
+                        ? "var(--os-violet)"
                         : item.type === "deuda"
                         ? "var(--destructive)"
                         : "var(--os-lime)",
@@ -207,4 +208,4 @@ export function UpcomingCommitmentsCard({ data, loading }: UpcomingCommitmentsCa
       </div>
     </section>
   );
-}
+});
