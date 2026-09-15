@@ -100,6 +100,13 @@ export default function TransaccionesPage() {
     }
   }, []);
 
+  // Handler estable para CardPurchaseItem — mismo motivo que handleTransactionPress:
+  // memo() en CardPurchaseItem no evita re-renders si recibe una closure nueva cada vez.
+  const handlePurchasePress = useCallback((purchase: Doc<"cardPurchases">) => {
+    setSelectedPurchaseId(purchase._id);
+    setPurchaseDetailOpen(true);
+  }, []);
+
   // ── Estados de búsqueda y filtros avanzados ───────────────────────────────
   // searchInput: valor inmediato del campo (se actualiza en cada pulsación de teclado)
   // searchText:  valor debounced que se pasa a useQuery (se actualiza 300 ms después)
@@ -130,8 +137,12 @@ export default function TransaccionesPage() {
   const fromTs = fromDate ? new Date(fromDate + "T00:00:00").getTime() : undefined;
   const toTs   = toDate   ? new Date(toDate   + "T23:59:59.999").getTime() : undefined;
 
-  const typeForSearch = filter !== "all"
-    ? (filter === "gasto" ? undefined : filter)  // "gasto" es multi-tipo en browse; en search dejamos filtrar en cliente
+  // "gasto" y "transferencia" son pills multi-tipo en browse (gasto+pago_deuda,
+  // transferencia+pago_tarjeta) — en search dejamos que el filtro client-side de
+  // filteredTxs los resuelva, igual en ambos modos, para no excluir silenciosamente
+  // pago_tarjeta/pago_deuda del resultado de búsqueda.
+  const typeForSearch = filter !== "all" && filter !== "gasto" && filter !== "transferencia"
+    ? filter
     : undefined;
 
   // ── Queries ───────────────────────────────────────────────────────────────
@@ -300,6 +311,14 @@ export default function TransaccionesPage() {
                 </>
               )}
             </span>
+            {/* Anuncia a lectores de pantalla cuando cambia el resultado de un filtro/búsqueda */}
+            {rawTransactions !== undefined && (
+              <span className="sr-only" aria-live="polite" aria-atomic="true">
+                {isFiltered
+                  ? `${filteredCount} de ${totalCount} transacciones encontradas`
+                  : `${totalCount} transacciones`}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setMonth((m) => shiftMonth(m, 1))}
@@ -318,7 +337,7 @@ export default function TransaccionesPage() {
                 className="rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
                 style={{
                   background: "color-mix(in oklch, var(--os-cyan) 15%, var(--surface))",
-                  color: "var(--os-cyan)",
+                  color: "var(--os-cyan-text)",
                   border: "1px solid color-mix(in oklch, var(--os-cyan) 30%, var(--border))",
                 }}
               >
@@ -328,11 +347,18 @@ export default function TransaccionesPage() {
           </div>
         </div>
 
-        {/* Botón nueva transacción — solo visible en desktop; en mobile usa el FAB del bottom nav */}
+        {/* Botón nueva transacción — solo visible en desktop; en mobile usa el FAB del bottom nav.
+            Mismo gradiente lime/cyan que el FAB y el CTA de estado vacío, para reforzar
+            el reconocimiento de patrón de esta acción en toda la app. */}
         <Button
           size="sm"
           onClick={() => openModal()}
-          className="gap-1.5 mt-1 hidden lg:inline-flex bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+          className="gap-1.5 mt-1 hidden lg:inline-flex border-0"
+          style={{
+            background: "linear-gradient(135deg, var(--os-cyan), var(--os-lime))",
+            color: "var(--primary-foreground)",
+            boxShadow: "0 6px 16px -4px color-mix(in oklch, var(--os-cyan) 50%, transparent)",
+          }}
         >
           <Plus className="h-4 w-4" /> Nueva
         </Button>
@@ -381,7 +407,7 @@ export default function TransaccionesPage() {
               >
                 Ingresos
               </p>
-              <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-lime)" }}>
+              <p className="font-mono-num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.025em", color: "var(--os-lime-text)" }}>
                 {formatCents(monthIngresos, displayCurrency)}
               </p>
             </div>
@@ -538,10 +564,7 @@ export default function TransaccionesPage() {
                     <CardPurchaseItem
                       purchase={listItem.item}
                       cardName={cardMap[listItem.item.cardId]?.name}
-                      onPress={() => {
-                        setSelectedPurchaseId(listItem.item._id);
-                        setPurchaseDetailOpen(true);
-                      }}
+                      onPress={handlePurchasePress}
                     />
                   )}
                   {i < group.items.length - 1 && <TxSeparator />}

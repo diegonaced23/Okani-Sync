@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { formatDateShort } from "@/lib/utils";
 import { useAppData } from "@/contexts/app-data";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 
 interface TransactionFiltersProps {
   searchText: string;
@@ -36,6 +39,7 @@ export function TransactionFilters({
 }: TransactionFiltersProps) {
   const { accounts, categories } = useAppData();
   const [advanced, setAdvanced] = useState(false);
+  const panelId = useId();
   const gastoCategories = (categories ?? []).filter((c) => c.type === "gasto" || c.type === "ambos");
 
   // Número de filtros avanzados activos (excluye búsqueda por texto, que tiene su propio X)
@@ -57,10 +61,12 @@ export function TransactionFilters({
         <div className="relative flex-1">
           <Search
             size={14}
+            aria-hidden="true"
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
           />
           <input
             type="search"
+            aria-label="Buscar transacciones por descripción"
             placeholder="Buscar por descripción…"
             value={searchText}
             onChange={(e) => onSearchTextChange(e.target.value)}
@@ -83,8 +89,9 @@ export function TransactionFilters({
           type="button"
           onClick={() => setAdvanced((v) => !v)}
           className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-          style={advanced ? { borderColor: "var(--os-lime)", color: "var(--os-lime)", background: "color-mix(in oklch, var(--os-lime) 10%, var(--card))" } : {}}
-          aria-pressed={advanced}
+          style={advanced ? { borderColor: "var(--os-lime)", color: "var(--os-lime-text)", background: "color-mix(in oklch, var(--os-lime) 10%, var(--card))" } : {}}
+          aria-expanded={advanced}
+          aria-controls={panelId}
         >
           <SlidersHorizontal size={14} aria-hidden="true" />
           <span className="hidden sm:inline">Filtros</span>
@@ -205,65 +212,61 @@ export function TransactionFilters({
 
       {/* Panel de filtros avanzados */}
       {advanced && (
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card p-3">
+        <div id={panelId} className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card p-3">
           {/* Fecha desde */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <Label htmlFor="filter-from-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Desde
-            </label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => onFromDateChange(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-base md:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            </Label>
+            <DatePicker id="filter-from-date" value={fromDate} onChange={onFromDateChange} />
           </div>
 
           {/* Fecha hasta */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <Label htmlFor="filter-to-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Hasta
-            </label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => onToDateChange(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-base md:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            </Label>
+            <DatePicker id="filter-to-date" value={toDate} onChange={onToDateChange} />
           </div>
 
           {/* Cuenta */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <Label htmlFor="filter-account" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Cuenta
-            </label>
-            <select
-              value={accountId}
-              onChange={(e) => onAccountIdChange(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Todas</option>
-              {(accounts ?? []).map((a) => (
-                <option key={a._id} value={a._id}>{a.name}</option>
-              ))}
-            </select>
+            </Label>
+            <Select value={accountId} onValueChange={(v) => onAccountIdChange(v ?? "")}>
+              <SelectTrigger id="filter-account" className="w-full">
+                <span className="flex-1 text-left text-sm truncate">
+                  {accountId ? ((accounts ?? []).find((a) => a._id === accountId)?.name ?? "Todas") : "Todas"}
+                </span>
+              </SelectTrigger>
+              <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
+                <SelectItem value="">Todas</SelectItem>
+                {(accounts ?? []).map((a) => (
+                  <SelectItem key={a._id} value={a._id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Categoría */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <Label htmlFor="filter-category" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Categoría
-            </label>
-            <select
-              value={categoryId}
-              onChange={(e) => onCategoryIdChange(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Todas</option>
-              {gastoCategories.map((c) => (
-                <option key={c._id} value={c._id}>{c.name}</option>
-              ))}
-            </select>
+            </Label>
+            <Select value={categoryId} onValueChange={(v) => onCategoryIdChange(v ?? "")}>
+              <SelectTrigger id="filter-category" className="w-full">
+                <span className="flex-1 text-left text-sm truncate">
+                  {categoryId ? (gastoCategories.find((c) => c._id === categoryId)?.name ?? "Todas") : "Todas"}
+                </span>
+              </SelectTrigger>
+              <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
+                <SelectItem value="">Todas</SelectItem>
+                {gastoCategories.map((c) => (
+                  <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       )}

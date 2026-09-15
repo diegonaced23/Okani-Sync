@@ -7,13 +7,13 @@ import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
-import { MoneyInput } from "@/components/ui/money-input";
+import { MoneyAmountField } from "./MoneyAmountField";
 import { AccountCardSelect } from "./AccountCardSelect";
 import { CategorySelect } from "./CategorySelect";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { fromCents, toCents, dateStrToTs, tsToDateStr } from "@/lib/money";
-import { Check, X } from "lucide-react";
+import { fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
+import { Check, Loader2, X } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
 
 interface TransactionEditFormProps {
@@ -38,6 +38,11 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
   const [date, setDate]             = useState(tsToDateStr(tx.date));
   const [categoryId, setCategoryId] = useState(tx.categoryId ?? "");
   const [loading, setLoading]       = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Los gastos con tarjeta vinculados a una cuota solo permiten editar
+  // descripción y categoría — el backend rechaza cualquier otro campo (ver convex/transactions.ts).
+  const isLockedCardExpense = tx.type === "gasto_tarjeta" && tx.cardInstallmentId != null;
 
   const [sourceKind, sourceRawId] = sourceId.includes(":") ? sourceId.split(":") : ["", ""];
 
@@ -47,10 +52,21 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
   );
 
   async function handleSave() {
-    if (!desc.trim()) {
-      toast.error("La descripción es obligatoria");
+    // Validación inline para feedback inmediato (en vez de solo un toast transitorio)
+    const errors: Record<string, string> = {};
+    if (!desc.trim()) errors.description = "La descripción es obligatoria";
+
+    const needsAmountValidation = tx.type !== "transferencia" && !isLockedCardExpense;
+    const amountNum = parseMoneyInput(amount);
+    if (needsAmountValidation && (!amountNum || amountNum <= 0)) {
+      errors.amount = "El monto debe ser mayor que cero";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
+    setFieldErrors({});
 
     // Transferencias: solo se edita la descripción
     if (tx.type === "transferencia") {
@@ -67,11 +83,23 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       return;
     }
 
-    const amountNum = parseFloat(amount.replace(/[^0-9.]/g, ""));
-    if (!amountNum || amountNum <= 0) {
-      toast.error("El monto debe ser mayor que cero");
+    // Gastos con tarjeta vinculados a una cuota: solo se edita la descripción.
+    // La categoría se cambia vía la compra (cardPurchases.updatePurchase), que
+    // sí mantiene correcto el split de presupuesto principal/interés.
+    if (isLockedCardExpense) {
+      setLoading(true);
+      try {
+        await updateTx({ transactionId: tx._id, description: desc.trim() });
+        toast.success("Movimiento actualizado");
+        onSuccess();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Error al actualizar");
+      } finally {
+        setLoading(false);
+      }
       return;
     }
+
     setLoading(true);
     try {
       await updateTx({
@@ -105,36 +133,36 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         </div>
       )}
 
-      {/* Monto — oculto para transferencias */}
-      {tx.type !== "transferencia" && (
-        <div>
-          <Label htmlFor="edit-amount" className="text-[12px] font-semibold text-foreground mb-2 block">
-            Monto <span aria-hidden="true" className="text-danger">*</span>
-          </Label>
-          <div
-            className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
-            style={{
-              background: "var(--surface-2)",
-              padding: "14px 16px",
-              "--ring": tx.type === "ingreso" ? "var(--os-lime)" : "var(--os-magenta)",
-            } as React.CSSProperties}
-          >
-            <MoneyInput
-              id="edit-amount"
-              value={amount}
-              onChange={setAmount}
-              placeholder="0"
-              required
-              aria-required="true"
-              className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
-              style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em" }}
-            />
-          </div>
+      {/* Advertencia para gasto_tarjeta vinculado a cuota: solo descripción y categoría */}
+      {isLockedCardExpense && (
+        <div
+          className="rounded-xl p-3 text-xs text-muted-foreground"
+          style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+        >
+          Aquí solo puedes editar la descripción. Para cambiar la categoría, el monto, la fecha o la tarjeta, edita la compra directamente.
         </div>
       )}
 
-      {/* Cuenta o tarjeta — oculto para transferencias */}
-      {tx.type !== "transferencia" && (
+      {/* Monto — oculto para transferencias y gasto_tarjeta con cuota */}
+      {tx.type !== "transferencia" && !isLockedCardExpense && (
+        <MoneyAmountField
+          id="edit-amount"
+          label={<>Monto ({tx.currency}) <span aria-hidden="true" className="text-danger">*</span></>}
+          value={amount}
+          onChange={(v) => {
+            setAmount(v);
+            if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" }));
+          }}
+          ringColor={tx.type === "ingreso" ? "var(--os-lime)" : "var(--os-magenta)"}
+          error={fieldErrors.amount}
+          fontSize={28}
+          padding="14px 16px"
+          autoFocus
+        />
+      )}
+
+      {/* Cuenta o tarjeta — oculto para transferencias y gasto_tarjeta con cuota */}
+      {tx.type !== "transferencia" && !isLockedCardExpense && (
         <div>
           <Label htmlFor="edit-source" className="text-[12px] font-semibold text-foreground mb-2 block">
             {tx.type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
@@ -157,16 +185,27 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         </Label>
         <Input
           id="edit-desc"
+          autoFocus={tx.type === "transferencia" || isLockedCardExpense}
           value={desc}
-          onChange={(e) => setDesc(e.target.value)}
+          onChange={(e) => {
+            setDesc(e.target.value);
+            if (fieldErrors.description) setFieldErrors((fe) => ({ ...fe, description: "" }));
+          }}
           required
           aria-required="true"
+          aria-invalid={!!fieldErrors.description}
+          aria-describedby={fieldErrors.description ? "edit-desc-error" : undefined}
           style={{ background: "var(--surface-2)" }}
         />
+        {fieldErrors.description && (
+          <p id="edit-desc-error" role="alert" className="text-xs text-destructive mt-1.5">
+            {fieldErrors.description}
+          </p>
+        )}
       </div>
 
-      {/* Fecha — oculta para transferencias */}
-      {tx.type !== "transferencia" && (
+      {/* Fecha — oculta para transferencias y gasto_tarjeta con cuota */}
+      {tx.type !== "transferencia" && !isLockedCardExpense && (
         <div>
           <Label htmlFor="edit-date" className="text-[12px] font-semibold text-foreground mb-2 block">
             Fecha
@@ -175,8 +214,8 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         </div>
       )}
 
-      {/* Categoría — oculta para transferencias */}
-      {tx.type !== "transferencia" && filteredCategories.length > 0 && (
+      {/* Categoría — oculta para transferencias y gasto_tarjeta con cuota */}
+      {tx.type !== "transferencia" && !isLockedCardExpense && filteredCategories.length > 0 && (
         <div>
           <Label htmlFor="edit-category" className="text-[12px] font-semibold text-foreground mb-2 block">
             Categoría
@@ -207,7 +246,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
             boxShadow: "0 6px 16px -4px color-mix(in oklch, var(--os-lime) 55%, transparent)",
           }}
         >
-          <Check className="h-4 w-4" strokeWidth={2.5} />
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
           {loading ? "Guardando…" : "Guardar cambios"}
         </button>
         <Button

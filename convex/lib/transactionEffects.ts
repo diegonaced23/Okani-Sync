@@ -113,9 +113,8 @@ export async function applyGoalDelta(
  *   debe garantizar que no llame a esta función dos veces con piernas del mismo grupo
  *   (usar un Set de transferGroupId procesados).
  *
- * Alcance actual: revierte efectos sobre cuentas, tarjetas y presupuestos.
- * TODO: deudas y préstamos — `pago_deuda` no revierte `debts.currentBalance` ni
- * elimina el `debtPayments` asociado. Pendiente como mejora separada.
+ * Alcance actual: revierte efectos sobre cuentas, tarjetas, presupuestos y deudas
+ * (`pago_deuda` restaura `debts.currentBalance` y elimina el `debtPayments` asociado).
  */
 export async function deleteTransactionWithEffects(
   ctx: MutationCtx,
@@ -133,7 +132,15 @@ export async function deleteTransactionWithEffects(
       .query("transactions")
       .withIndex("by_transfer_group", (q) => q.eq("transferGroupId", tx.transferGroupId!))
       .collect();
-    const [outLeg, inLeg] = [...legs].sort((a, b) => a._creationTime - b._creationTime);
+    // Preferir el campo explícito transferDirection; si algún registro legado no lo
+    // tiene poblado, recurrir al orden por _creationTime (createTransfer siempre
+    // inserta primero la pierna de salida) en vez de omitir la reversión en silencio.
+    let outLeg = legs.find((l) => l.transferDirection === "out");
+    let inLeg  = legs.find((l) => l.transferDirection === "in");
+    if (!outLeg || !inLeg) {
+      const sorted = [...legs].sort((a, b) => a._creationTime - b._creationTime);
+      [outLeg, inLeg] = sorted;
+    }
     if (outLeg?.accountId) await applyAccountDelta(ctx, outLeg.accountId, outLeg.amount);
     if (inLeg?.accountId) await applyAccountDelta(ctx, inLeg.accountId, -inLeg.amount);
     for (const leg of legs) await ctx.db.delete(leg._id);
@@ -200,6 +207,24 @@ export async function deleteTransactionWithEffects(
   // Revertir pago_tarjeta: recalcular FIFO de cuotas pagadas
   if (tx.type === "pago_tarjeta" && tx.cardId) {
     await recomputeInstallmentsPaid(ctx, tx.cardId);
+  }
+
+  // Revertir pago_deuda: restaurar saldo de la deuda y eliminar el abono asociado
+  if (tx.type === "pago_deuda" && tx.debtId) {
+    const debt = await ctx.db.get(tx.debtId);
+    if (debt) {
+      await ctx.db.patch(tx.debtId, {
+        currentBalance: debt.currentBalance + tx.amount,
+        status: debt.status === "pagada" ? "activa" : debt.status,
+        updatedAt: Date.now(),
+      });
+    }
+    const payments = await ctx.db
+      .query("debtPayments")
+      .withIndex("by_debt", (q) => q.eq("debtId", tx.debtId!))
+      .collect();
+    const linkedPayment = payments.find((p) => p.transactionId === tx._id);
+    if (linkedPayment) await ctx.db.delete(linkedPayment._id);
   }
 
   await ctx.db.delete(tx._id);

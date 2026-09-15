@@ -22,9 +22,11 @@
   --os-magenta-2: oklch(0.65 0.20 25);
   --os-orange:    oklch(0.76 0.18 55);
   --os-orange-2:  oklch(0.86 0.14 55);
+  --os-orange-text: oklch(0.42 0.15 55); /* variante accesible para texto (≥4.5:1 sobre fondo claro) */
   --warning-text: #B45309;               /* amber-700: contraste ≥4.5:1 sobre fondos claros */
   --os-violet:    oklch(0.65 0.22 295);
   --os-violet-2:  oklch(0.80 0.14 295);
+  --os-violet-text: oklch(0.42 0.18 295); /* variante accesible para texto (≥4.5:1 sobre fondo claro) */
   --os-yellow:    oklch(0.88 0.17 95);
   --os-lime-ring: oklch(0.55 0.19 142); /* variante de --os-lime para anillo de foco (≥3:1 en modo claro) */
 
@@ -94,9 +96,11 @@
   --os-magenta-2: oklch(0.50 0.20 25);
   --os-orange:    oklch(0.82 0.20 55);
   --os-orange-2:  oklch(0.55 0.16 55);
+  --os-orange-text: oklch(0.82 0.20 55); /* en dark, el orange claro tiene buen contraste sobre fondos oscuros */
   --warning-text: #FCD34D;               /* amber-300: contraste suficiente sobre fondos oscuros */
   --os-violet:    oklch(0.78 0.22 295);
   --os-violet-2:  oklch(0.50 0.18 295);
+  --os-violet-text: oklch(0.78 0.22 295); /* en dark, el violet claro tiene buen contraste sobre fondos oscuros */
   --os-yellow:    oklch(0.92 0.18 95);
 
   --background:   oklch(0.16 0.025 255);
@@ -169,8 +173,10 @@
   --color-magenta-2: var(--os-magenta-2);
   --color-orange:    var(--os-orange);
   --color-orange-2:  var(--os-orange-2);
+  --color-orange-text: var(--os-orange-text);
   --color-violet:    var(--os-violet);
   --color-violet-2:  var(--os-violet-2);
+  --color-violet-text: var(--os-violet-text);
 
   /* Charts */
   --color-chart-1: var(--chart-1);

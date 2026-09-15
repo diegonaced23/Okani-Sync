@@ -3,8 +3,9 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
-import { assertCanRead, assertCanWrite } from "./lib/permissions";
+import { assertCanRead, assertCanWrite, assertCanManage } from "./lib/permissions";
 import { toMonthString, generateId, assertValidMonth } from "./lib/utils";
+import { assertRateLimit } from "./lib/rateLimit";
 
 import {
   applyAccountDelta,
@@ -129,28 +130,6 @@ export const listRecent = query({
   },
 });
 
-export const getById = query({
-  args: { transactionId: v.id("transactions") },
-  handler: async (ctx, { transactionId }) => {
-    const clerkId = await getCurrentUserId(ctx);
-    const tx = await ctx.db.get(transactionId);
-    if (!tx) return null;
-    // Acceso directo si es el dueño
-    if (tx.userId === clerkId) return tx;
-    // Para cuentas compartidas: verificar permiso de lectura sobre la cuenta de la transacción.
-    // assertCanRead lanza si no hay acceso; retornamos null para mantener el contrato de fetch-one.
-    if (tx.accountId) {
-      try {
-        await assertCanRead(ctx, tx.accountId);
-        return tx;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  },
-});
-
 /**
  * Compromisos de pago en los próximos N días para el widget del dashboard.
  *
@@ -193,19 +172,26 @@ export const upcomingCommitments = query({
       .collect();
     const relevantInst = allUnpaid.filter((i) => i.dueDate <= windowEnd);
 
-    // Batch-lookup por purchaseId y cardId únicos
+    // Batch-lookup por purchaseId y cardId únicos — resueltos en paralelo (evita N awaits serializados)
+    const uniquePurchaseIds = [...new Set(relevantInst.map((i) => i.purchaseId))];
+    const uniqueCardIds     = [...new Set(relevantInst.map((i) => i.cardId))];
+
+    const [purchaseDocs, cardDocs] = await Promise.all([
+      Promise.all(uniquePurchaseIds.map((id) => ctx.db.get(id))),
+      Promise.all(uniqueCardIds.map((id) => ctx.db.get(id))),
+    ]);
+
     const seenPurchases = new Map<string, { description: string; totalInstallments: number }>();
+    uniquePurchaseIds.forEach((id, i) => {
+      const p = purchaseDocs[i];
+      seenPurchases.set(id, { description: p?.description ?? "Cuota", totalInstallments: p?.totalInstallments ?? 1 });
+    });
+
     const seenCards = new Map<string, { name: string; lastFourDigits: string; currency: string }>();
-    for (const inst of relevantInst) {
-      if (!seenPurchases.has(inst.purchaseId)) {
-        const p = await ctx.db.get(inst.purchaseId);
-        seenPurchases.set(inst.purchaseId, { description: p?.description ?? "Cuota", totalInstallments: p?.totalInstallments ?? 1 });
-      }
-      if (!seenCards.has(inst.cardId)) {
-        const c = await ctx.db.get(inst.cardId);
-        if (c) seenCards.set(inst.cardId, { name: c.name, lastFourDigits: c.lastFourDigits, currency: c.currency });
-      }
-    }
+    uniqueCardIds.forEach((id, i) => {
+      const c = cardDocs[i];
+      if (c) seenCards.set(id, { name: c.name, lastFourDigits: c.lastFourDigits, currency: c.currency });
+    });
 
     for (const inst of relevantInst) {
       const purchase = seenPurchases.get(inst.purchaseId)!;
@@ -426,28 +412,28 @@ export const spendingBySource = query({
 
     // Misma definición base devengo que spendingByCategory/monthlySummary: gasto directo +
     // gasto_tarjeta (compra a crédito, fuente real es la tarjeta) + pago_deuda (fuente: cuenta).
-    const gastos = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
-      )
-      .collect();
-
-    // Compras a crédito: la fuente real es la tarjeta (no descuentan cuenta)
-    const gastosTarjeta = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", user.clerkId).eq("type", "gasto_tarjeta").eq("month", month)
-      )
-      .collect();
-
-    // Pagos de deuda: el efectivo sale de la cuenta (accountId)
-    const pagosDeuda = await ctx.db
-      .query("transactions")
-      .withIndex("by_user_type_month", (q) =>
-        q.eq("userId", user.clerkId).eq("type", "pago_deuda").eq("month", month)
-      )
-      .collect();
+    const [gastos, gastosTarjeta, pagosDeuda] = await Promise.all([
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
+        )
+        .collect(),
+      // Compras a crédito: la fuente real es la tarjeta (no descuentan cuenta)
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", "gasto_tarjeta").eq("month", month)
+        )
+        .collect(),
+      // Pagos de deuda: el efectivo sale de la cuenta (accountId)
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", "pago_deuda").eq("month", month)
+        )
+        .collect(),
+    ]);
 
     // Para pago_deuda la fuente es la cuenta debitada (accountId), no una tarjeta destino
     const txs = [
@@ -565,24 +551,6 @@ export const monthlySummary = query({
   },
 });
 
-/** Gastos con tarjeta — todas las txs gasto_tarjeta de una tarjeta, ordenadas desc. */
-export const listDirectByCard = query({
-  args: { cardId: v.id("cards") },
-  handler: async (ctx, { cardId }) => {
-    const clerkId = await getCurrentUserId(ctx);
-    const card = await ctx.db.get(cardId);
-    if (!card || card.userId !== clerkId) return [];
-
-    const all = await ctx.db
-      .query("transactions")
-      .withIndex("by_card", (q) => q.eq("cardId", cardId))
-      .order("desc")
-      .collect();
-
-    return all.filter((tx) => tx.type === "gasto_tarjeta");
-  },
-});
-
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export const create = mutation({
@@ -611,6 +579,9 @@ export const create = mutation({
     if (args.description.length === 0 || args.description.length > 200) throw new Error("La descripción debe tener entre 1 y 200 caracteres");
     if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
     if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+    if (args.tags !== undefined && (args.tags.length > 10 || args.tags.some((t) => t.length > 30))) {
+      throw new Error("Máximo 10 etiquetas de hasta 30 caracteres cada una");
+    }
     if (args.accountId && args.cardId) throw new Error("Una transacción no puede asociarse a cuenta y tarjeta al mismo tiempo");
     if (args.cardId && args.type === "gasto") throw new Error("Los gastos con tarjeta de crédito se registran vía cardPurchases.createPurchase");
 
@@ -627,15 +598,10 @@ export const create = mutation({
     const user = await getCurrentUser(ctx);
 
     // Rate limiting: máximo 30 transacciones por minuto por usuario
-    const latestTxs = await ctx.db
-      .query("transactions")
-      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
-      .order("desc")
-      .take(31);
-    const cutoff = Date.now() - 60_000;
-    if (latestTxs.filter((t) => t.createdAt >= cutoff).length >= 30) {
-      throw new Error("Demasiadas transacciones en poco tiempo. Intenta de nuevo en un minuto.");
-    }
+    await assertRateLimit(ctx, user.clerkId, {
+      max: 30, windowMs: 60_000,
+      message: "Demasiadas transacciones en poco tiempo. Intenta de nuevo en un minuto.",
+    });
 
     if (args.accountId) {
       await assertCanWrite(ctx, args.accountId);
@@ -643,6 +609,10 @@ export const create = mutation({
     if (args.cardId) {
       const card = await ctx.db.get(args.cardId);
       if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+    }
+    if (args.categoryId) {
+      const cat = await ctx.db.get(args.categoryId);
+      if (!cat || cat.userId !== user.clerkId) throw new Error("Categoría no encontrada");
     }
 
     const month = toMonthString(args.date);
@@ -717,6 +687,9 @@ export const update = mutation({
       throw new Error("El monto debe ser mayor que cero");
     }
     if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+    if (fields.tags !== undefined && (fields.tags.length > 10 || fields.tags.some((t) => t.length > 30))) {
+      throw new Error("Máximo 10 etiquetas de hasta 30 caracteres cada una");
+    }
     if (fields.accountId !== undefined && fields.cardId !== undefined) {
       throw new Error("Una transacción no puede asociarse a cuenta y tarjeta al mismo tiempo");
     }
@@ -724,17 +697,19 @@ export const update = mutation({
     const user = await getCurrentUser(ctx);
 
     // Rate limiting: máximo 30 modificaciones por minuto por usuario
-    const latestTxsUpdate = await ctx.db
-      .query("transactions")
-      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
-      .order("desc")
-      .take(31);
-    if (latestTxsUpdate.filter((t) => t.createdAt >= Date.now() - 60_000).length >= 30) {
-      throw new Error("Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.");
-    }
+    await assertRateLimit(ctx, user.clerkId, {
+      max: 30, windowMs: 60_000,
+      message: "Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.",
+    });
 
     const tx = await ctx.db.get(transactionId);
-    if (!tx || tx.userId !== user.clerkId) throw new Error("Transacción no encontrada");
+    if (!tx) throw new Error("Transacción no encontrada");
+    if (tx.userId !== user.clerkId) {
+      // No es el creador: solo puede editarla si tiene permiso de escritura
+      // sobre la cuenta compartida a la que pertenece.
+      if (!tx.accountId) throw new Error("Transacción no encontrada");
+      await assertCanWrite(ctx, tx.accountId);
+    }
 
     // Transferencias: solo se permite editar descripción y notas
     if (tx.type === "transferencia") {
@@ -763,10 +738,15 @@ export const update = mutation({
       return;
     }
 
-    // gasto_tarjeta vinculado a cuota: solo editar descripción, categoría y notas
+    // gasto_tarjeta vinculado a cuota: solo editar descripción y notas.
+    // La categoría NO se permite aquí: el presupuesto se calculó al crear la compra
+    // con split principal/interés (ver cardPurchases.createPurchase); revertir/aplicar
+    // con tx.amount completo (como hace este bloque más abajo) corrompería budget.spent
+    // en compras con interés. Cambiar la categoría debe ir vía cardPurchases.updatePurchase,
+    // que sí replica el split correcto en todas las cuotas de la compra.
     if (tx.type === "gasto_tarjeta" && tx.cardInstallmentId) {
-      if (fields.amount !== undefined || fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined) {
-        throw new Error("Los gastos con tarjeta vinculados a una cuota solo permiten editar la descripción, categoría y notas. Para cambiar datos financieros, edita la compra directamente.");
+      if (fields.amount !== undefined || fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined || fields.categoryId !== undefined) {
+        throw new Error("Los gastos con tarjeta vinculados a una cuota solo permiten editar la descripción y las notas. Para cambiar la categoría o datos financieros, edita la compra directamente.");
       }
     }
 
@@ -780,14 +760,19 @@ export const update = mutation({
                        : changingToAccount ? undefined
                        : tx.cardId;
 
-    // Validar currency de la nueva fuente
+    // Validar currency de la nueva fuente — la autorización se verifica ANTES
+    // de leer/exponer cualquier dato de la cuenta (nombre, moneda) en mensajes de error.
     if (newAccountId && newAccountId !== tx.accountId) {
+      await assertCanWrite(ctx, newAccountId);
       const acct = await ctx.db.get(newAccountId);
       if (!acct) throw new Error("Cuenta no encontrada");
       if (acct.currency !== tx.currency) {
         throw new Error(`La cuenta "${acct.name}" usa ${acct.currency} pero la transacción es en ${tx.currency}`);
       }
-      await assertCanWrite(ctx, newAccountId);
+    }
+    if (fields.categoryId && fields.categoryId !== tx.categoryId) {
+      const cat = await ctx.db.get(fields.categoryId);
+      if (!cat || cat.userId !== user.clerkId) throw new Error("Categoría no encontrada");
     }
     if (newCardId && newCardId !== tx.cardId) {
       const card = await ctx.db.get(newCardId);
@@ -871,18 +856,18 @@ export const remove = mutation({
     const user = await getCurrentUser(ctx);
 
     // Rate limiting: máximo 30 eliminaciones por minuto por usuario
-    const latestTxsRemove = await ctx.db
-      .query("transactions")
-      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
-      .order("desc")
-      .take(31);
-    if (latestTxsRemove.filter((t) => t.createdAt >= Date.now() - 60_000).length >= 30) {
-      throw new Error("Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.");
-    }
+    await assertRateLimit(ctx, user.clerkId, {
+      max: 30, windowMs: 60_000,
+      message: "Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.",
+    });
 
     const tx = await ctx.db.get(transactionId);
-    if (!tx || tx.userId !== user.clerkId) {
-      throw new Error("Transacción no encontrada");
+    if (!tx) throw new Error("Transacción no encontrada");
+    if (tx.userId !== user.clerkId) {
+      // No es el creador: eliminar es más destructivo que editar, así que se
+      // restringe a roles admin/owner de la cuenta compartida.
+      if (!tx.accountId) throw new Error("Transacción no encontrada");
+      await assertCanManage(ctx, tx.accountId);
     }
     // Los ajustes de saldo son inmutables: si el usuario quiere "deshacer" un
     // ajuste, debe crear otra reasignación. El delta original no está preservado
@@ -920,14 +905,10 @@ export const createTransfer = mutation({
     const user = await getCurrentUser(ctx);
 
     // Rate limiting: máximo 30 transferencias por minuto por usuario
-    const latestTxsTransfer = await ctx.db
-      .query("transactions")
-      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
-      .order("desc")
-      .take(31);
-    if (latestTxsTransfer.filter((t) => t.createdAt >= Date.now() - 60_000).length >= 30) {
-      throw new Error("Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.");
-    }
+    await assertRateLimit(ctx, user.clerkId, {
+      max: 30, windowMs: 60_000,
+      message: "Demasiadas operaciones en poco tiempo. Intenta de nuevo en un minuto.",
+    });
 
     // Verificar permisos en ambas cuentas
     await assertCanWrite(ctx, args.fromAccountId);

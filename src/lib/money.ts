@@ -24,6 +24,15 @@ export function fromCents(cents: number): number {
   return cents / 100;
 }
 
+/**
+ * Parsea el texto crudo de un `MoneyInput` (puede incluir separadores de miles
+ * u otros caracteres no numéricos) a un valor humano. Retorna `NaN` si no hay
+ * dígitos válidos — el llamador decide cómo tratarlo (ej. `!amountNum`).
+ */
+export function parseMoneyInput(raw: string): number {
+  return parseFloat(raw.replace(/[^0-9.]/g, ""));
+}
+
 // ─── Formato en UI ───────────────────────────────────────────────────────────
 
 /**

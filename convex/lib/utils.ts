@@ -15,6 +15,19 @@ export function generateId(): string {
 }
 
 /**
+ * Retorna el rango [inicio, fin) en timestamp (hora local) para un mes "YYYY-MM".
+ * Útil para consultar índices sobre campos de fecha ya existentes sin necesitar
+ * un campo derivado "month" adicional.
+ */
+export function monthRange(month: string): { start: number; end: number } {
+  const [year, monthNum] = month.split("-").map(Number);
+  return {
+    start: new Date(year, monthNum - 1, 1).getTime(),
+    end: new Date(year, monthNum, 1).getTime(),
+  };
+}
+
+/**
  * Lanza si `month` no tiene formato "YYYY-MM" válido.
  * Los validadores de Convex no soportan regex, por lo que esta verificación
  * debe hacerse a nivel de handler para proteger los índices by_user_month.

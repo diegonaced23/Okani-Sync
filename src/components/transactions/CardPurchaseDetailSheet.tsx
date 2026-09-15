@@ -1,13 +1,22 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { AppSheet } from "@/components/ui/app-sheet";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { formatCents } from "@/lib/money";
 import { formatDateShort, formatMonthLong } from "@/lib/utils";
-import { Check, Clock, CalendarDays, CreditCard } from "lucide-react";
+import { toast } from "sonner";
+import { Check, Clock, CalendarDays, CreditCard, Pencil, Trash2 } from "lucide-react";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
+import { CardPurchaseEditForm } from "./CardPurchaseEditForm";
 
 interface CardPurchaseDetailSheetProps {
   purchaseId: Id<"cardPurchases"> | null;
@@ -21,6 +30,7 @@ export function CardPurchaseDetailSheet({
   onOpenChange,
 }: CardPurchaseDetailSheetProps) {
   const { openWithCard } = useNewTransactionModal();
+  const deletePurchase = useMutation(api.cardPurchases.deletePurchase);
   const data = useQuery(
     api.cardPurchases.getWithInstallments,
     purchaseId ? { purchaseId } : "skip"
@@ -28,7 +38,50 @@ export function CardPurchaseDetailSheet({
 
   const { purchase, installments, card } = data ?? {};
 
+  const [editing, setEditing]       = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting]     = useState(false);
+
+  // Salir de modo edición cuando cambia la compra seleccionada o el sheet se cierra.
+  // Patrón de estado derivado (render-time setState) para evitar useEffect.
+  const [prevPurchaseId, setPrevPurchaseId] = useState(purchaseId);
+  if (purchaseId !== prevPurchaseId) {
+    setPrevPurchaseId(purchaseId);
+    setEditing(false);
+  }
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setEditing(false);
+  }
+
+  // Devolver el foco al botón "Editar" al salir del modo edición (cancelar o guardar),
+  // sin robárselo en la apertura inicial del sheet.
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const wasEditingRef = useRef(editing);
+  useEffect(() => {
+    if (wasEditingRef.current && !editing) {
+      editButtonRef.current?.focus();
+    }
+    wasEditingRef.current = editing;
+  }, [editing]);
+
   if (!purchaseId) return null;
+
+  async function handleDelete() {
+    if (!purchaseId) return;
+    setDeleting(true);
+    try {
+      await deletePurchase({ purchaseId });
+      toast.success("Compra eliminada");
+      setDeleteOpen(false);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const paidCount   = purchase?.paidInstallments ?? 0;
   const totalCount  = purchase?.totalInstallments ?? 1;
@@ -42,7 +95,12 @@ export function CardPurchaseDetailSheet({
   );
 
   return (
-    <AppSheet open={open} onOpenChange={onOpenChange} title="Detalle de compra">
+    <>
+    <AppSheet
+      open={open}
+      onOpenChange={(o) => { if (!o) setEditing(false); onOpenChange(o); }}
+      title={editing ? "Editar compra" : "Detalle de compra"}
+    >
       {!purchase ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -53,6 +111,12 @@ export function CardPurchaseDetailSheet({
             />
           ))}
         </div>
+      ) : editing ? (
+        <CardPurchaseEditForm
+          purchase={purchase}
+          onSuccess={() => setEditing(false)}
+          onCancel={() => setEditing(false)}
+        />
       ) : (
         <div className="space-y-5">
 
@@ -205,7 +269,7 @@ export function CardPurchaseDetailSheet({
                 border: "1px solid color-mix(in oklch, var(--os-orange) 20%, transparent)",
               }}
             >
-              <CalendarDays className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "var(--os-orange)" }} />
+              <CalendarDays className="h-4 w-4 mt-0.5 shrink-0" style={{ color: "var(--os-orange-text)" }} />
               <p className="text-xs text-muted-foreground">
                 Interés total: {formatCents(purchase.totalInterest!, purchase.currency)}{" "}
                 ({((purchase.interestRate ?? 0) * 100).toFixed(1)}% mensual)
@@ -232,8 +296,39 @@ export function CardPurchaseDetailSheet({
             </button>
           )}
 
+          {/* ── Editar / Eliminar ── */}
+          <div className="flex gap-2">
+            <Button type="button" ref={editButtonRef} variant="outline" className="flex-1 gap-1.5" onClick={() => setEditing(true)}>
+              <Pencil className="h-4 w-4" />
+              Editar
+            </Button>
+            <Button type="button" variant="outline" className="flex-1 gap-1.5 text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4" />
+              Eliminar
+            </Button>
+          </div>
+
         </div>
       )}
     </AppSheet>
+
+    {/* ── Confirmación de eliminación ── */}
+    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Eliminar esta compra?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Esta acción es irreversible. Se eliminarán todas las cuotas (pagadas y pendientes), se revertirá el presupuesto afectado y se reducirá la deuda de la tarjeta en el monto de las cuotas no pagadas.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+            {deleting ? "Eliminando…" : "Sí, eliminar"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

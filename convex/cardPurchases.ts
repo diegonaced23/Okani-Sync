@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { calculateInstallment, addMonths } from "./lib/money";
-import { toMonthString, getSystemInterestsCategoryId } from "./lib/utils";
+import { toMonthString, assertValidMonth, monthRange, getSystemInterestsCategoryId } from "./lib/utils";
 import { applyBudgetDelta } from "./lib/transactionEffects";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -48,14 +48,15 @@ export const listActiveByUser = query({
 export const listByPurchaseMonth = query({
   args: { month: v.string() },
   handler: async (ctx, { month }) => {
+    assertValidMonth(month);
     const clerkId = await getCurrentUserId(ctx);
-    const all = await ctx.db
+    const { start, end } = monthRange(month);
+    return await ctx.db
       .query("cardPurchases")
-      .withIndex("by_user_status", (q) =>
-        q.eq("userId", clerkId).eq("status", "activa")
+      .withIndex("by_user_status_purchaseDate", (q) =>
+        q.eq("userId", clerkId).eq("status", "activa").gte("purchaseDate", start).lt("purchaseDate", end)
       )
       .collect();
-    return all.filter((p) => toMonthString(p.purchaseDate) === month);
   },
 });
 
@@ -288,8 +289,7 @@ export const updatePurchase = mutation({
         oldInstallments.map(async (inst) => {
           const oldTxs = await ctx.db
             .query("transactions")
-            .withIndex("by_card", (q) => q.eq("cardId", purchase.cardId))
-            .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
+            .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
             .collect();
           await Promise.all(oldTxs.map((tx) => ctx.db.delete(tx._id)));
           await ctx.db.delete(inst._id);
@@ -414,8 +414,7 @@ export const updatePurchase = mutation({
           // Actualizar categoryId en las txs gasto_tarjeta
           const txs = await ctx.db
             .query("transactions")
-            .withIndex("by_card", (q) => q.eq("cardId", purchase.cardId))
-            .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
+            .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
             .collect();
           for (const tx of txs) {
             await ctx.db.patch(tx._id, { categoryId: newCatId, updatedAt: now });
@@ -435,8 +434,7 @@ export const updatePurchase = mutation({
             : fields.description.trim();
           const txs = await ctx.db
             .query("transactions")
-            .withIndex("by_card", (q) => q.eq("cardId", purchase.cardId))
-            .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
+            .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
             .collect();
           for (const tx of txs) {
             await ctx.db.patch(tx._id, { description: desc, updatedAt: now });
@@ -481,8 +479,7 @@ export const deletePurchase = mutation({
       }
       const txs = await ctx.db
         .query("transactions")
-        .withIndex("by_card", (q) => q.eq("cardId", purchase.cardId))
-        .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
+        .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
         .collect();
       for (const tx of txs) await ctx.db.delete(tx._id);
       await ctx.db.delete(inst._id);

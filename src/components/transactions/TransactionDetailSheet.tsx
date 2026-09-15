@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
@@ -45,6 +45,18 @@ export function TransactionDetailSheet({
     if (!open) setEditing(false);
   }
 
+  // Devolver el foco al botón "Editar" al salir del modo edición (cancelar o guardar),
+  // sin robárselo en la apertura inicial del sheet. Efecto puramente imperativo
+  // (foco de DOM), no sincroniza estado de React — no aplica la regla de "no setState en efecto".
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const wasEditingRef = useRef(editing);
+  useEffect(() => {
+    if (wasEditingRef.current && !editing) {
+      editButtonRef.current?.focus();
+    }
+    wasEditingRef.current = editing;
+  }, [editing]);
+
   // Guardia después de los hooks para no violar la regla de hooks
   if (!tx) return null;
 
@@ -88,6 +100,7 @@ export function TransactionDetailSheet({
             tx={currentTx}
             onEdit={() => setEditing(true)}
             onDelete={() => setDeleteOpen(true)}
+            editButtonRef={editButtonRef}
           />
         )}
       </AppSheet>

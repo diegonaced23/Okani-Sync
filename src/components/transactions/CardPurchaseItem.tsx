@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { formatCents } from "@/lib/money";
 import { formatMonthShort } from "@/lib/utils";
@@ -8,12 +9,14 @@ import { ShoppingCart } from "lucide-react";
 interface CardPurchaseItemProps {
   purchase: Doc<"cardPurchases">;
   cardName?: string;
-  onPress?: () => void;
+  onPress?: (purchase: Doc<"cardPurchases">) => void;
 }
 
-export function CardPurchaseItem({ purchase, cardName, onPress }: CardPurchaseItemProps) {
+// memo: evita re-renders cuando el padre actualiza estado no relacionado (ej. abrir sheets),
+// igual patrón que TransactionItem con quien comparte la misma lista.
+export const CardPurchaseItem = memo(function CardPurchaseItem({ purchase, cardName, onPress }: CardPurchaseItemProps) {
   const iconBg    = "color-mix(in oklch, var(--os-violet, var(--os-cyan)) 16%, transparent)";
-  const iconColor = "var(--os-violet, var(--os-cyan))";
+  const iconColor = "var(--os-violet-text, var(--os-cyan-text))";
 
   const subtitleParts: string[] = [];
   if (purchase.totalInstallments > 1) {
@@ -26,7 +29,7 @@ export function CardPurchaseItem({ purchase, cardName, onPress }: CardPurchaseIt
   return (
     <button
       type="button"
-      onClick={onPress}
+      onClick={onPress ? () => onPress(purchase) : undefined}
       className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-muted/50"
       style={{ background: "transparent" }}
     >
@@ -62,4 +65,4 @@ export function CardPurchaseItem({ purchase, cardName, onPress }: CardPurchaseIt
       </div>
     </button>
   );
-}
+});

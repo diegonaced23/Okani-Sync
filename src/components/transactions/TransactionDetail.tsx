@@ -18,9 +18,11 @@ interface TransactionDetailProps {
   tx: Doc<"transactions">;
   onEdit: () => void;
   onDelete: () => void;
+  // Permite al padre devolver el foco a este botón al salir del modo edición.
+  editButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
-export function TransactionDetail({ tx, onEdit, onDelete }: TransactionDetailProps) {
+export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: TransactionDetailProps) {
   const { accounts, cards, categories } = useAppData();
 
   // Maps calculados una vez por cambio de listas, no en cada render
@@ -197,6 +199,7 @@ export function TransactionDetail({ tx, onEdit, onDelete }: TransactionDetailPro
         {canEdit && (
           <Button
             type="button"
+            ref={editButtonRef}
             variant="outline"
             className="flex-1 gap-2 font-semibold"
             onClick={onEdit}

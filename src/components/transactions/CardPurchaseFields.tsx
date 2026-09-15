@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { DatePicker } from "@/components/ui/date-picker";
-import { MoneyInput } from "@/components/ui/money-input";
+import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import { toast } from "sonner";
-import { toCents, dateStrToTs } from "@/lib/money";
-import { Check } from "lucide-react";
+import { toCents, dateStrToTs, parseMoneyInput } from "@/lib/money";
+import { Check, Loader2 } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
 
 interface CardPurchaseFieldsProps {
@@ -54,7 +54,7 @@ export function CardPurchaseFields({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const amountNum = parseFloat(amount.replace(/[^0-9.]/g, ""));
+    const amountNum = parseMoneyInput(amount);
     const nInstallments = parseInt(installments) || 1;
     const rate = hasInterest ? (parseFloat(interestRatePct) || 0) / 100 : 0;
 
@@ -100,40 +100,17 @@ export function CardPurchaseFields({
     <form onSubmit={handleSubmit} className="space-y-4">
 
       {/* ── Monto ─────────────────────────────────────────────────────────── */}
-      <div>
-        <Label htmlFor="tx-amount" className="text-[12px] font-semibold text-foreground mb-2 block">
-          Monto <span aria-hidden="true" className="text-danger">*</span>
-        </Label>
-        <div
-          className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
-          style={{
-            background: "var(--surface-2)",
-            padding: "18px 16px",
-            "--ring": "var(--os-magenta)",
-          } as React.CSSProperties}
-        >
-          <MoneyInput
-            id="tx-amount"
-            value={amount}
-            onChange={(v) => {
-              onAmountChange(v);
-              if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" }));
-            }}
-            placeholder="0"
-            required
-            aria-required="true"
-            aria-invalid={!!fieldErrors.amount}
-            aria-describedby={fieldErrors.amount ? "tx-amount-error" : undefined}
-            className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
-            style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.025em" }}
-          />
-        </div>
-        {fieldErrors.amount && (
-          <p id="tx-amount-error" role="alert" className="text-xs text-destructive mt-1.5">
-            {fieldErrors.amount}
-          </p>
-        )}
-      </div>
+      <MoneyAmountField
+        id="tx-amount"
+        label={<>Monto ({card.currency}) <span aria-hidden="true" className="text-danger">*</span></>}
+        value={amount}
+        onChange={(v) => {
+          onAmountChange(v);
+          if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" }));
+        }}
+        ringColor="var(--os-magenta)"
+        error={fieldErrors.amount}
+      />
 
       {/* ── Descripción ───────────────────────────────────────────────────── */}
       <div>
@@ -282,7 +259,7 @@ export function CardPurchaseFields({
           boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-lime) 55%, transparent)",
         }}
       >
-        <Check className="h-4 w-4" strokeWidth={2.5} />
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
         {loading ? "Guardando…" : "Registrar compra"}
       </button>
 

@@ -213,7 +213,8 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_card", ["cardId"])
-    .index("by_user_status", ["userId", "status"]),
+    .index("by_user_status", ["userId", "status"])
+    .index("by_user_status_purchaseDate", ["userId", "status", "purchaseDate"]),
 
   // ============================================================
   // CUOTAS INDIVIDUALES — Cronograma con desglose capital/interés
@@ -343,8 +344,9 @@ export default defineSchema({
   // TRANSACCIONES — Ingresos, gastos, transferencias
   //
   // TRANSFERENCIAS — Modelo de doble entrada:
-  //   - Transacción de salida: type "gasto", accountId = cuenta origen
-  //   - Transacción de entrada: type "ingreso", accountId = cuenta destino
+  //   - Ambas piernas usan type "transferencia", distinguidas por transferDirection ("out"/"in")
+  //   - Transacción de salida: accountId = cuenta origen, transferDirection = "out"
+  //   - Transacción de entrada: accountId = cuenta destino, transferDirection = "in"
   //   - Ambas comparten el mismo transferGroupId (UUID generado en la mutation)
   //   - toAccountId se mantiene en la tx de salida para referencia rápida
   //
@@ -413,6 +415,7 @@ export default defineSchema({
     .index("by_account", ["accountId"])
     .index("by_account_month", ["accountId", "month"])
     .index("by_card", ["cardId"])
+    .index("by_card_installment", ["cardId", "cardInstallmentId"])
     .index("by_user_type_month", ["userId", "type", "month"])
     .index("by_user_category_month", ["userId", "categoryId", "month"])
     .index("by_transfer_group", ["transferGroupId"])

@@ -7,14 +7,14 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
-import { MoneyInput } from "@/components/ui/money-input";
+import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, dateStrToTs } from "@/lib/money";
-import { Check, PiggyBank } from "lucide-react";
+import { toCents, dateStrToTs, parseMoneyInput } from "@/lib/money";
+import { Check, Loader2, PiggyBank } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
 
 type TxType = "ingreso" | "gasto";
@@ -64,10 +64,11 @@ export function AccountTransactionFields({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const amountNum = parseFloat(amount.replace(/[^0-9.]/g, ""));
+    const amountNum = parseMoneyInput(amount);
 
     // Validación inline para feedback inmediato
     const errors: Record<string, string> = {};
+    if (!accountId) errors.source = type === "ingreso" ? "Selecciona una cuenta destino" : "Selecciona una cuenta o tarjeta de origen";
     if (!amountNum || amountNum <= 0) errors.amount = "El monto debe ser mayor que cero";
     if (!description.trim()) errors.description = "La descripción es obligatoria";
 
@@ -101,41 +102,26 @@ export function AccountTransactionFields({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
 
+      {/* Advertencia: sin cuenta/tarjeta de origen seleccionada (evita registros huérfanos).
+          Se oculta apenas se elige una fuente, sin depender de un efecto. */}
+      {fieldErrors.source && !accountId && (
+        <p role="alert" className="text-xs text-destructive -mb-1">
+          {fieldErrors.source}
+        </p>
+      )}
+
       {/* ── Monto ─────────────────────────────────────────────────────────── */}
-      <div>
-        <Label htmlFor="tx-amount" className="text-[12px] font-semibold text-foreground mb-2 block">
-          Monto <span aria-hidden="true" className="text-danger">*</span>
-        </Label>
-        <div
-          className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
-          style={{
-            background: "var(--surface-2)",
-            padding: "18px 16px",
-            "--ring": type === "ingreso" ? "var(--os-lime)" : "var(--os-magenta)",
-          } as React.CSSProperties}
-        >
-          <MoneyInput
-            id="tx-amount"
-            value={amount}
-            onChange={(v) => {
-              onAmountChange(v);
-              if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" }));
-            }}
-            placeholder="0"
-            required
-            aria-required="true"
-            aria-invalid={!!fieldErrors.amount}
-            aria-describedby={fieldErrors.amount ? "tx-amount-error" : undefined}
-            className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
-            style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.025em" }}
-          />
-        </div>
-        {fieldErrors.amount && (
-          <p id="tx-amount-error" role="alert" className="text-xs text-destructive mt-1.5">
-            {fieldErrors.amount}
-          </p>
-        )}
-      </div>
+      <MoneyAmountField
+        id="tx-amount"
+        label={<>Monto ({currency}) <span aria-hidden="true" className="text-danger">*</span></>}
+        value={amount}
+        onChange={(v) => {
+          onAmountChange(v);
+          if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" }));
+        }}
+        ringColor={type === "ingreso" ? "var(--os-lime)" : "var(--os-magenta)"}
+        error={fieldErrors.amount}
+      />
 
       {/* ── Descripción ───────────────────────────────────────────────────── */}
       <div>
@@ -236,7 +222,7 @@ export function AccountTransactionFields({
           boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-lime) 55%, transparent)",
         }}
       >
-        <Check className="h-4 w-4" strokeWidth={2.5} />
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
         {loading ? "Guardando…" : "Guardar movimiento"}
       </button>
 

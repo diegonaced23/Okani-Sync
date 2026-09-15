@@ -64,7 +64,7 @@ export const TransactionItem = memo(function TransactionItem({
         subtitleParts.push(`${from} → ${to}`);
       } else if (tx.transferDirection === "in") {
         sign = "+";
-        amountColor = "var(--os-lime)";
+        amountColor = "var(--os-lime-text)";
         subtitleParts.push(`${from} → ${to}`);
       } else {
         subtitleParts.push("Transferencia");

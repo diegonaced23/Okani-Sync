@@ -11,7 +11,7 @@ type Account = Doc<"accounts"> | AccountSummary;
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { MoneyInput } from "@/components/ui/money-input";
+import { MoneyAmountField } from "./MoneyAmountField";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
-import { ArrowDown, Check } from "lucide-react";
+import { ArrowDown, Check, Loader2 } from "lucide-react";
 
 interface TransferFormProps {
   onSuccess?: () => void;
@@ -102,12 +102,12 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
       {/* Cuentas — apiladas verticalmente con flecha de ilusión de transferencia */}
       <div className="space-y-1">
         <div>
-          <p className="text-[12px] font-semibold text-foreground mb-2">Origen</p>
+          <Label htmlFor="tf-from-account" className="text-[12px] font-semibold text-foreground mb-2 block">Origen</Label>
           <Select
             value={fromAccountId}
             onValueChange={(v) => { if (v) { setFromAccountId(v); if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" })); } }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger id="tf-from-account" className="w-full">
               <span className="flex-1 text-left text-sm truncate">
                 {fromAccount
                   ? `${fromAccount.name} (${fromAccount.currency})`
@@ -139,12 +139,12 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         </div>
 
         <div>
-          <p className="text-[12px] font-semibold text-foreground mb-2">Destino</p>
+          <Label htmlFor="tf-to-account" className="text-[12px] font-semibold text-foreground mb-2 block">Destino</Label>
           <Select
             value={toAccountId}
             onValueChange={(v) => { if (v) { setToAccountId(v); if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" })); } }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger id="tf-to-account" className="w-full">
               <span className="flex-1 text-left text-sm truncate">
                 {toAccount
                   ? `${toAccount.name} (${toAccount.currency})`
@@ -171,37 +171,18 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
 
       {/* Monto */}
       <div>
-        <p className="text-[12px] font-semibold text-foreground mb-2">
-          Monto{fromAccount ? ` (${fromAccount.currency})` : ""}
-        </p>
-        <div
-          className="flex items-center justify-center rounded-xl focus-within:ring-2 focus-within:ring-ring"
-          style={{
-            background: "var(--surface-2)",
-            padding: "18px 16px",
-            "--ring": "var(--os-cyan)",
-          } as React.CSSProperties}
-        >
-          <MoneyInput
-            id="tf-amount"
-            placeholder="0"
-            value={amount}
-            onChange={(v) => { setAmount(v); if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" })); }}
-            required
-            aria-invalid={!!fieldErrors.amount}
-            aria-describedby={fieldErrors.amount ? "tf-amount-error" : undefined}
-            className="text-center border-none bg-transparent shadow-none focus-visible:ring-0 font-mono-num p-0 h-auto"
-            style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.025em" }}
-          />
-        </div>
+        <MoneyAmountField
+          id="tf-amount"
+          label={`Monto${fromAccount ? ` (${fromAccount.currency})` : ""}`}
+          value={amount}
+          onChange={(v) => { setAmount(v); if (fieldErrors.amount) setFieldErrors((fe) => ({ ...fe, amount: "" })); }}
+          ringColor="var(--os-cyan)"
+          error={fieldErrors.amount}
+          fontSize={28}
+        />
         {fromAccount && (
           <p className="text-xs text-muted-foreground mt-1.5">
             Saldo disponible: {formatCents(fromAccount.balance, fromAccount.currency)}
-          </p>
-        )}
-        {fieldErrors.amount && (
-          <p id="tf-amount-error" role="alert" className="text-xs text-destructive mt-1.5">
-            {fieldErrors.amount}
           </p>
         )}
       </div>
@@ -284,7 +265,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
           boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-cyan) 55%, transparent)",
         }}
       >
-        <Check className="h-4 w-4" strokeWidth={2.5} />
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
         {loading ? "Procesando…" : "Registrar transferencia"}
       </button>
     </form>
