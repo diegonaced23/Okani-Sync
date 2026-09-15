@@ -63,7 +63,7 @@ export function DeleteUserDialog({
               <p className="font-semibold text-foreground">Acción irreversible</p>
               <p className="text-muted-foreground">
                 Se eliminarán <strong>todos los datos</strong> de <strong>{targetName}</strong>:
-                cuentas, tarjetas, transacciones, deudas, presupuestos y su cuenta de Clerk.
+                cuentas, tarjetas, transacciones, deudas, presupuestos, sus sesiones y su cuenta de acceso.
               </p>
             </div>
           </div>

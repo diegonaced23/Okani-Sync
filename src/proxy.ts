@@ -1,18 +1,25 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
-const isPublicRoute = createRouteMatcher([
-  "/sign-in(.*)",
-  "/api/webhooks/(.*)",
-  "/sw.js",
-]);
+const PUBLIC_PREFIXES = ["/sign-in", "/reset-password", "/api/auth", "/sw.js"];
 
-export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    await auth.protect({
-      unauthenticatedUrl: new URL("/sign-in", req.url).toString(),
-    });
+function isPublicRoute(pathname: string) {
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
+// Chequeo optimista: solo mira si existe la cookie de sesión, sin round-trip
+// de red. La autorización real vive en cada función de Convex (getCurrentUser)
+// y en AuthGuard — acá solo evitamos renderizar rutas privadas sin cookie.
+export function proxy(req: NextRequest) {
+  if (isPublicRoute(req.nextUrl.pathname)) return NextResponse.next();
+
+  if (!getSessionCookie(req)) {
+    return NextResponse.redirect(new URL("/sign-in", req.url));
   }
-});
+
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [

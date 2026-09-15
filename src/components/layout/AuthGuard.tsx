@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth, useClerk } from "@clerk/nextjs";
-import { useMutation, useAction, useQuery, useConvexAuth } from "convex/react";
+import { useMutation, useQuery, useConvexAuth } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "../../../convex/_generated/api";
 import { Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { authClient } from "@/lib/auth-client";
 
 function AppShellSkeleton() {
   return (
@@ -42,11 +42,9 @@ function AccessDeniedScreen({ message, onSignOut }: { message: string; onSignOut
 }
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
   const { isAuthenticated } = useConvexAuth();
-  const { signOut } = useClerk();
   const ensureExists = useMutation(api.users.ensureExists);
-  const syncRole = useAction(api.actions.adminUsers.syncRoleToClerk);
   // Suscripción reactiva: si active cambia en Convex, este componente se actualiza sin recargar
   const me = useQuery(api.users.getMe);
   const [setup, setSetup] = useState<Setup>("loading");
@@ -62,18 +60,21 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     !pathname.startsWith("/perfil");
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !isAuthenticated) return;
+    if (sessionPending || !session || !isAuthenticated) return;
     ensureExists()
-      .then(async () => {
-        await syncRole().catch(() => {}); // best-effort: no bloquea si Clerk falla
-        setSetup("done");
-      })
+      .then(() => setSetup("done"))
       .catch(() => setSetup("denied"));
-  }, [isLoaded, isSignedIn, isAuthenticated, ensureExists, syncRole]);
+  }, [sessionPending, session, isAuthenticated, ensureExists]);
 
   useEffect(() => {
     if (isAdminOnRestrictedRoute) router.replace("/admin");
   }, [isAdminOnRestrictedRoute, router]);
+
+  async function handleSignOut() {
+    await authClient.signOut();
+    router.push("/sign-in");
+    router.refresh();
+  }
 
   // Comprobación inicial de invitación aún en progreso
   if (setup === "loading") return <AppShellSkeleton />;
@@ -83,7 +84,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <AccessDeniedScreen
         message="Tu cuenta no está autorizada. Contacta al administrador para recibir una invitación."
-        onSignOut={signOut}
+        onSignOut={handleSignOut}
       />
     );
   }
@@ -96,7 +97,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <AccessDeniedScreen
         message="No se encontró tu cuenta. Contacta al administrador."
-        onSignOut={signOut}
+        onSignOut={handleSignOut}
       />
     );
   }
@@ -106,7 +107,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <AccessDeniedScreen
         message="Tu cuenta ha sido desactivada. Contacta al administrador."
-        onSignOut={signOut}
+        onSignOut={handleSignOut}
       />
     );
   }

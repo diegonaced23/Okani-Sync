@@ -1,10 +1,10 @@
 "use client";
 
-import { useUser, useSessionList, useClerk } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useTheme } from "next-themes";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -19,15 +19,19 @@ import { CURRENCIES } from "@/lib/constants";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { formatRelative } from "@/lib/utils";
 import { Monitor, Sun, Moon, Bell, BellOff, LogOut, Smartphone, Globe } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+import { authClient } from "@/lib/auth-client";
+
+type SessionRow = NonNullable<
+  Awaited<ReturnType<typeof authClient.listSessions>>["data"]
+>[number];
 
 export default function PerfilPage() {
-  const { user, isLoaded } = useUser();
-  const { sessions } = useSessionList();
-  const { signOut } = useClerk();
+  const router = useRouter();
+  const { data: authSession, isPending: sessionPending } = authClient.useSession();
   const me = useQuery(api.users.getMe);
   const updateCurrency = useMutation(api.users.updateCurrency);
   const updateTheme    = useMutation(api.users.updateTheme);
+  const updateName     = useMutation(api.users.updateName);
   const { theme, setTheme } = useTheme();
   const { status: pushStatus, enable: enablePush, disable: disablePush } = usePushNotifications();
 
@@ -35,13 +39,23 @@ export default function PerfilPage() {
   const [newName, setNewName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [revokingSession, setRevokingSession] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    const { data } = await authClient.listSessions();
+    setSessions(data ?? []);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount, no hook expone la lista de sesiones de forma reactiva
+    if (authSession) loadSessions();
+  }, [authSession, loadSessions]);
 
   async function handleNameSave() {
-    if (!newName.trim() || !user) return;
+    if (!newName.trim()) return;
     setSavingName(true);
     try {
-      const parts = newName.trim().split(" ");
-      await user.update({ firstName: parts[0], lastName: parts.slice(1).join(" ") || undefined });
+      await updateName({ name: newName.trim() });
       toast.success("Nombre actualizado");
       setEditingName(false);
     } catch {
@@ -67,15 +81,12 @@ export default function PerfilPage() {
     } catch { /* no mostrar error por preferencia de UI */ }
   }
 
-  type RevokableSession = { id: string; status: string; revoke: () => Promise<void> };
-
-  async function handleRevokeSession(sessionId: string) {
-    const session = sessions?.find((s) => s.id === sessionId) as unknown as RevokableSession | undefined;
-    if (!session) return;
-    setRevokingSession(sessionId);
+  async function handleRevokeSession(token: string) {
+    setRevokingSession(token);
     try {
-      await session.revoke();
+      await authClient.revokeSession({ token });
       toast.success("Sesión cerrada");
+      await loadSessions();
     } catch {
       toast.error("Error al cerrar sesión");
     } finally {
@@ -84,21 +95,37 @@ export default function PerfilPage() {
   }
 
   async function handleRevokeAllOther() {
-    const others = (sessions ?? []).filter(
-      (s) => s.status === "active" && s.id !== sessions?.[0]?.id
-    ) as unknown as RevokableSession[];
-    if (!others.length) { toast.info("No hay otras sesiones activas"); return; }
-    await Promise.all(others.map((s) => s.revoke()));
-    toast.success("Otras sesiones cerradas");
+    if ((sessions?.length ?? 0) <= 1) {
+      toast.info("No hay otras sesiones activas");
+      return;
+    }
+    try {
+      await authClient.revokeOtherSessions();
+      toast.success("Otras sesiones cerradas");
+      await loadSessions();
+    } catch {
+      toast.error("Error al cerrar las otras sesiones");
+    }
   }
 
-  if (!isLoaded) {
+  async function handleSignOut() {
+    await authClient.signOut();
+    router.push("/sign-in");
+    router.refresh();
+  }
+
+  if (sessionPending || me === undefined) {
     return (
       <div className="space-y-4 max-w-2xl mx-auto">
         {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
       </div>
     );
   }
+
+  const currentToken = authSession?.session?.token;
+  const sortedSessions = sessions
+    ? [...sessions].sort((a) => (a.token === currentToken ? -1 : 1))
+    : null;
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -107,12 +134,18 @@ export default function PerfilPage() {
       {/* Avatar y nombre */}
       <div className="rounded-xl bg-card border border-border p-5">
         <div className="flex items-center gap-4">
-          <UserButton appearance={{ elements: { avatarBox: "h-14 w-14" } }} />
+          <span
+            aria-hidden
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white"
+            style={{ background: "linear-gradient(135deg, var(--os-magenta), oklch(0.32 0.14 20))" }}
+          >
+            {me?.name?.trim().charAt(0).toUpperCase() ?? "U"}
+          </span>
           <div className="flex-1 min-w-0">
             {editingName ? (
               <div className="flex gap-2">
                 <Input value={newName} onChange={(e) => setNewName(e.target.value)}
-                  placeholder={user?.fullName ?? ""} className="h-8 text-sm" autoFocus />
+                  placeholder={me?.name ?? ""} className="h-8 text-sm" autoFocus />
                 <Button size="sm" onClick={handleNameSave} disabled={savingName}>
                   {savingName ? "…" : "Guardar"}
                 </Button>
@@ -122,13 +155,13 @@ export default function PerfilPage() {
               </div>
             ) : (
               <button type="button"
-                onClick={() => { setNewName(user?.fullName ?? ""); setEditingName(true); }}
+                onClick={() => { setNewName(me?.name ?? ""); setEditingName(true); }}
                 className="text-lg font-bold text-foreground hover:underline text-left truncate block">
-                {user?.fullName ?? "Sin nombre"}
+                {me?.name || "Sin nombre"}
               </button>
             )}
             <p className="text-sm text-muted-foreground truncate">
-              {user?.primaryEmailAddress?.emailAddress}
+              {me?.email}
             </p>
           </div>
         </div>
@@ -229,7 +262,7 @@ export default function PerfilPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Sesiones activas ({sessions?.filter(s => s.status === "active").length ?? 0})
+            Sesiones activas ({sortedSessions?.length ?? 0})
           </h2>
           <button
             type="button"
@@ -241,17 +274,15 @@ export default function PerfilPage() {
         </div>
 
         <div className="rounded-xl bg-card border border-border overflow-hidden">
-          {!sessions ? (
+          {!sortedSessions ? (
             <div className="p-4 space-y-2">
               {[1, 2].map((i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
             </div>
-          ) : sessions.filter(s => s.status === "active").length === 0 ? (
+          ) : sortedSessions.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">Sin sesiones activas.</p>
           ) : (
             <ul className="divide-y divide-border">
-              {sessions
-                .filter((s) => s.status === "active")
-                .map((session, idx) => (
+              {sortedSessions.map((session, idx) => (
                   <li key={session.id} className="flex items-center gap-3 px-4 py-3">
                     <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -264,19 +295,17 @@ export default function PerfilPage() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {session.lastActiveAt
-                          ? formatRelative(new Date(session.lastActiveAt).getTime())
-                          : "Última actividad desconocida"}
+                        {formatRelative(new Date(session.updatedAt).getTime())}
                       </p>
                     </div>
                     {idx !== 0 && (
                       <button
                         type="button"
-                        onClick={() => handleRevokeSession(session.id)}
-                        disabled={revokingSession === session.id}
+                        onClick={() => handleRevokeSession(session.token)}
+                        disabled={revokingSession === session.token}
                         className="text-xs text-danger hover:underline disabled:opacity-50 shrink-0"
                       >
-                        {revokingSession === session.id ? "Cerrando…" : "Cerrar"}
+                        {revokingSession === session.token ? "Cerrando…" : "Cerrar"}
                       </button>
                     )}
                   </li>
@@ -293,7 +322,7 @@ export default function PerfilPage() {
         <Button
           variant="outline"
           className="gap-2 text-danger border-danger/30 hover:bg-danger/10"
-          onClick={() => signOut({ redirectUrl: "/sign-in" })}
+          onClick={handleSignOut}
         >
           <LogOut className="h-4 w-4" />
           Cerrar sesión

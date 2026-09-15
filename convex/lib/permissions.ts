@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { getCurrentUserId } from "./auth";
 
 // ─── Helpers de permisos para cuentas compartidas ─────────────────────────────
 //
@@ -11,9 +12,10 @@ async function getPermission(
   ctx: QueryCtx | MutationCtx,
   accountId: Id<"accounts">
 ): Promise<"owner" | "admin" | "editor" | "viewer" | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new Error("No autenticado");
-  const clerkId = identity.subject;
+  // getCurrentUserId resuelve por by_clerkId y by_authId — nunca usar
+  // identity.subject directo acá: bajo Better Auth es el authId, no el
+  // clerkId que guardan accounts.ownerId y accountShares.sharedWithUserId.
+  const clerkId = await getCurrentUserId(ctx);
 
   const account = await ctx.db.get(accountId);
   if (!account) throw new Error("Cuenta no encontrada");

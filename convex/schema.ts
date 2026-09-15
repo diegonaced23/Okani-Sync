@@ -20,10 +20,19 @@ import { v } from "convex/values";
  */
 export default defineSchema({
   // ============================================================
-  // USUARIOS — Sincronizados desde Clerk vía webhook
+  // USUARIOS — Creados vía invitación (users.ensureExists / invitations.ts)
+  // o por un admin (users.createFromAdmin); ya no hay webhook externo.
   // ============================================================
   users: defineTable({
     clerkId: v.string(),
+    // Id del usuario en Better Auth (identity.subject) — puente de migración
+    // desde Clerk, ver docs/migracion-better-auth.md. El campo `clerkId` NO se
+    // toca: sigue siendo el identificador histórico que usan todas las demás
+    // tablas (accounts, transactions, etc). `authId` solo vincula la sesión
+    // actual con esta fila; se completa la primera vez que cada usuario se
+    // autentica bajo Better Auth (trigger `onCreate` en convex/auth.ts, con
+    // `ensureExists` en convex/users.ts como respaldo idempotente).
+    authId: v.optional(v.string()),
     email: v.string(),
     name: v.string(),
     imageUrl: v.optional(v.string()),
@@ -38,8 +47,14 @@ export default defineSchema({
     updatedAt: v.number(),
     createdBy: v.optional(v.string()),       // clerkId del admin que lo creó
     welcomeEmailSentAt: v.optional(v.number()),
+    // Corte a Better Auth (Fase 4, docs/migracion-better-auth.md): marca que
+    // ya se le mandó el magic link de "define tu acceso nuevo". Permite que
+    // sendMigrationMagicLinks sea reanudable sin volver a mandarle el correo
+    // a quien ya lo recibió.
+    authMigrationEmailSentAt: v.optional(v.number()),
   })
     .index("by_clerkId", ["clerkId"])
+    .index("by_authId", ["authId"])
     .index("by_email", ["email"])
     .index("by_role", ["role"]),
 

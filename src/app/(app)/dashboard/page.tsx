@@ -3,7 +3,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { BalanceCard } from "@/components/dashboard/BalanceCard";
@@ -87,7 +86,6 @@ const QUICK_ACTIONS: QuickAction[] = [
 ];
 
 export default function DashboardPage() {
-  const { user } = useUser();
   const router = useRouter();
   const { openModal } = useNewTransactionModal();
   const [balanceSheetOpen, setBalanceSheetOpen] = useState(false);
@@ -141,7 +139,7 @@ export default function DashboardPage() {
       <div className="md:col-span-2 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            {greeting}, {user?.firstName ?? "usuario"} 👋
+            {greeting}, {me?.name?.trim().split(" ")[0] || "usuario"} 👋
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {new Date().toLocaleDateString("es-CO", {

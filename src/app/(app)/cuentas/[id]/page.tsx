@@ -5,7 +5,6 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
 import {
   ArrowLeft, Share2, UserMinus, Archive, ChevronLeft, ChevronRight,
   Pencil, Trash2, Scale,
@@ -46,7 +45,6 @@ export default function AccountDetailPage({
   const { id } = use(params);
   const accountId = id as Id<"accounts">;
   const router = useRouter();
-  const { user: clerkUser } = useUser();
 
   const [month, setMonth] = useState(() => currentMonth());
   const [shareOpen, setShareOpen] = useState(false);
@@ -55,6 +53,7 @@ export default function AccountDetailPage({
   const [deleting, setDeleting] = useState(false);
   const [pendingAction, setPendingAction] = useState<"archive" | "delete" | null>(null);
 
+  const me = useQuery(api.users.getMe);
   const account = useQuery(api.accounts.getById, { accountId });
   const shares = useQuery(api.accountShares.listForAccount, { accountId });
   const transactions = useQuery(api.transactions.listByAccountMonth, {
@@ -71,7 +70,10 @@ export default function AccountDetailPage({
     (categories ?? []).map((c) => [c._id, c.name])
   );
 
-  const isOwner = account?.ownerId === clerkUser?.id;
+  // Comparar contra me.clerkId (no un id de sesión crudo): bajo Better Auth el
+  // id de la sesión del cliente es el authId, no el clerkId que guarda
+  // account.ownerId — ver docs/migracion-better-auth.md.
+  const isOwner = account?.ownerId === me?.clerkId;
   const isLoading = account === undefined;
 
   // Cuando la cuenta deja de existir (eliminada reactivamente por Convex),

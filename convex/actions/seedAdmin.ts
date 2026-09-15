@@ -1,57 +1,51 @@
 "use node";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { clerkCreateUser, clerkFindUserByEmail } from "../lib/clerkApi";
+import { randomUUID } from "node:crypto";
+import { sendAccessMagicLink } from "./adminUsers";
 
 const ADMIN_EMAIL = "diego-naced@hotmail.com";
 const ADMIN_NAME = "Admin OkanySync";
-const ADMIN_PASSWORD = "Okanysync123*";
 
 /**
- * Crea el usuario administrador inicial si aún no existe.
- * Idempotente: correrlo múltiples veces no genera duplicados.
+ * Crea el usuario administrador inicial si aún no existe y le envía un magic
+ * link de acceso. Idempotente: correrlo múltiples veces no genera duplicados
+ * (busca por email, ya que sin Clerk no hay un id externo estable que
+ * consultar antes del primer login).
  *
  * Uso:
  *   npx convex run actions/seedAdmin:run
  */
 export const run = internalAction({
   args: {},
-  handler: async (ctx): Promise<{ status: string; clerkId: string }> => {
-    const secretKey = process.env.CLERK_SECRET_KEY;
-    if (!secretKey) throw new Error("CLERK_SECRET_KEY no configurada");
+  handler: async (ctx): Promise<{ status: string }> => {
+    const existing = await ctx.runQuery(internal.users.getByEmailInternal, {
+      email: ADMIN_EMAIL,
+    });
 
-    // 1. Buscar o crear en Clerk
-    let clerkUser = await clerkFindUserByEmail({ email: ADMIN_EMAIL, secretKey });
+    const clerkId = existing?.clerkId ?? randomUUID();
 
-    if (!clerkUser) {
-      const nameParts = ADMIN_NAME.split(" ");
-      clerkUser = await clerkCreateUser({
+    if (!existing) {
+      await ctx.runMutation(internal.users.createFromAdmin, {
+        clerkId,
         email: ADMIN_EMAIL,
-        firstName: nameParts[0],
-        lastName: nameParts.slice(1).join(" "),
-        password: ADMIN_PASSWORD,
-        secretKey,
+        name: ADMIN_NAME,
+        role: "admin",
+        createdBy: "seed",
       });
-      console.log(`[seedAdmin] Creado en Clerk: ${clerkUser.id}`);
+      console.log(`[seedAdmin] Creado en Convex: ${ADMIN_EMAIL}`);
     } else {
-      console.log(`[seedAdmin] Ya existe en Clerk: ${clerkUser.id}`);
+      console.log(`[seedAdmin] Ya existe en Convex: ${ADMIN_EMAIL}`);
     }
 
-    // 2. Crear en Convex con rol admin (idempotente — no crea duplicado)
-    await ctx.runMutation(internal.users.createFromAdmin, {
-      clerkId: clerkUser.id,
-      email: ADMIN_EMAIL,
-      name: ADMIN_NAME,
-      role: "admin",
-      createdBy: "seed",
-    });
+    // Asegurar rol admin en caso de que el usuario ya existiera como "user"
+    await ctx.runMutation(internal.users.patchAdminRole, { clerkId });
 
-    // 3. Asegurar rol admin en caso de que el usuario ya existiera como "user"
-    await ctx.runMutation(internal.users.patchAdminRole, {
-      clerkId: clerkUser.id,
-    });
+    // El único camino de acceso ahora es el magic link — lo vincula por email
+    // al primer login (ver trigger onCreate en convex/auth.ts).
+    await sendAccessMagicLink(ctx, ADMIN_EMAIL);
 
-    console.log(`[seedAdmin] Admin listo → ${ADMIN_EMAIL} (${clerkUser.id})`);
-    return { status: "ok", clerkId: clerkUser.id };
+    console.log(`[seedAdmin] Admin listo → ${ADMIN_EMAIL}. Magic link enviado.`);
+    return { status: "ok" };
   },
 });

@@ -1,5 +1,5 @@
-import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { authNextJs } from "@/lib/auth-server";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Header } from "@/components/layout/Header";
@@ -14,8 +14,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { userId } = await auth();
-  if (!userId) redirect("/sign-in");
+  if (!(await authNextJs.isAuthenticated())) redirect("/sign-in");
 
   return (
     <NewTransactionModalProvider>

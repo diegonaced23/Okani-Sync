@@ -1,9 +1,9 @@
 "use node";
 import { internalAction, action } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import { v } from "convex/values";
-import { clerkDeleteUser } from "../lib/clerkApi";
 import { AUDIT_ACTIONS } from "../../src/lib/constants";
+import { assertAdminFromAction } from "../lib/auth";
 
 /**
  * Acción pública: llamada desde el panel admin.
@@ -15,19 +15,11 @@ export const runByAdmin = action({
     targetEmail: v.string(),
   },
   handler: async (ctx, { targetClerkId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("No autenticado");
-
-    const adminUser = await ctx.runQuery(internal.users.getByClerkIdInternal, {
-      clerkId: identity.subject,
-    });
-    if (!adminUser || adminUser.role !== "admin") {
-      throw new Error("Acceso denegado");
-    }
+    const admin = await assertAdminFromAction(ctx);
 
     await ctx.runAction(internal.actions.deleteUserCascade.run, {
       clerkId: targetClerkId,
-      deletedBy: identity.subject,
+      deletedBy: admin.clerkId,
     });
   },
 });
@@ -128,10 +120,41 @@ export const run = internalAction({
       metadata: { email: user.email, name: user.name, counts },
     });
 
-    // 11. Eliminar en Clerk
-    const secretKey = process.env.CLERK_SECRET_KEY;
-    if (secretKey) {
-      await clerkDeleteUser({ clerkId, secretKey });
+    // 11. Eliminar el registro de Better Auth (sesiones, cuentas de login y el
+    // propio usuario), si es que ya inició sesión bajo Better Auth alguna vez.
+    // No hay endpoint de auth.api para "borrar a cualquier usuario por id"
+    // (el `/delete-user` de Better Auth es autoservicio, requiere la sesión
+    // del propio usuario) — se usa el adapter genérico del componente
+    // directamente. Se captura cualquier error para no dejar al usuario a
+    // medio borrar: el resto de la cascada (paso 12) debe completarse igual.
+    if (user.authId) {
+      try {
+        await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: "session",
+            where: [{ field: "userId", operator: "eq", value: user.authId }],
+          },
+          paginationOpts: { cursor: null, numItems: 200 },
+        });
+        await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: "account",
+            where: [{ field: "userId", operator: "eq", value: user.authId }],
+          },
+          paginationOpts: { cursor: null, numItems: 200 },
+        });
+        await ctx.runMutation(components.betterAuth.adapter.deleteOne, {
+          input: {
+            model: "user",
+            where: [{ field: "_id", operator: "eq", value: user.authId }],
+          },
+        });
+      } catch (err) {
+        console.error(
+          `deleteUserCascade: no se pudo borrar el registro de Better Auth de ${clerkId} (authId ${user.authId}):`,
+          err
+        );
+      }
     }
 
     // 12. Eliminar el documento de usuario

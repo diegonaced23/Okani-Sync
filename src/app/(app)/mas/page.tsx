@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 import {
   HandCoins, Tags, PieChart, BarChart3,
   User, ChevronRight, Repeat,
@@ -21,8 +22,8 @@ const ACCOUNT_LINKS = [
 ];
 
 export default function MasPage() {
-  const { user } = useUser();
-  const isAdmin = user?.publicMetadata?.role === "admin";
+  const me = useQuery(api.users.getMe);
+  const isAdmin = me?.role === "admin";
 
   if (isAdmin) {
     return (

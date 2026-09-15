@@ -1,6 +1,6 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
+import { UserMenu } from "@/components/layout/UserMenu";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import Link from "next/link";
@@ -50,11 +50,7 @@ export function Header({ title }: HeaderProps) {
 
       <ThemeToggle />
 
-      <UserButton
-        appearance={{
-          elements: { avatarBox: "h-8 w-8 rounded-[10px]" },
-        }}
-      />
+      <UserMenu />
     </header>
   );
 }

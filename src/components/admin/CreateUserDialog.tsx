@@ -66,7 +66,7 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
             </Select>
           </div>
           <p className="text-xs text-muted-foreground">
-            Clerk enviará un email con el enlace de acceso. El usuario podrá registrarse con Google u otro método habilitado.
+            Se enviará un email con un enlace mágico de acceso. Después, el usuario podrá definir una contraseña desde &quot;¿Olvidaste tu contraseña?&quot; en la pantalla de inicio de sesión.
           </p>
           <div className="flex gap-2 pt-1">
             <Button type="button" variant="outline" className="flex-1"

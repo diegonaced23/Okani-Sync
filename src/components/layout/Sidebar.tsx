@@ -6,7 +6,8 @@ import {
   LayoutDashboard, ArrowLeftRight, Wallet, PieChart,
   HandCoins, Tags, BarChart3, User, Users, Repeat,
 } from "lucide-react";
-import { useUser } from "@clerk/nextjs";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import type { LucideIcon } from "lucide-react";
@@ -66,9 +67,9 @@ const BrandLogo = () => (
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user } = useUser();
-  const isAdmin = user?.publicMetadata?.role === "admin";
-  const initials = user?.firstName?.charAt(0).toUpperCase() ?? "U";
+  const me = useQuery(api.users.getMe);
+  const isAdmin = me?.role === "admin";
+  const initials = me?.name?.trim().charAt(0).toUpperCase() ?? "U";
 
   return (
     <aside
@@ -162,10 +163,10 @@ export function Sidebar() {
           </span>
           <div style={{ flex: 1, minWidth: 0, fontSize: 12 }}>
             <p style={{ fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user?.fullName ?? user?.firstName ?? "Usuario"}
+              {me?.name || "Usuario"}
             </p>
             <p style={{ color: "var(--muted-foreground)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user?.emailAddresses[0]?.emailAddress}
+              {me?.email}
             </p>
           </div>
           <ThemeToggle />

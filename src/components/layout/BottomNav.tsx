@@ -12,7 +12,8 @@ import {
   Users,
   User,
 } from "lucide-react";
-import { useUser } from "@clerk/nextjs";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
@@ -40,8 +41,8 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { user } = useUser();
-  const isAdmin = user?.publicMetadata?.role === "admin";
+  const me = useQuery(api.users.getMe);
+  const isAdmin = me?.role === "admin";
   const navItems = isAdmin ? ADMIN_NAV_ITEMS : USER_NAV_ITEMS;
   const { openModal } = useNewTransactionModal();
 

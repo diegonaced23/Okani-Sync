@@ -4,7 +4,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ShieldCheck, User, Trash2, Link2, Copy, Check } from "lucide-react";
+import { ArrowLeft, ShieldCheck, User, Trash2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,9 +17,6 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
 import { DeleteUserDialog } from "@/components/admin/DeleteUserDialog";
 import { toast } from "sonner";
 import { formatRelative } from "@/lib/utils";
@@ -30,7 +27,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.deleted":           "Usuario eliminado",
   "user.deactivated":       "Usuario desactivado",
   "user.role.changed":      "Rol cambiado",
-  "user.password_reset":    "Link de acceso generado",
+  "user.password_reset":    "Enlace de acceso enviado",
   "account.shared":         "Cuenta compartida",
   "account.share.revoked":  "Acceso revocado",
   "account.share.accepted": "Invitación aceptada",
@@ -50,8 +47,7 @@ export default function AdminUserDetailPage({
   const users = useQuery(api.users.listAll);
   const auditLogs = useQuery(api.auditLogs.listForUser, { targetClerkId: clerkId });
   const updateUser = useMutation(api.users.updateByAdmin);
-  const updateRole = useAction(api.actions.adminUsers.updateRoleByAdmin);
-  const generateResetLink = useAction(api.actions.adminUsers.generateResetLink);
+  const sendAccessEmail = useAction(api.actions.adminUsers.sendAccessEmail);
 
   const user = (users ?? []).find((u) => u.clerkId === clerkId);
 
@@ -60,9 +56,7 @@ export default function AdminUserDetailPage({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [savingName, setSavingName] = useState(false);
   const [confirmLinkOpen, setConfirmLinkOpen] = useState(false);
-  const [resetLink, setResetLink] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const isLoading = users === undefined;
 
@@ -77,8 +71,8 @@ export default function AdminUserDetailPage({
 
   async function handleRoleChange(newRole: "admin" | "user") {
     try {
-      await updateRole({ targetClerkId: clerkId, role: newRole });
-      toast.success("Rol actualizado. El usuario debe cerrar sesión y volver a entrar para que tome efecto.");
+      await updateUser({ targetClerkId: clerkId, role: newRole });
+      toast.success("Rol actualizado.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     }
@@ -107,24 +101,17 @@ export default function AdminUserDetailPage({
     }
   }
 
-  async function handleGenerateResetLink() {
+  async function handleSendAccessEmail() {
     setConfirmLinkOpen(false);
     setGeneratingLink(true);
     try {
-      const url = await generateResetLink({ targetClerkId: clerkId });
-      setResetLink(url);
+      await sendAccessEmail({ targetClerkId: clerkId });
+      toast.success("Enlace de acceso enviado por correo");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al generar el link");
+      toast.error(err instanceof Error ? err.message : "Error al enviar el enlace");
     } finally {
       setGeneratingLink(false);
     }
-  }
-
-  async function handleCopy() {
-    if (!resetLink) return;
-    await navigator.clipboard.writeText(resetLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -222,7 +209,7 @@ export default function AdminUserDetailPage({
             <div>
               <p className="text-sm font-medium text-foreground">Acceso temporal</p>
               <p className="text-xs text-muted-foreground">
-                Genera un link de un solo uso para que el usuario inicie sesión
+                Envía un enlace mágico de un solo uso para que el usuario inicie sesión
               </p>
             </div>
             <Button
@@ -233,7 +220,7 @@ export default function AdminUserDetailPage({
               disabled={generatingLink}
             >
               <Link2 className="h-3.5 w-3.5" />
-              {generatingLink ? "Generando…" : "Generar link"}
+              {generatingLink ? "Enviando…" : "Enviar enlace"}
             </Button>
           </div>
 
@@ -243,7 +230,7 @@ export default function AdminUserDetailPage({
             <p className="text-sm font-semibold text-danger mb-1">Zona de peligro</p>
             <p className="text-xs text-muted-foreground mb-3">
               Eliminar el usuario borra TODOS sus datos permanentemente: cuentas, tarjetas,
-              transacciones, deudas, categorías, presupuestos y su cuenta de Clerk.
+              transacciones, deudas, categorías, presupuestos, sus sesiones y su cuenta de acceso.
             </p>
             <Button
               variant="destructive"
@@ -303,46 +290,24 @@ export default function AdminUserDetailPage({
         />
       )}
 
-      {/* Confirmación de generar link */}
+      {/* Confirmación de enviar enlace de acceso */}
       <AlertDialog open={confirmLinkOpen} onOpenChange={setConfirmLinkOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Generar link de acceso?</AlertDialogTitle>
+            <AlertDialogTitle>¿Enviar enlace de acceso?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se creará un link de un solo uso para <strong>{user?.email}</strong>.
-              Compártelo de forma segura con el usuario. Expira después de usarse.
+              Se enviará un enlace mágico de un solo uso a <strong>{user?.email}</strong>{" "}
+              para que inicie sesión. Expira después de usarse.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleGenerateResetLink} variant="default">
-              Generar
+            <AlertDialogAction onClick={handleSendAccessEmail} variant="default">
+              Enviar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Dialog para mostrar el link generado */}
-      <Dialog open={!!resetLink} onOpenChange={(open) => { if (!open) setResetLink(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Link de acceso generado</DialogTitle>
-            <DialogDescription>
-              Es de un solo uso. Compártelo de forma segura con el usuario.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2">
-            <Input
-              readOnly
-              value={resetLink ?? ""}
-              className="text-xs font-mono"
-            />
-            <Button size="icon" variant="outline" onClick={handleCopy}>
-              {copied ? <Check className="h-4 w-4 text-accent" /> : <Copy className="h-4 w-4" />}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

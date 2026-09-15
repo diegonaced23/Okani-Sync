@@ -18,11 +18,15 @@ import type * as actions_seedAdmin from "../actions/seedAdmin.js";
 import type * as actions_seedTestInvitation from "../actions/seedTestInvitation.js";
 import type * as actions_sendAlerts from "../actions/sendAlerts.js";
 import type * as actions_sendDailyReminder from "../actions/sendDailyReminder.js";
+import type * as actions_sendMagicLinkEmail from "../actions/sendMagicLinkEmail.js";
+import type * as actions_sendMigrationMagicLinks from "../actions/sendMigrationMagicLinks.js";
 import type * as actions_sendMonthlySummary from "../actions/sendMonthlySummary.js";
 import type * as actions_sendPushNotification from "../actions/sendPushNotification.js";
+import type * as actions_sendResetPasswordEmail from "../actions/sendResetPasswordEmail.js";
 import type * as actions_sendWeeklySummary from "../actions/sendWeeklySummary.js";
 import type * as actions_sendWelcomeEmail from "../actions/sendWelcomeEmail.js";
 import type * as auditLogs from "../auditLogs.js";
+import type * as auth from "../auth.js";
 import type * as budgets from "../budgets.js";
 import type * as cardInstallments from "../cardInstallments.js";
 import type * as cardPurchases from "../cardPurchases.js";
@@ -37,10 +41,10 @@ import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_cardHelpers from "../lib/cardHelpers.js";
-import type * as lib_clerkApi from "../lib/clerkApi.js";
 import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_money from "../lib/money.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_rateLimit from "../lib/rateLimit.js";
 import type * as lib_transactionEffects from "../lib/transactionEffects.js";
 import type * as lib_utils from "../lib/utils.js";
 import type * as loanRepayments from "../loanRepayments.js";
@@ -70,11 +74,15 @@ declare const fullApi: ApiFromModules<{
   "actions/seedTestInvitation": typeof actions_seedTestInvitation;
   "actions/sendAlerts": typeof actions_sendAlerts;
   "actions/sendDailyReminder": typeof actions_sendDailyReminder;
+  "actions/sendMagicLinkEmail": typeof actions_sendMagicLinkEmail;
+  "actions/sendMigrationMagicLinks": typeof actions_sendMigrationMagicLinks;
   "actions/sendMonthlySummary": typeof actions_sendMonthlySummary;
   "actions/sendPushNotification": typeof actions_sendPushNotification;
+  "actions/sendResetPasswordEmail": typeof actions_sendResetPasswordEmail;
   "actions/sendWeeklySummary": typeof actions_sendWeeklySummary;
   "actions/sendWelcomeEmail": typeof actions_sendWelcomeEmail;
   auditLogs: typeof auditLogs;
+  auth: typeof auth;
   budgets: typeof budgets;
   cardInstallments: typeof cardInstallments;
   cardPurchases: typeof cardPurchases;
@@ -89,10 +97,10 @@ declare const fullApi: ApiFromModules<{
   invitations: typeof invitations;
   "lib/auth": typeof lib_auth;
   "lib/cardHelpers": typeof lib_cardHelpers;
-  "lib/clerkApi": typeof lib_clerkApi;
   "lib/emailTemplates": typeof lib_emailTemplates;
   "lib/money": typeof lib_money;
   "lib/permissions": typeof lib_permissions;
+  "lib/rateLimit": typeof lib_rateLimit;
   "lib/transactionEffects": typeof lib_transactionEffects;
   "lib/utils": typeof lib_utils;
   loanRepayments: typeof loanRepayments;
@@ -132,4 +140,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+};
