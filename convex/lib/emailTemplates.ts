@@ -1,3 +1,5 @@
+import { MAGIC_LINK_EXPIRES_IN_SECONDS } from "../../src/lib/constants";
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -153,6 +155,23 @@ export function magicLinkEmailHtml(url: string): string {
   const safeUrl = url.startsWith("https://") || url.startsWith("http://localhost")
     ? escapeHtml(url)
     : "#";
+
+  const minutes = Math.round(MAGIC_LINK_EXPIRES_IN_SECONDS / 60);
+
+  // Si el enlace caduca, la salida es pedir otro desde /sign-in. El origen sale
+  // del propio magic link (se arma con SITE_URL), así que no hace falta una
+  // variable de entorno extra en Convex.
+  let signInUrl: string | null = null;
+  try {
+    signInUrl = new URL(url).origin + "/sign-in";
+  } catch {
+    signInUrl = null;
+  }
+
+  const expiredHint = signInUrl
+    ? `¿Ya caducó? Pide uno nuevo en <a href="${escapeHtml(signInUrl)}" style="color:#4ADE80;">${escapeHtml(signInUrl)}</a>.`
+    : "¿Ya caducó? Pide uno nuevo desde la pantalla de inicio de sesión.";
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -180,13 +199,16 @@ export function magicLinkEmailHtml(url: string): string {
               </h1>
               <p style="margin:0 0 24px;font-size:14px;color:#A3A8AB;line-height:1.6;">
                 Usa este enlace para iniciar sesión en <strong style="color:#F5F5F5;">Okany Sync</strong>.
-                Expira pronto y solo funciona una vez.
+                Caduca en ${minutes} minutos y solo funciona una vez.
               </p>
               <a href="${safeUrl}"
                  style="display:inline-block;background:#4ADE80;color:#052e16;font-weight:700;
                         font-size:14px;padding:12px 28px;border-radius:8px;text-decoration:none;">
                 Iniciar sesión →
               </a>
+              <p style="margin:24px 0 0;font-size:13px;color:#A3A8AB;line-height:1.6;">
+                ${expiredHint}
+              </p>
             </td>
           </tr>
           <!-- Footer -->

@@ -1,14 +1,36 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { DEFAULT_CATEGORIES, SYSTEM_CATEGORIES, AUDIT_ACTIONS } from "../src/lib/constants";
+import {
+  DEFAULT_CATEGORIES,
+  SYSTEM_CATEGORIES,
+  AUDIT_ACTIONS,
+  MAX_AVATAR_SIZE_BYTES,
+  ALLOWED_AVATAR_MIME_TYPES,
+  AVATAR_UPLOAD_THROTTLE_MS,
+} from "../src/lib/constants";
 import { getCurrentUser, getCurrentUserOrNull, assertAdmin } from "./lib/auth";
+import {
+  DEFAULT_NOTIFICATION_PREFS,
+  isNotificationAllowed,
+  NOTIFICATION_PREF_KEYS,
+  type NotificationType,
+} from "../src/lib/notifications";
+import { assertAuditRateLimit } from "./lib/rateLimit";
 
 // ─── Query pública: usuario autenticado actual ────────────────────────────────
 
 export const getMe = query({
   args: {},
   handler: async (ctx) => {
-    return await getCurrentUserOrNull(ctx);
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) return null;
+    // La URL de storage es temporal, así que se resuelve en cada lectura y no
+    // se persiste. `imageUrl` es el campo heredado de Clerk: se sigue leyendo
+    // como respaldo para quien aún tenga foto de antes, pero ya no se escribe.
+    const avatarUrl = user.imageStorageId
+      ? await ctx.storage.getUrl(user.imageStorageId)
+      : (user.imageUrl ?? null);
+    return { ...user, avatarUrl };
   },
 });
 
@@ -201,6 +223,226 @@ export const updateName = mutation({
     if (!trimmed) throw new Error("El nombre no puede estar vacío");
     const user = await getCurrentUser(ctx);
     await ctx.db.patch(user._id, { name: trimmed, updatedAt: Date.now() });
+  },
+});
+
+/** Actualiza (con merge) las preferencias de notificación del usuario. */
+export const updateNotificationPrefs = mutation({
+  args: {
+    prefs: v.object({
+      presupuestos: v.optional(v.boolean()),
+      tarjetas: v.optional(v.boolean()),
+      deudasPrestamos: v.optional(v.boolean()),
+      recurrentes: v.optional(v.boolean()),
+      recordatorioDiario: v.optional(v.boolean()),
+      resumenes: v.optional(v.boolean()),
+    }),
+  },
+  handler: async (ctx, { prefs }) => {
+    const user = await getCurrentUser(ctx);
+    // El merge parte del default "todo activo" cuando el usuario aún no tiene
+    // preferencias: así el objeto guardado siempre está completo y el validador
+    // del schema (que exige los seis booleanos) se satisface.
+    const merged = { ...DEFAULT_NOTIFICATION_PREFS, ...user.notificationPrefs };
+    for (const key of NOTIFICATION_PREF_KEYS) {
+      const value = prefs[key];
+      if (value !== undefined) merged[key] = value;
+    }
+    await ctx.db.patch(user._id, {
+      notificationPrefs: merged,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+// Acciones que el propio usuario puede registrar en `auditLogs` desde el
+// cliente. La whitelist es el control: sin ella, un cliente podría inyectar
+// entradas de acciones administrativas en el log de auditoría.
+const SELF_AUDIT_ACTIONS: readonly string[] = [
+  AUDIT_ACTIONS.USER_PASSWORD_CHANGED,
+  AUDIT_ACTIONS.USER_DATA_EXPORTED,
+];
+
+/**
+ * Registra en `auditLogs` una acción del propio usuario. Existe porque el
+ * cambio de contraseña ocurre íntegramente dentro de Better Auth, sin pasar por
+ * ninguna función de Convex, y CLAUDE.md exige auditar los cambios sensibles.
+ *
+ * Nunca acepta `targetUserId` ni metadata: siempre escribe `userId` del
+ * llamante y una acción de la whitelist.
+ */
+export const logSelfAudit = mutation({
+  args: { action: v.string() },
+  handler: async (ctx, { action }) => {
+    const user = await getCurrentUser(ctx);
+    if (!SELF_AUDIT_ACTIONS.includes(action)) {
+      throw new Error("Acción de auditoría no permitida");
+    }
+    await assertAuditRateLimit(ctx, user.clerkId, {
+      max: 10,
+      windowMs: 60_000,
+      message: "Demasiadas operaciones seguidas. Intenta de nuevo en un minuto.",
+    });
+    await ctx.db.insert("auditLogs", {
+      userId: user.clerkId,
+      action,
+      entity: "users",
+      entityId: user._id,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * ¿Debe entregarse una notificación de este tipo a este usuario? La consulta
+ * `convex/lib/notify.ts` antes de crear la notificación in-app y el push.
+ * `userId` es el clerkId, igual que en el resto de tablas de negocio.
+ */
+export const isNotificationEnabledInternal = internalQuery({
+  args: { userId: v.string(), type: v.string() },
+  handler: async (ctx, { userId, type }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", userId))
+      .unique();
+    // Sin fila de usuario no hay preferencias que respetar; se deja pasar para
+    // no silenciar notificaciones por un problema de resolución de identidad.
+    if (!user) return true;
+    return isNotificationAllowed(type as NotificationType, user.notificationPrefs);
+  },
+});
+
+/**
+ * URL de subida para el avatar. Lleva un estrangulador simple por usuario: sin
+ * él, un cliente podría pedir URLs en bucle y llenar el storage con archivos
+ * que nunca se enlazan a ninguna fila.
+ *
+ * No se usa `assertRateLimit`: esa función cuenta filas de `transactions`, así
+ * que aquí limitaría según cuántos movimientos registró el usuario.
+ *
+ * Devuelve un resultado discriminado en vez de lanzar cuando el estrangulador
+ * bloquea la subida: Convex enmascara en producción el mensaje de un `Error`
+ * plano (lo reemplaza por "Server Error" del lado del cliente), así que un
+ * `throw` aquí nunca llegaría a la persona. Al viajar como dato en vez de
+ * como texto de excepción, el mensaje sobrevive. Mismo motivo por el que
+ * `updateAvatar`, más abajo, también retorna en vez de lanzar.
+ */
+export const generateAvatarUploadUrl = mutation({
+  args: {},
+  handler: async (ctx): Promise<{ ok: true; url: string } | { ok: false; error: string }> => {
+    const user = await getCurrentUser(ctx);
+    const now = Date.now();
+    if (
+      user.lastAvatarUploadAt !== undefined &&
+      now - user.lastAvatarUploadAt < AVATAR_UPLOAD_THROTTLE_MS
+    ) {
+      return { ok: false, error: "Espera unos segundos antes de subir otra foto" };
+    }
+    await ctx.db.patch(user._id, { lastAvatarUploadAt: now });
+    return { ok: true, url: await ctx.storage.generateUploadUrl() };
+  },
+});
+
+/**
+ * Enlaza un archivo ya subido como avatar del usuario.
+ *
+ * La validación de `contentType` es defensa en profundidad, no garantía: el
+ * tipo lo declara el cliente al subir y no se verifica por magic bytes. Es el
+ * mismo criterio que convex/transactions.ts aplica a los comprobantes.
+ *
+ * Devuelve un resultado discriminado en vez de lanzar cuando el archivo no
+ * pasa la validación (ver comentario en esa rama). Errores genuinos —no
+ * autenticado, etc.— sí siguen lanzando, porque esos no dependen de que el
+ * borrado del archivo se confirme junto con la mutation.
+ */
+export const updateAvatar = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const user = await getCurrentUser(ctx);
+
+    // Paso 1: el archivo debe existir. Si no, no hay nada que borrar — un
+    // `storage.delete` sobre un id inexistente lanza, así que este chequeo
+    // también evita ese error latente.
+    const file = await ctx.db.system.get(storageId);
+    if (!file) {
+      return { ok: false, error: "El archivo subido ya no existe. Intenta subirlo de nuevo" };
+    }
+
+    // Paso 2: el `storageId` lo manda el cliente, así que cualquier id de
+    // `_storage` que exista en el deployment —incluido el de OTRO usuario— es
+    // técnicamente aceptado por el validador `v.id("_storage")`. Sin este
+    // chequeo de vigencia, un llamante podría pasar el `storageId` de un
+    // comprobante ajeno (por ejemplo, uno leído vía `listByAccountMonth` en
+    // una cuenta compartida donde solo tiene permiso de lectura) y el borrado
+    // más abajo se convertiría en una primitiva de destrucción de archivos
+    // entre usuarios. Solo se acepta un archivo creado DESPUÉS de que este
+    // mismo usuario pidió su propia URL de subida (`generateAvatarUploadUrl`
+    // registra ese instante en `lastAvatarUploadAt`).
+    if (user.lastAvatarUploadAt === undefined || file._creationTime < user.lastAvatarUploadAt) {
+      return { ok: false, error: "El archivo subido no es válido para tu cuenta" };
+    }
+
+    const invalid =
+      !file.contentType ||
+      !ALLOWED_AVATAR_MIME_TYPES.includes(
+        file.contentType as (typeof ALLOWED_AVATAR_MIME_TYPES)[number]
+      ) ||
+      file.size > MAX_AVATAR_SIZE_BYTES;
+
+    if (invalid) {
+      // Borrar el archivo rechazado: si no, cada intento fallido deja basura
+      // permanente en storage. Se retorna en vez de lanzar: las mutations de
+      // Convex son transaccionales, así que un `throw` aquí revertiría este
+      // mismo `storage.delete` junto con el resto de la mutation y el archivo
+      // rechazado quedaría huérfano de todos modos. No "limpiar" esto a un
+      // `throw` más adelante — reintroduciría el huérfano en silencio.
+      await ctx.storage.delete(storageId);
+      return { ok: false, error: "La foto debe ser JPEG, PNG o WebP y pesar menos de 2 MB" };
+    }
+
+    const previous = user.imageStorageId;
+    await ctx.db.patch(user._id, { imageStorageId: storageId, updatedAt: Date.now() });
+    if (previous) await ctx.storage.delete(previous);
+    return { ok: true };
+  },
+});
+
+/**
+ * Quita la foto de perfil y borra el archivo.
+ *
+ * También limpia `imageUrl` (el campo heredado de Clerk): `getMe` cae en él
+ * cuando no hay `imageStorageId`, así que un usuario legacy que solo tiene
+ * `imageUrl` vería "Quitar foto" en la UI sin que este `return` temprano
+ * hiciera nada. Esta es la única escritura legítima sobre `imageUrl` — el
+ * resto del código lo trata como dato legacy de solo lectura — porque es una
+ * remoción explícita pedida por el propio usuario.
+ */
+export const removeAvatar = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user.imageStorageId && !user.imageUrl) return;
+    const previous = user.imageStorageId;
+    await ctx.db.patch(user._id, {
+      imageStorageId: undefined,
+      imageUrl: undefined,
+      updatedAt: Date.now(),
+    });
+    if (previous) await ctx.storage.delete(previous);
+  },
+});
+
+/** Borra el archivo de avatar de un usuario. Usada por la cascada de eliminación. */
+export const deleteAvatarFileInternal = internalMutation({
+  args: { clerkId: v.string() },
+  handler: async (ctx, { clerkId }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .unique();
+    if (!user?.imageStorageId) return;
+    await ctx.storage.delete(user.imageStorageId);
+    await ctx.db.patch(user._id, { imageStorageId: undefined });
   },
 });
 

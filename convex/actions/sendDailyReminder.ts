@@ -2,6 +2,7 @@
 import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { notify } from "../lib/notify";
 
 /**
  * Colombia es UTC-5 (sin DST). El cron dispara a las 00:00 UTC = 19:00 Colombia.
@@ -33,22 +34,18 @@ export const run = internalAction({
       );
       if (hasTransactions) continue;
 
-      const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+      const notificationId = await notify(ctx, {
         userId,
         type: "recordatorio_registro",
         title: "¿Ya registraste hoy?",
         message: "Lleva tus finanzas al día. Registra tus gastos de hoy en Okany.",
         actionUrl: "/transacciones?nuevo=true",
+        push: {
+          title: "📝 ¿Ya registraste hoy?",
+          body: "Lleva tus finanzas al día. Registra tus gastos de hoy.",
+        },
       });
-
-      await ctx.runAction(internal.actions.sendPushNotification.run, {
-        userId,
-        title: "📝 ¿Ya registraste hoy?",
-        body: "Lleva tus finanzas al día. Registra tus gastos de hoy.",
-        url: "/transacciones?nuevo=true",
-        notificationId: notifId,
-      });
-      sent++;
+      if (notificationId) sent++;
     }
 
     console.log(`sendDailyReminder: ${sent} recordatorios enviados de ${userIds.length} usuarios`);

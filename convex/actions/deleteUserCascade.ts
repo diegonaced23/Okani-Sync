@@ -112,7 +112,10 @@ export const run = internalAction({
       { clerkId }
     );
 
-    // 10. Audit log ANTES de borrar el user doc
+    // 10. Avatar en Convex Storage
+    await ctx.runMutation(internal.users.deleteAvatarFileInternal, { clerkId });
+
+    // 11. Audit log ANTES de borrar el user doc
     await ctx.runMutation(internal.users.logAuditAction, {
       userId: deletedBy,
       targetUserId: clerkId,
@@ -120,7 +123,7 @@ export const run = internalAction({
       metadata: { email: user.email, name: user.name, counts },
     });
 
-    // 11. Eliminar el registro de Better Auth (sesiones, cuentas de login y el
+    // 12. Eliminar el registro de Better Auth (sesiones, cuentas de login y el
     // propio usuario), si es que ya inició sesión bajo Better Auth alguna vez.
     // No hay endpoint de auth.api para "borrar a cualquier usuario por id"
     // (el `/delete-user` de Better Auth es autoservicio, requiere la sesión
@@ -157,7 +160,7 @@ export const run = internalAction({
       }
     }
 
-    // 12. Eliminar el documento de usuario
+    // 13. Eliminar el documento de usuario
     await ctx.runMutation(internal.users.deleteByClerkId, {
       clerkId,
       deletedBy,

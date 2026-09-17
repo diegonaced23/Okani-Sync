@@ -1,6 +1,7 @@
 "use node";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { notify } from "../lib/notify";
 
 const FREQ_TO_MS: Record<string, number> = {
   diaria:    1 * 24 * 60 * 60 * 1000,
@@ -97,18 +98,16 @@ export const run = internalAction({
         count === 1
           ? `Se registró automáticamente: ${descriptions[0]}.`
           : `Se registraron ${count} transacciones recurrentes automáticamente.`;
-      await ctx.runMutation(internal.notifications.createInternal, {
+      await notify(ctx, {
         userId,
         type: "transaccion_recurrente",
         title: "Transacciones recurrentes procesadas",
         message: body,
         actionUrl: "/transacciones",
-      });
-      await ctx.runAction(internal.actions.sendPushNotification.run, {
-        userId,
-        title: "🔄 Transacciones automáticas",
-        body,
-        url: "/transacciones",
+        push: {
+          title: "🔄 Transacciones automáticas",
+          body,
+        },
       });
     }
   },

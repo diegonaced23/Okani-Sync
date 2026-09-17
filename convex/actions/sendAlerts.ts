@@ -3,6 +3,7 @@ import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { notify, isNotificationEnabled } from "../lib/notify";
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -66,21 +67,17 @@ async function checkUpcomingInstallments(
     const count = installments.length;
     const cuotaLabel = count > 1 ? `${count} cuotas` : "una cuota";
 
-    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+    await notify(ctx, {
       userId,
       type: "cuota_proxima",
       title: "Cuota próxima a vencer",
       message: `${cardName} tiene ${cuotaLabel} venciendo en menos de 3 días.`,
       actionUrl: `/tarjetas/${cardId}`,
       relatedEntityId: cardId as string,
-    });
-
-    await ctx.runAction(internal.actions.sendPushNotification.run, {
-      userId,
-      title: "⏰ Cuota próxima a vencer",
-      body: `${cardName} — ${cuotaLabel} vence en menos de 3 días.`,
-      url: `/tarjetas/${cardId}`,
-      notificationId: notifId,
+      push: {
+        title: "⏰ Cuota próxima a vencer",
+        body: `${cardName} — ${cuotaLabel} vence en menos de 3 días.`,
+      },
     });
   }
 }
@@ -100,6 +97,10 @@ async function checkBudgetAlerts(
       : 0;
     const isOver = budget.spent > budget.amount;
     const type = isOver ? "presupuesto_excedido" : "presupuesto_alerta";
+
+    // El presupuesto queda sin marcar a propósito: si el usuario reactiva la
+    // familia, la alerta vuelve a evaluarse en el siguiente ciclo.
+    if (!(await isNotificationEnabled(ctx, budget.userId, type))) continue;
 
     // Crear notificación y marcar el presupuesto como notificado atómicamente.
     // Sin esto, un crash entre ambas operaciones causaría que el cron reenviara
@@ -145,21 +146,17 @@ async function checkOverdueDebts(
       debtId: debt._id,
     });
 
-    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+    await notify(ctx, {
       userId: debt.userId,
       type: "deuda_vencida",
       title: "Deuda vencida",
       message: `La deuda "${debt.name}" con ${debt.creditor} ha vencido.`,
       actionUrl: "/deudas",
       relatedEntityId: debt._id,
-    });
-
-    await ctx.runAction(internal.actions.sendPushNotification.run, {
-      userId: debt.userId,
-      title: "🔴 Deuda vencida",
-      body: `"${debt.name}" con ${debt.creditor} está vencida.`,
-      url: "/deudas",
-      notificationId: notifId,
+      push: {
+        title: "🔴 Deuda vencida",
+        body: `"${debt.name}" con ${debt.creditor} está vencida.`,
+      },
     });
   }
 }
@@ -174,21 +171,17 @@ async function checkUpcomingDebts7Days(ctx: ActionCtx, now: number) {
     if (!debt.dueDate) continue;
     const daysLeft = Math.ceil((debt.dueDate - now) / (24 * 60 * 60 * 1000));
 
-    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+    await notify(ctx, {
       userId: debt.userId,
       type: "deuda_proxima",
       title: "Deuda próxima a vencer",
       message: `"${debt.name}" con ${debt.creditor} vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
       actionUrl: "/deudas",
       relatedEntityId: debt._id,
-    });
-
-    await ctx.runAction(internal.actions.sendPushNotification.run, {
-      userId: debt.userId,
-      title: "⚠️ Deuda próxima a vencer",
-      body: `"${debt.name}" vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
-      url: "/deudas",
-      notificationId: notifId,
+      push: {
+        title: "⚠️ Deuda próxima a vencer",
+        body: `"${debt.name}" vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
+      },
     });
   }
 }
@@ -199,21 +192,17 @@ async function checkOverdueLoans(ctx: ActionCtx, now: number) {
   for (const loan of overdueLoans) {
     await ctx.runMutation(internal.loans.markOverdueInternal, { loanId: loan._id });
 
-    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+    await notify(ctx, {
       userId: loan.userId,
       type: "prestamo_vencido",
       title: "Préstamo vencido",
       message: `El préstamo a ${loan.borrower} "${loan.name}" ha vencido.`,
       actionUrl: `/prestamos/${loan._id}`,
       relatedEntityId: loan._id,
-    });
-
-    await ctx.runAction(internal.actions.sendPushNotification.run, {
-      userId: loan.userId,
-      title: "💸 Préstamo vencido",
-      body: `${loan.borrower} no ha devuelto "${loan.name}".`,
-      url: `/prestamos/${loan._id}`,
-      notificationId: notifId,
+      push: {
+        title: "💸 Préstamo vencido",
+        body: `${loan.borrower} no ha devuelto "${loan.name}".`,
+      },
     });
   }
 }
@@ -226,21 +215,17 @@ async function checkUpcomingLoans7Days(ctx: ActionCtx, now: number) {
     if (!loan.dueDate) continue;
     const daysLeft = Math.ceil((loan.dueDate - now) / (24 * 60 * 60 * 1000));
 
-    const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+    await notify(ctx, {
       userId: loan.userId,
       type: "prestamo_proximo",
       title: "Préstamo próximo a vencer",
       message: `El préstamo a ${loan.borrower} vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
       actionUrl: `/prestamos/${loan._id}`,
       relatedEntityId: loan._id,
-    });
-
-    await ctx.runAction(internal.actions.sendPushNotification.run, {
-      userId: loan.userId,
-      title: "⏰ Préstamo próximo a vencer",
-      body: `${loan.borrower} debe devolver "${loan.name}" en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
-      url: `/prestamos/${loan._id}`,
-      notificationId: notifId,
+      push: {
+        title: "⏰ Préstamo próximo a vencer",
+        body: `${loan.borrower} debe devolver "${loan.name}" en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}.`,
+      },
     });
   }
 }

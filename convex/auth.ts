@@ -3,6 +3,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 import { createClient, type AuthFunctions, type GenericCtx } from "@convex-dev/better-auth";
 import { convex as convexPlugin } from "@convex-dev/better-auth/plugins";
 import { requireActionCtx } from "@convex-dev/better-auth/utils";
+import { MAGIC_LINK_EXPIRES_IN_SECONDS } from "../src/lib/constants";
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfigFile from "./auth.config";
@@ -78,6 +79,11 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     },
     plugins: [
       magicLink({
+        // Sin esto el plugin usa 300 s (5 min) — ver
+        // node_modules/better-auth/dist/plugins/magic-link/index.mjs. Demasiado
+        // corto para un enlace que llega por correo; ver el comentario de la
+        // constante en src/lib/constants.ts.
+        expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS,
         sendMagicLink: async ({ email, url }) => {
           await requireActionCtx(ctx).runAction(
             internal.actions.sendMagicLinkEmail.run,

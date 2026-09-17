@@ -18,7 +18,7 @@ const MAIN_LINKS = [
 ];
 
 const ACCOUNT_LINKS = [
-  { href: "/perfil",     icon: User,        label: "Mi perfil",            desc: "Nombre, moneda, tema, sesiones" },
+  { href: "/perfil",     icon: User,        label: "Mi perfil",            desc: "Contraseña, notificaciones, foto, sesiones y respaldo" },
 ];
 
 export default function MasPage() {

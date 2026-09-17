@@ -169,6 +169,8 @@ export const AUDIT_ACTIONS = {
   // Admin
   ADMIN_EXPORT: "admin.export",
   USER_PASSWORD_RESET: "user.password_reset",
+  USER_PASSWORD_CHANGED: "user.password.changed",
+  USER_DATA_EXPORTED: "user.data.exported",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -176,6 +178,40 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 // ─── Configuración de presupuestos ───────────────────────────────────────────
 
 export const DEFAULT_ALERT_THRESHOLD = 80; // % de uso que dispara la alerta
+
+// ─── Avatar de perfil ────────────────────────────────────────────────────────
+
+export const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
+
+export const ALLOWED_AVATAR_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+
+// Estrangulador entre dos generaciones de URL de subida del mismo usuario.
+// Evita que `generateAvatarUploadUrl` sea un vector de llenado de storage sin
+// necesidad de una tabla de rate limiting.
+export const AVATAR_UPLOAD_THROTTLE_MS = 10_000;
+
+// ─── Exportación de datos ────────────────────────────────────────────────────
+
+// Cota por tabla del export completo. Las guidelines de Convex prohíben
+// `.collect()` sin límite; cuando se alcanza, el export marca esa tabla como
+// truncada y la UI lo advierte.
+export const EXPORT_MAX_ROWS_PER_TABLE = 10_000;
+
+// Vida del archivo de export en `_storage` antes de su borrado programado.
+export const EXPORT_FILE_TTL_MS = 60 * 60 * 1000; // 1 hora
+
+// ─── Autenticación ───────────────────────────────────────────────────────────
+
+// Vigencia del magic link de acceso. El default del plugin de Better Auth son
+// 300 s (5 min), muy corto para un correo que la persona abre cuando puede —
+// sobre todo en el envío masivo de la migración. Lo consumen `convex/auth.ts`
+// (configuración del plugin) y `convex/lib/emailTemplates.ts` (copy del email),
+// para que el texto nunca se desincronice del valor real.
+export const MAGIC_LINK_EXPIRES_IN_SECONDS = 30 * 60; // 30 minutos
 
 // ─── Límite de archivos adjuntos ─────────────────────────────────────────────
 

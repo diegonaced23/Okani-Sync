@@ -2,6 +2,7 @@
 import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { notify } from "../lib/notify";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -25,22 +26,18 @@ export const run = internalAction({
 
       const body = `Esta semana: ${summary.ingresos} ingreso${summary.ingresos !== 1 ? "s" : ""} y ${summary.gastos} gasto${summary.gastos !== 1 ? "s" : ""} registrados.`;
 
-      const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+      const notificationId = await notify(ctx, {
         userId,
         type: "resumen_semanal",
         title: "Resumen de la semana",
         message: body,
         actionUrl: "/reportes",
+        push: {
+          title: "📊 Resumen de la semana",
+          body,
+        },
       });
-
-      await ctx.runAction(internal.actions.sendPushNotification.run, {
-        userId,
-        title: "📊 Resumen de la semana",
-        body,
-        url: "/reportes",
-        notificationId: notifId,
-      });
-      sent++;
+      if (notificationId) sent++;
     }
 
     console.log(`sendWeeklySummary: ${sent} resúmenes enviados`);

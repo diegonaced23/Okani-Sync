@@ -31,8 +31,10 @@ export function ResetPasswordForm({ token }: { token: string }) {
       toast.error(error.message ?? "El enlace expiró o ya fue usado");
       return;
     }
-    toast.success("Contraseña definida. Ya puedes iniciar sesión.");
-    router.push("/sign-in");
+    const { data: session } = await authClient.getSession();
+    toast.success("Contraseña definida.");
+    router.push(session ? "/" : "/sign-in");
+    router.refresh();
   }
 
   return (

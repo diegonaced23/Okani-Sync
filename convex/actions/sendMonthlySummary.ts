@@ -2,6 +2,7 @@
 import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { notify } from "../lib/notify";
 
 function getPreviousMonthString(now: number): string {
   const d = new Date(now);
@@ -46,22 +47,18 @@ export const run = internalAction({
 
       const body = `${summary.ingresos} ingreso${summary.ingresos !== 1 ? "s" : ""} y ${summary.gastos} gasto${summary.gastos !== 1 ? "s" : ""} en ${monthLabel}.`;
 
-      const notifId = await ctx.runMutation(internal.notifications.createInternal, {
+      const notificationId = await notify(ctx, {
         userId,
         type: "resumen_mensual",
         title: `Resumen de ${monthLabel}`,
         message: body,
         actionUrl: "/reportes",
+        push: {
+          title: `📅 Resumen de ${monthLabel}`,
+          body,
+        },
       });
-
-      await ctx.runAction(internal.actions.sendPushNotification.run, {
-        userId,
-        title: `📅 Resumen de ${monthLabel}`,
-        body,
-        url: "/reportes",
-        notificationId: notifId,
-      });
-      sent++;
+      if (notificationId) sent++;
     }
 
     console.log(`sendMonthlySummary: ${sent} resúmenes de ${prevMonth} enviados`);

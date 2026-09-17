@@ -1,6 +1,6 @@
 # Plan de migración: Clerk → Better Auth
 
-Estado: **Fases 2 y 3 completas. Fase 4 preparada en el repo, pendiente de ejecución real contra producción** (checklist abajo — requiere acciones del usuario: env vars de prod, `git push`, `npx convex deploy` a prod, y disparar el envío masivo de magic links). `convex/auth.config.ts` está swapeado a Better Auth (Clerk queda desconectado del flujo de validación de JWT en dev); el backend ya no depende de la API de Clerk para nada (`convex/lib/clerkApi.ts` se borró, el webhook `/api/webhooks/clerk` se eliminó de `convex/http.ts`). Todo el código está en el repo (sin commitear — commits son responsabilidad del usuario). La producción real sigue 100% en Clerk hoy — nada de esto le ha llegado todavía. Falta ejecutar la Fase 4 y la Fase 5 (limpieza de `package.json`/CSP/tabla `sessions` vestigial).
+Estado (actualizado el 2026-09-16): **Fases 2 y 3 completas. Fase 4 en curso — el corte a producción YA OCURRIÓ.** El código está commiteado y pusheado (`64a41ff`, 2026-09-15) y desplegado en Vercel + Convex prod; prod corre hoy con Better Auth y el admin ya entró con magic link. Lo que queda de la Fase 4 es el envío masivo de magic links (D6) y su verificación (D7–D8): **hasta que eso pase, el resto de los usuarios está bloqueado** — sus sesiones de Clerk ya no valen y todavía no recibieron su enlace. `convex/auth.config.ts` está swapeado a Better Auth; el backend ya no depende de la API de Clerk para nada (`convex/lib/clerkApi.ts` se borró, el webhook `/api/webhooks/clerk` se eliminó de `convex/http.ts`). Después queda la Fase 5 (limpieza de `package.json`/CSP/tabla `sessions` vestigial).
 
 ## Fase 3 — Resumen de lo realmente hecho (difiere del plan original de este documento)
 
@@ -195,33 +195,106 @@ Al principio se consideró usar `identity.tokenIdentifier` (formato `"<issuer>|<
 - ✅ Los emails de invitación/magic-link/reset ya los envía la app (Resend + `convex/lib/emailTemplates.ts`), implementado en la Fase 2 (`sendMagicLinkEmail.ts`, `sendResetPasswordEmail.ts`) y reusado en la Fase 3 (`sendAccessEmail`, `createByAdmin`, `seedAdmin.ts`).
 - ✅ `seedAdmin.ts` reescrito sin Clerk. `seedTestInvitation.ts` no necesitó cambios.
 
-### Fase 4 — Corte a producción (⏳ preparada, no ejecutada todavía)
+### Fase 4 — Corte a producción (🔄 EN CURSO — el corte ya ocurrió; falta D6–D8)
 
-**Punto de partida real**: las Fases 1-3 solo existen en el repo local, sin commitear ni desplegar. La producción real (deployment de Convex separada de la de dev + Vercel) sigue sirviendo hoy a usuarios reales 100% bajo Clerk. Confirmado que `CONVEX_DEPLOY_KEY` de `.env.local` apunta a dev, no a prod (`npx convex env list --prod` ignoró el flag y devolvió las variables de dev) — no hay acceso de escritura a la deployment de prod desde este entorno, así que todo lo que la toca lo ejecuta el usuario.
+**Punto de partida real** (histórico, 2026-09-15): las Fases 1-3 solo existían en el repo local, sin commitear ni desplegar, y prod servía a usuarios reales 100% bajo Clerk. Confirmado que `CONVEX_DEPLOY_KEY` de `.env.local` apunta a dev, no a prod (`npx convex env list --prod` ignoró el flag y devolvió las variables de dev) — no hay acceso de escritura a la deployment de prod desde este entorno, así que todo lo que la toca lo ejecuta el usuario. **Esto sigue vigente y afecta a D6**: `npx convex run ... --prod` desde esta máquina iría a dev salvo que se exporte una deploy key de prod en esa shell (o se quite `CONVEX_DEPLOY_KEY` del entorno y se use `npx convex login` + `--prod`). Confirmar el nombre del deployment en la salida del CLI antes de que corra.
+
+**Estado real al 2026-09-16 (lo que ya pasó, fuera del orden previsto):**
+- El `git push` se hizo antes de completar el bloque C (`64a41ff`, 2026-09-15 16:25), así que Vercel construyó y desplegó sin `NEXT_PUBLIC_CONVEX_SITE_URL`. Se resolvió completando C y haciendo redeploy sin caché de build (la variable es `NEXT_PUBLIC_*`: se incrusta en el bundle, guardarla no basta).
+- Convex prod **no tenía** `RESEND_API_KEY` (se agregó después; sin ella `sendMagicLinkEmail` solo hacía `console.warn` y nadie recibía nada, ni siquiera el canario).
+- `NEXT_PUBLIC_APP_URL` resultó ser un ítem obsoleto de esta checklist: su único lector es `convex/actions/sendWelcomeEmail.ts`, que quedó sin ningún caller al eliminarse el webhook de Clerk en la Fase 3.
+- Login en prod verificado con magic link ⇒ D2/D3 completados (el corte real ya ocurrió) y D4/D5 esencialmente cubiertos.
 
 **Preparado en el repo (Fase 4, sin ejecutar):**
 - `convex/schema.ts`: campo nuevo `users.authMigrationEmailSentAt` (mismo patrón que `welcomeEmailSentAt`).
 - `convex/actions/sendMigrationMagicLinks.ts` (nuevo `internalAction`): recorre `users` activos sin `authMigrationEmailSentAt`, les manda el magic link vía `sendAccessMagicLink` (reusada de `adminUsers.ts`), marca a cada uno tras el envío exitoso. Reanudable — un fallo puntual no detiene el lote ni reenvía a quien ya recibió el correo. Solo por CLI (`npx convex run actions/sendMigrationMagicLinks:run`), nunca contra dev con datos reales.
 - `convex/users.ts`: `listActiveWithoutMigrationEmailInternal` + `markMigrationEmailSent` (soporte del punto anterior).
 
-**Checklist de ejecución (el usuario, en este orden):**
-0. Pre-flight: revisar a mano en el dashboard de Convex que `users.email` en prod esté en minúscula/sin espacios (histórico del webhook de Clerk, nunca normalizado) — con pocos usuarios alcanza sin script.
-1. Env vars de Convex en **prod**: setear `SITE_URL` = dominio real (nueva, no existía porque Better Auth nunca se desplegó ahí); confirmar que `RESEND_API_KEY`/`RESEND_FROM_EMAIL`/`NEXT_PUBLIC_APP_URL` ya están bien (muy probable — prod ya manda el email de bienvenida hoy).
-1b. Env vars de **Vercel** (Production): agregar `NEXT_PUBLIC_CONVEX_SITE_URL` = URL `.convex.site` de la deployment de prod (la usan `src/lib/auth-server.ts` y la ruta `src/app/api/auth/[...all]/route.ts` para enviar las peticiones de auth a Convex; sin ella el login en prod falla). Confirmar también `NEXT_PUBLIC_CONVEX_URL`. Como es `NEXT_PUBLIC_*`, se incrusta en el build: tiene que estar definida **antes** del deploy del paso 2.
-2. `git push` → deploy de Vercel del frontend nuevo. Esperar a que quede en vivo **antes** del paso 3 — minimiza la ventana con el frontend viejo (Clerk) contra un backend que ya no lo valida.
-3. `npx convex deploy` contra la deployment real de prod. **Este es el corte real**: al terminar, Convex prod deja de validar JWTs de Clerk y solo acepta Better Auth (el código ya trae `auth.config.ts` así desde la Fase 2).
-4. Canario: el admin inicia sesión personalmente en la prod real vía magic link — confirma login, gate de admin, cuentas/transacciones reales — antes de tocarle el acceso a nadie más.
-5. Solo si el paso 4 sale bien: `npx convex run actions/sendMigrationMagicLinks:run` contra prod.
-6. Verificar que al menos otra cuenta real entra con el correo recibido.
-7. Avisar para actualizar esta sección a ✅ COMPLETADA con el resumen real.
+**Cambio posterior al corte (2026-09-16, pendiente de commit/deploy antes de D6):**
+- `src/lib/constants.ts`: nueva `MAGIC_LINK_EXPIRES_IN_SECONDS = 30 * 60`. El plugin `magicLink` de Better Auth caduca los enlaces a los **300 s (5 min)** si no se le pasa `expiresIn` (verificado en `node_modules/better-auth/dist/plugins/magic-link/index.mjs:82`) — inviable para un correo masivo que la gente abre cuando puede: la mayoría habría caído en un token expirado.
+- `convex/auth.ts`: el plugin ahora recibe `expiresIn: MAGIC_LINK_EXPIRES_IN_SECONDS`.
+- `convex/lib/emailTemplates.ts`: el copy dice el tiempo real (derivado de la misma constante, no se desincroniza) y añade cómo recuperarse — enlace a `/sign-in`, cuyo origen se deriva del propio magic link (`new URL(url).origin`), sin variable de entorno nueva.
+- Solo afecta al magic link. El enlace de reset de contraseña usa su propio mecanismo (`emailAndPassword.sendResetPassword`, default de Better Auth: 1 h) y queda igual.
+- **Verificar antes de desplegar a prod**: `convex/auth.ts` corre en el runtime default de Convex (no `"use node"`) y ahora importa de `../src/lib/constants`. El precedente que existía (`adminUsers.ts`) es un módulo `"use node"`, así que no prueba este caso. `npx convex dev --once` confirma que el bundler lo acepta.
 
-Banner de "en mantenimiento": opcional, no construido — la ventana de los pasos 2-3 debería ser de minutos para una app invite-only.
+**Riesgo conocido de D6, no corregido (asumido a propósito):** `sendMagicLinkEmail` nunca lanza — si falta la API key hace `return`, y si Resend responde error hace `console.error`. Por eso `sendMigrationMagicLinks` marca `authMigrationEmailSentAt` aunque el correo no haya salido, `failed[]` viene casi siempre vacío y **volver a correrlo no reintenta** a esos usuarios. La única señal real de entrega es el dashboard de Resend (D8); para recuperar a alguien, usar el botón de "enviar enlace de acceso" del panel de admin o borrarle `authMigrationEmailSentAt` a mano.
+
+**Qué pasa si un enlace caduca:** el plugin redirige a `errorCallbackURL` o, si no se pasó (es el caso: `sendAccessMagicLink` solo manda `callbackURL: "/"`), al `callbackURL` con `?error=INVALID_TOKEN`. La persona aterriza en la app sin sesión y termina en el login **sin ningún mensaje que explique qué pasó**. Mitigado por el copy del email; si molesta en la práctica, la corrección es pasar `errorCallbackURL: "/sign-in?error=..."` y mostrar el aviso en `SignInForm` (ojo: `useSearchParams` exige un boundary de Suspense en Next 16).
+
+**Checklist de acciones manuales (el usuario, en este orden)** — actualizado el 2026-09-15 tras la inspección de estado. Todo lo que toca prod, Vercel, Clerk o git lo ejecuta el usuario; desde este entorno no hay acceso a prod.
+
+#### A. Local — dejar el repo listo (sin push todavía)
+- [x] `npm ci` (node_modules faltaba) — hecho.
+- [x] `npm run typecheck`, `npm run typecheck:sw`, `npm run lint`, `npm test` — todo en verde (el fix de `sw.ts` incluido).
+- [ ] Crear una rama de respaldo del estado de prod pre-migración: `git branch backup/pre-better-auth 987c55f` + pushearla. **Sigue sin existir** (`git branch -a` solo muestra `main`). Aclaración honesta: ya no es un rollback limpio — en prod hay usuarios y sesiones creados bajo Better Auth; sirve para conservar el código de Clerk, no para deshacer datos.
+- [x] Commit 1 — módulo transacciones (`e1671d3`).
+- [x] Commit 2 — migración Better Auth (`0dfde46`).
+- [x] Commit 3 — `src/app/sw.ts` (`64a41ff`).
+- [x] Recomendado: `npm run build` local para confirmar que compila (si falla por `sharp`/`esbuild`, correr `npm approve-scripts` y reintentar).
+- [x] ~~**No hacer `git push` todavía.**~~ El push se hizo antes de completar C — ver "Estado real" arriba.
+
+#### B. Pre-flight — verificar hechos que el repo no puede confirmar
+- [ ] **Vercel → Settings → Build & Deployment → Build Command.** `package.json` solo tiene `next build`, y el `CONVEX_DEPLOY_KEY` local apunta a dev, así que prod de Convex se despliega de otra forma:
+  - Si el Build Command es `npx convex deploy --cmd 'npm run build'` (o similar): **el `git push` ES el corte** (frontend + backend + schema en un solo paso) — los pasos D2 y D3 se vuelven uno, y **todo el bloque C tiene que estar hecho antes del push**.
+  - Si es solo `next build`: el deploy de Convex prod es manual (`npx convex deploy`) y el orden D2 → D3 aplica tal cual.
+- [ ] Dashboard de Convex **prod** → tabla `users`: revisar que todos los `email` estén en minúscula y sin espacios (histórico del webhook de Clerk, nunca normalizado). Si alguno no lo está, corregirlo a mano — si no, el enlace por email no encuentra a esa persona. **Sigue pendiente y ahora es bloqueante de D6**: un email con mayúsculas no vincula `authId` y esa persona entra a una app vacía.
+- [ ] Dashboard de Convex **prod** → tabla `users`, fila del admin: confirmar que el `authId` quedó poblado **en la fila de siempre** (la del `clerkId` real) y que no se creó una segunda fila con el mismo email. Es la verificación empírica de que el vínculo por email funciona; si falló para el admin, falla para todos.
+- [ ] Dashboard de Convex **prod** → tabla `sessions`: anotar si tiene documentos (lo necesita la Fase 5).
+
+#### C. Variables de entorno — antes de cualquier deploy (✅ completado el 2026-09-16)
+Convex **prod** (Dashboard → Settings → Environment Variables, o `npx convex env set ... --prod` con la deploy key de prod):
+- [x] `BETTER_AUTH_SECRET` = valor aleatorio nuevo (`openssl rand -base64 32`). **Crítico, no estaba en el plan original**: Better Auth sin esta variable usa un secreto por defecto público (`DEFAULT_SECRET` en `node_modules/better-auth/dist/utils/constants.mjs`) y, si el runtime reporta `NODE_ENV=production`, lanza error en cada request (`validateSecret` en `create-context.mjs`) → login caído. El componente de Convex no inyecta uno propio (verificado). Definirlo **una sola vez, antes del corte**: cambiarlo después invalida todas las sesiones.
+- [x] `SITE_URL` = `https://danchest.cloud` — el origen **canónico** (el que queda en la barra del navegador tras cualquier redirección), sin `/` final. Es el `baseURL` de Better Auth: arma los enlaces de magic link y reset, y es su origen confiable por defecto (si el navegador está en `www` y aquí figura el apex, el login falla por origen no confiable). Nada que ver con `clerk.danchest.cloud`, que es de Clerk.
+- [x] `RESEND_API_KEY` — **no existía en prod**, se agregó el 2026-09-16.
+- [x] Confirmar `RESEND_FROM_EMAIL` con un remitente de **dominio verificado** en Resend. Si falta, el código cae a `onboarding@resend.dev`, que solo entrega al dueño de la cuenta de Resend → el envío masivo de magic links fallaría para todos los demás.
+- [x] ~~Confirmar `NEXT_PUBLIC_APP_URL`~~ — **ítem obsoleto**: su único lector, `convex/actions/sendWelcomeEmail.ts`, se quedó sin callers al borrarse el webhook de Clerk en la Fase 3.
+
+Vercel (Production):
+- [x] `NEXT_PUBLIC_CONVEX_SITE_URL` = igual que `NEXT_PUBLIC_CONVEX_URL` pero con `.convex.site` en vez de `.convex.cloud` (mismo subdominio; en el Dashboard de Convex es la "HTTP Actions URL"). La usan `src/lib/auth-server.ts` y `src/app/api/auth/[...all]/route.ts`; sin ella el login en prod falla. Por ser `NEXT_PUBLIC_*` se incrusta en el build: **crearla no basta, hay que redeployar sin caché de build** (fue exactamente lo que pasó aquí).
+- [x] Confirmar `NEXT_PUBLIC_CONVEX_URL` (`.convex.cloud` de prod).
+- [ ] **No borrar todavía** las variables `CLERK_*` — son parte del rollback.
+
+Convex **dev** (para que dev refleje prod):
+- [x] `npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"`. Dev hoy corre con el secreto por defecto. Efecto esperado: se invalidan las sesiones de dev (re-loguear) y las claves JWKS se rotan solas en el primer token gracias a `jwksRotateOnTokenGenerationError`. Verificar login en dev después.
+- [ ] Opcional: `RESEND_FROM_EMAIL` y `NEXT_PUBLIC_APP_URL` en dev (hoy no existen; funcionan con el fallback).
+
+#### D. Corte a producción
+- [x] ~~D1.~~ No se hizo aviso previo (el push adelantó el corte). Avisar a los usuarios de la ventana corta de mantenimiento (opcional; no hay banner construido).
+- [x] D2. `git push` (`64a41ff`, 2026-09-15) + redeploy de Vercel ya con el bloque C completo.
+- [x] D3. Convex prod quedó desplegado con el código nuevo — confirmado empíricamente: el login con magic link en prod solo funciona si `authComponent.registerRoutes` del `http.ts` nuevo está en vivo. **El corte real ya ocurrió**: Convex prod ya no acepta JWTs de Clerk.
+- [x] D4. Dashboard de Convex prod → Logs: confirmar que no hay errores de `BETTER_AUTH_SECRET`, JWKS ni de schema/índices.
+- [x] D5. Login de admin en prod verificado con magic link. Pendiente cerrar el detalle del `authId` (ver bloque B). Canario: iniciar sesión como admin en prod vía magic link. Validar: login, `/admin` accesible, cuentas y transacciones reales visibles, botones de propietario en una cuenta, sección "Sesiones activas" del perfil, cerrar sesión.
+- [ ] **D5-bis (nuevo, bloqueante de D6).** Antes del envío masivo: (a) commitear y **desplegar a Convex prod** el cambio de `expiresIn` + copy del email — `expiresIn` se lee al **crear** el token, no al verificarlo, así que si el Build Command no despliega Convex hay que correr `npx convex deploy` a prod **antes** de D6; hacerlo al revés acuñaría enlaces de 5 minutos; (b) verificar el `authId` del admin y los emails de `users` en minúscula (bloque B).
+- [ ] D6. Solo si D5 y D5-bis salen bien: `CONVEX_DEPLOY_KEY=<deploy-key-de-prod> npx convex run actions/sendMigrationMagicLinks:run` (o quitar `CONVEX_DEPLOY_KEY` del entorno, `npx convex login` y usar `--prod`). **Confirmar el deployment en la salida del CLI antes de que corra** — con la key de dev en `.env.local`, `--prod` se ignora. El loop es secuencial: sin riesgo con el límite de ~2 req/s de Resend. Reanudable solo en el sentido de que no reenvía a quien ya tiene `authMigrationEmailSentAt` — ojo con el "riesgo conocido de D6" de arriba: eso incluye a quien quedó marcado aunque el correo fallara.
+- [ ] D7. Confirmar que al menos otro usuario real entra con el correo recibido.
+- [ ] D8. Revisar en Resend que los envíos del lote salieron sin rebotes. **Es la única señal real de entrega** (ver el riesgo conocido de D6).
+
+**Rollback (ya degradado):** el plan original era redeploy de Vercel al deployment anterior + `git checkout backup/pre-better-auth` y `npx convex deploy` a prod desde ahí. Solo era limpio mientras no hubiera datos nuevos bajo Better Auth — y ya los hay (usuarios vinculados, sesiones). Hoy el camino ante un problema es arreglar hacia adelante, no volver a Clerk.
+
+#### E. Puerta de entrada a la Fase 5
+- [ ] Dejar pasar una ventana de estabilidad (ej. 1–2 semanas) con todos los usuarios activos ya migrados — la app de Clerk sigue viva durante ese tiempo como red de rollback.
+- [ ] Avisar para marcar esta Fase 4 como ✅ COMPLETADA con el resumen real.
+- [ ] Recién entonces arranca la Fase 5 (abajo).
 
 ### Fase 5 — Limpieza
+
+**Cambios de código (los puede hacer Claude cuando se pida):**
 - `package.json`: quitar `@clerk/nextjs`, `@clerk/localizations`, `svix` (nada en `convex/` ni `src/` los importa ya — confirmado en la Fase 3).
-- `next.config.ts`: quitar dominios de Clerk del CSP (`*.clerk.accounts.dev`, `img.clerk.com`, `challenges.cloudflare.com`) y `images.remotePatterns`; verificar qué dominio necesita Better Auth (probablemente ninguno externo, es same-origin vía Convex).
-- Borrar la tabla `sessions` vestigial de `convex/schema.ts` (nunca se escribe hoy; las tablas reales de sesión de Better Auth viven aisladas dentro del componente, no en el schema de la app).
-- Actualizar `.env.local.example` y README (quitar `CLERK_*`).
+- `next.config.ts`: quitar dominios de Clerk del CSP (`*.clerk.accounts.dev`, `img.clerk.com`, `challenges.cloudflare.com`), la variable `CLERK_CSP_DOMAIN` y `images.remotePatterns`; el cliente de auth llama same-origin a `/api/auth/*`, así que no hace falta sumar dominios nuevos.
+- Borrar la tabla `sessions` vestigial de `convex/schema.ts` (nunca se escribe hoy; las tablas reales de sesión de Better Auth viven aisladas dentro del componente). **Ojo:** todavía la referencian `convex/users.ts` (`deleteEntities`) y `convex/actions/deleteUserCascade.ts` (paso `sessions`) — hay que quitar esas referencias en el mismo cambio. Si la tabla tiene documentos en prod (ver B), vaciarla antes del deploy.
+- `convex/auth.config.ts`: quitar el bloque comentado del proveedor de Clerk (rollback ya no aplica).
+- `convex/auth.ts`: quitar `jwksRotateOnTokenGenerationError: true` (el propio comentario lo marca como temporal).
+- Comentarios de "MIGRACIÓN EN CURSO" en `convex/users.ts` / `convex/lib/auth.ts`: actualizar a estado final.
+- Actualizar `.env.local.example` y README: quitar `CLERK_*`, agregar `BETTER_AUTH_SECRET`, `SITE_URL` (Convex) y `NEXT_PUBLIC_CONVEX_SITE_URL`.
+- Actualizar `CLAUDE.md`: todavía describe Clerk (stack, webhook, `publicMetadata.role`, `identity.subject` = `clerkId`).
+
+**Acciones manuales del usuario (después de mergear la limpieza):**
+- `npm install` para regenerar `package-lock.json` sin los paquetes de Clerk; verificar typecheck/lint/tests/build.
+- Commit + push + deploy de Convex prod (schema sin `sessions`).
+- Borrar variables `CLERK_*` y `CLERK_CSP_DOMAIN` en **Vercel**.
+- Borrar `CLERK_SECRET_KEY`, `CLERK_JWT_ISSUER_DOMAIN` y `CLERK_WEBHOOK_SECRET` en Convex **prod** y **dev** (en dev elimina el riesgo del `sk_live_`).
+- Dashboard de Clerk: eliminar el webhook y el JWT Template de Convex; rotar/revocar las API keys; finalmente eliminar la aplicación (o bajarla de plan) cuando ya no se quiera rollback.
+- Borrar la rama `backup/pre-better-auth` cuando se dé por cerrada la migración.
 - ✅ ~~Copy del email en `emailTemplates.ts` que menciona "Clerk te enviará..."~~ y ~~comentario de cabecera de `convex/schema.ts` sobre sincronización desde Clerk~~ — corregidos ya en la Fase 3.
 
 ---

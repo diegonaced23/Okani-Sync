@@ -43,6 +43,25 @@ export default defineSchema({
     theme: v.optional(
       v.union(v.literal("light"), v.literal("dark"), v.literal("system"))
     ),
+    // Preferencias de notificación por familia. Opcional a propósito:
+    // `undefined` significa "todo activo", así que ningún usuario existente
+    // pierde notificaciones al desplegar el campo. El mapeo tipo → familia
+    // vive en src/lib/notifications.ts y lo aplica convex/lib/notify.ts.
+    notificationPrefs: v.optional(
+      v.object({
+        presupuestos: v.boolean(),
+        tarjetas: v.boolean(),
+        deudasPrestamos: v.boolean(),
+        recurrentes: v.boolean(),
+        recordatorioDiario: v.boolean(),
+        resumenes: v.boolean(),
+      })
+    ),
+    // Avatar subido por el usuario. `imageUrl` (arriba) es el campo heredado de
+    // Clerk: se sigue leyendo como respaldo pero ya no se escribe nunca.
+    imageStorageId: v.optional(v.id("_storage")),
+    // Estrangulador de subidas de avatar (ver users.generateAvatarUploadUrl).
+    lastAvatarUploadAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     createdBy: v.optional(v.string()),       // clerkId del admin que lo creó
