@@ -4,12 +4,13 @@ import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { GRADIENT_MAP, ACCOUNT_GRADIENTS } from "@/lib/constants";
 import type { Doc } from "../../../convex/_generated/dataModel";
-import { Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, type LucideIcon } from "lucide-react";
+import { TrendingDown, Users } from "lucide-react";
+import { ACCOUNT_TYPE_META, debitCardLabel } from "./accountTypes";
 
 export type AccountSummary = Pick<
   Doc<"accounts">,
   "_id" | "name" | "type" | "balance" | "currency" | "color" | "bankName" | "accountNumber"
->;
+> & Partial<Pick<Doc<"accounts">, "hasDebitCard" | "debitCardLast4">>;
 
 interface AccountCardProps {
   account: AccountSummary;
@@ -24,20 +25,14 @@ interface AccountCardProps {
   hideBalance?: boolean;
 }
 
-const TYPE_META: Record<Doc<"accounts">["type"], { label: string; icon: LucideIcon }> = {
-  billetera: { label: "Efectivo",  icon: Wallet },
-  bancaria:  { label: "Bancaria",  icon: Landmark },
-  ahorros:   { label: "Ahorros",   icon: PiggyBank },
-  inversion: { label: "Inversión", icon: TrendingUp },
-};
-
-/** "Itaú · Ahorros · ···9565"; la billetera solo dice "Efectivo". */
+/** "Itaú · Ahorro · ···9565 · Débito ···4521"; el efectivo solo dice "Efectivo". */
 function subtitle(account: AccountSummary) {
-  if (account.type === "billetera") return TYPE_META.billetera.label;
+  if (account.type === "billetera") return ACCOUNT_TYPE_META.billetera.label;
   return [
     account.bankName,
-    TYPE_META[account.type].label,
+    ACCOUNT_TYPE_META[account.type].label,
     account.accountNumber ? `···${account.accountNumber}` : undefined,
+    debitCardLabel(account),
   ].filter(Boolean).join(" · ");
 }
 
@@ -50,7 +45,7 @@ function subtitle(account: AccountSummary) {
 export function AccountCard({ account, isShared, onClick, variant = "default", hideBalance }: AccountCardProps) {
   const isTile = variant === "tile";
   const g = GRADIENT_MAP[account.color] ?? ACCOUNT_GRADIENTS[0];
-  const { icon: Icon } = TYPE_META[account.type];
+  const { icon: Icon } = ACCOUNT_TYPE_META[account.type];
   const isNegative = account.balance < 0;
 
   return (

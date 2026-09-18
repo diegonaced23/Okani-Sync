@@ -108,6 +108,10 @@ export default defineSchema({
     ),
     bankName: v.optional(v.string()),
     accountNumber: v.optional(v.string()),
+    // Tarjeta débito: es el plástico de esta misma cuenta (mismo saldo), solo dato visible.
+    // Solo aplica a "bancaria" (día a día) y "ahorros".
+    hasDebitCard: v.optional(v.boolean()),
+    debitCardLast4: v.optional(v.string()),
     balance: v.number(),         // en centavos (×100) en la moneda de la cuenta
     initialBalance: v.number(),  // saldo de apertura para conciliación
     currency: v.string(),

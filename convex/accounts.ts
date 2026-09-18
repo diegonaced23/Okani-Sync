@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertIsOwner } from "./lib/permissions";
@@ -480,6 +481,8 @@ export const listSharedWithMe = query({
         color: a.color,
         bankName: a.bankName,
         accountNumber: a.accountNumber,
+        hasDebitCard: a.hasDebitCard,
+        debitCardLast4: a.debitCardLast4,
       }));
   },
 });
@@ -499,6 +502,16 @@ export const listPendingInvitations = query({
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
+/** Solo las cuentas de día a día y de ahorro tienen plástico (tarjeta débito). */
+function supportsDebitCard(type: Doc<"accounts">["type"]) {
+  return type === "bancaria" || type === "ahorros";
+}
+
+function assertBankFields(fields: { bankName?: string; debitCardLast4?: string }) {
+  if (fields.bankName !== undefined && fields.bankName.length > 60) throw new Error("El nombre del banco no puede superar 60 caracteres");
+  if (fields.debitCardLast4 !== undefined && !/^\d{0,4}$/.test(fields.debitCardLast4)) throw new Error("La tarjeta débito admite máximo 4 dígitos (los últimos del plástico)");
+}
+
 export const create = mutation({
   args: {
     name: v.string(),
@@ -510,6 +523,8 @@ export const create = mutation({
     ),
     bankName: v.optional(v.string()),
     accountNumber: v.optional(v.string()),
+    hasDebitCard: v.optional(v.boolean()),
+    debitCardLast4: v.optional(v.string()),
     initialBalance: v.number(), // en centavos
     currency: v.string(),
     color: v.string(),
@@ -523,15 +538,20 @@ export const create = mutation({
     if (!ACCOUNT_GRADIENT_KEYS.has(args.color)) throw new Error("Color de cuenta inválido");
     if (args.accountNumber !== undefined && !/^\d{0,4}$/.test(args.accountNumber)) throw new Error("El número de cuenta debe tener máximo 4 dígitos (los últimos de la cuenta real)");
     if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+    assertBankFields(args);
 
     const user = await getCurrentUser(ctx);
     const now = Date.now();
+    const isCash = args.type === "billetera";
+    const hasDebitCard = supportsDebitCard(args.type) && args.hasDebitCard === true;
     return await ctx.db.insert("accounts", {
       ownerId: user.clerkId,
       name: args.name,
       type: args.type,
-      bankName: args.bankName,
-      accountNumber: args.accountNumber,
+      bankName: isCash ? undefined : args.bankName,
+      accountNumber: isCash ? undefined : args.accountNumber,
+      hasDebitCard: hasDebitCard || undefined,
+      debitCardLast4: hasDebitCard ? args.debitCardLast4 || undefined : undefined,
       balance: args.initialBalance,
       initialBalance: args.initialBalance,
       currency: args.currency,
@@ -559,6 +579,8 @@ export const update = mutation({
     )),
     bankName: v.optional(v.string()),
     accountNumber: v.optional(v.string()),
+    hasDebitCard: v.optional(v.boolean()),
+    debitCardLast4: v.optional(v.string()),
     color: v.optional(v.string()),
     icon: v.optional(v.string()),
     notes: v.optional(v.string()),
@@ -568,6 +590,7 @@ export const update = mutation({
     if (fields.color !== undefined && !ACCOUNT_GRADIENT_KEYS.has(fields.color)) throw new Error("Color de cuenta inválido");
     if (fields.accountNumber !== undefined && !/^\d{0,4}$/.test(fields.accountNumber)) throw new Error("El número de cuenta debe tener máximo 4 dígitos (los últimos de la cuenta real)");
     if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
+    assertBankFields(fields);
 
     const user = await getCurrentUser(ctx);
     const account = await ctx.db.get(accountId);
@@ -577,6 +600,22 @@ export const update = mutation({
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [k, v] of Object.entries(fields)) {
       if (v !== undefined) patch[k] = v;
+    }
+    // Un string vacío borra el dato (undefined en un patch elimina el campo)
+    if (fields.bankName === "") patch.bankName = undefined;
+    if (fields.accountNumber === "") patch.accountNumber = undefined;
+    if (fields.debitCardLast4 === "") patch.debitCardLast4 = undefined;
+
+    // Los campos que no aplican al tipo final se limpian para no dejar datos huérfanos
+    const type = fields.type ?? account.type;
+    if (type === "billetera") {
+      patch.bankName = undefined;
+      patch.accountNumber = undefined;
+    }
+    const hasDebitCard = supportsDebitCard(type) && (fields.hasDebitCard ?? account.hasDebitCard) === true;
+    if (!hasDebitCard) {
+      patch.hasDebitCard = undefined;
+      patch.debitCardLast4 = undefined;
     }
     await ctx.db.patch(accountId, patch);
   },

@@ -26,6 +26,8 @@ export const accountSchema = z.object({
   type: z.enum(["billetera", "bancaria", "ahorros", "inversion"]),
   bankName: z.string().max(60).optional(),
   accountNumber: z.string().max(20).optional(),
+  hasDebitCard: z.boolean().optional(),
+  debitCardLast4: z.string().regex(/^\d{0,4}$/).optional(),
   initialBalance: z.number().min(0, "El saldo inicial no puede ser negativo"),
   currency: z.string().min(3).max(3),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Color hex inválido"),

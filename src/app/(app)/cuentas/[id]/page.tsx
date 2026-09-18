@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ShareAccountDialog } from "@/components/accounts/ShareAccountDialog";
 import { AccountForm } from "@/components/accounts/AccountForm";
+import { ACCOUNT_TYPE_META, debitCardLabel } from "@/components/accounts/accountTypes";
 import { BalanceReassignForm } from "@/components/accounts/BalanceReassignForm";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { formatCents, currentMonth, formatMonth } from "@/lib/money";
@@ -156,9 +157,13 @@ export default function AccountDetailPage({
                 )}
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {account!.bankName ?? account!.type} ·{" "}
-                {account!.accountNumber && `···${account!.accountNumber} · `}
-                {account!.currency}
+                {[
+                  account!.bankName,
+                  ACCOUNT_TYPE_META[account!.type].label,
+                  account!.accountNumber && `···${account!.accountNumber}`,
+                  debitCardLabel(account!),
+                  account!.currency,
+                ].filter(Boolean).join(" · ")}
               </p>
             </div>
             <div className="text-right">
