@@ -97,7 +97,7 @@ export function SessionsCard() {
         <button
           type="button"
           onClick={handleRevokeAllOther}
-          className="text-xs text-danger hover:underline"
+          className="touch-hit text-xs text-danger hover:underline"
         >
           Cerrar otras sesiones
         </button>
@@ -138,7 +138,7 @@ export function SessionsCard() {
                       type="button"
                       onClick={() => handleRevokeSession(session.token)}
                       disabled={revokingSession === session.token}
-                      className="text-xs text-danger hover:underline disabled:opacity-50 shrink-0"
+                      className="touch-hit text-xs text-danger hover:underline disabled:opacity-50 shrink-0"
                     >
                       {revokingSession === session.token ? "Cerrando…" : "Cerrar"}
                     </button>

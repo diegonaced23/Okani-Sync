@@ -11,6 +11,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Por debajo de lg el BottomNav fijo tapa la esquina inferior: ver
+      // --toast-offset-bottom en globals.css
+      offset={{ bottom: "var(--toast-offset-bottom)" }}
+      mobileOffset={{ bottom: "var(--toast-offset-bottom)" }}
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />

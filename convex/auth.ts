@@ -37,7 +37,12 @@ export const authComponent = createClient<DataModel>(components.betterAuth, {
           .unique();
 
         if (legacy) {
-          if (legacy.authId === undefined) {
+          // También se re-vincula si el authId guardado quedó huérfano (el
+          // usuario de Better Auth anterior se borró): ver ensureExists.
+          const orphaned =
+            legacy.authId !== undefined &&
+            (await authComponent.getAnyUserById(ctx, legacy.authId)) === null;
+          if (legacy.authId === undefined || orphaned) {
             await ctx.db.patch(legacy._id, { authId: doc._id });
           }
           return;
@@ -98,14 +103,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
         // Quitar una vez estabilizado el proveedor activo.
         jwksRotateOnTokenGenerationError: true,
         jwt: {
-          // El payload por defecto expone `emailVerified` (camelCase, el
-          // nombre del campo en el schema de Better Auth), pero Convex solo
-          // puebla `identity.emailVerified` desde el claim OIDC estándar
-          // `email_verified` (snake_case) — sin este claim, el gate de
-          // verificación en convex/users.ts::ensureExists nunca vería el
-          // email como verificado. Se define el payload explícito con solo
-          // los campos que el resto del backend efectivamente lee de
-          // `ctx.auth.getUserIdentity()` (ver convex/users.ts).
+          // Se emite el claim estándar `email_verified` (snake_case). Ojo: con
+          // un provider `customJwt` Convex NO lo traduce a
+          // `identity.emailVerified` — llega como `identity.email_verified`,
+          // que es lo que lee el gate de convex/users.ts::ensureExists. Se
+          // define el payload explícito con solo los campos que el resto del
+          // backend efectivamente lee de `ctx.auth.getUserIdentity()`.
           definePayload: async ({ user }) => ({
             email: user.email,
             email_verified: user.emailVerified,

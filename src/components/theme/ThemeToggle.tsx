@@ -18,7 +18,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       type="button"
       aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className={cn("relative flex-shrink-0 overflow-hidden", className)}
+      className={cn("touch-hit flex-shrink-0", className)}
       style={{
         width: 56, height: 30, borderRadius: 9999,
         background: "var(--surface-2)",
@@ -28,7 +28,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     >
       {/* Micro-estrellas en dark */}
       {isDark && (
-        <span aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        <span aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", borderRadius: "inherit" }}>
           {([{ t: 7, l: 8 }, { t: 15, l: 14 }, { t: 9, l: 20 }, { t: 19, l: 6 }]).map((s, i) => (
             <span key={i} style={{
               position: "absolute", top: s.t, left: s.l,

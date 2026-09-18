@@ -20,6 +20,7 @@ import {
 import { DeleteUserDialog } from "@/components/admin/DeleteUserDialog";
 import { toast } from "sonner";
 import { formatRelative } from "@/lib/utils";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.created":           "Usuario creado",
@@ -115,7 +116,7 @@ export default function AdminUserDetailPage({
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <button
         type="button"
         onClick={() => router.push("/admin/users")}
@@ -155,7 +156,7 @@ export default function AdminUserDetailPage({
                 <button
                   type="button"
                   onClick={() => { setName(user!.name); setNameEditing(true); }}
-                  className="text-lg font-bold text-foreground hover:underline"
+                  className="touch-hit text-lg font-bold text-foreground hover:underline"
                 >
                   {user!.name}
                 </button>
@@ -308,6 +309,6 @@ export default function AdminUserDetailPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

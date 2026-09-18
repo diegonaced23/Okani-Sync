@@ -68,7 +68,7 @@ export function PushSubscriptionBanner() {
         <button
           type="button"
           onClick={handleDismiss}
-          className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors shrink-0"
+          className="touch-hit p-1 rounded hover:bg-muted text-muted-foreground transition-colors shrink-0"
           aria-label="Cerrar"
         >
           <X className="h-4 w-4" />

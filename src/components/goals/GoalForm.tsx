@@ -160,7 +160,7 @@ export function GoalForm({ editGoal, onSuccess }: GoalFormProps) {
               type="button"
               onClick={() => setColor(c)}
               className={cn(
-                "h-7 w-7 rounded-full border-2 transition-transform",
+                "touch-hit h-7 w-7 rounded-full border-2 transition-transform",
                 color === c ? "border-foreground scale-110" : "border-transparent"
               )}
               style={{ backgroundColor: c }}

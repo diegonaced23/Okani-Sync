@@ -35,6 +35,10 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Necesario para que env(safe-area-inset-*) devuelva valores reales en iOS
+  // (notch, barra de gestos). Con statusBarStyle "black-translucent" la PWA
+  // dibuja bajo la barra de estado, así que el Header compensa el inset superior.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

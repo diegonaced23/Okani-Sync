@@ -9,6 +9,7 @@ import { useAppData } from "@/contexts/app-data";
 
 type Account = Doc<"accounts"> | AccountSummary;
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MoneyAmountField } from "./MoneyAmountField";
@@ -197,14 +198,13 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
             <Label htmlFor="tf-rate">
               Tasa de cambio (1 {fromAccount!.currency} = ? {toAccount!.currency})
             </Label>
-            <Input
+            <DecimalInput
               id="tf-rate"
-              type="number"
-              min="0.000001"
-              step="any"
+              maxDecimals={6}
+              min={0.000001}
               placeholder="Ej: 4200"
               value={exchangeRate}
-              onChange={(e) => { setExchangeRate(e.target.value); if (fieldErrors.exchangeRate) setFieldErrors((fe) => ({ ...fe, exchangeRate: "" })); }}
+              onChange={(v) => { setExchangeRate(v); if (fieldErrors.exchangeRate) setFieldErrors((fe) => ({ ...fe, exchangeRate: "" })); }}
               required
               aria-invalid={!!fieldErrors.exchangeRate}
               aria-describedby={fieldErrors.exchangeRate ? "tf-rate-error" : undefined}

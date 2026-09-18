@@ -33,6 +33,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type CategoryType = "ingreso" | "gasto" | "ambos";
 
@@ -54,7 +55,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
           aria-label={`Color ${c}`}
           aria-pressed={value === c}
           className={cn(
-            "h-7 w-7 rounded-full border-2 transition-transform",
+            "touch-hit h-7 w-7 rounded-full border-2 transition-transform",
             value === c ? "border-foreground scale-110" : "border-transparent"
           )}
           style={{ backgroundColor: c }}
@@ -135,7 +136,7 @@ function SortableCategoryRow({
       <button
         type="button"
         aria-label="Arrastrar para reordenar"
-        className="touch-none shrink-0 p-1 -ml-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-grab active:cursor-grabbing"
+        className="touch-hit touch-none shrink-0 p-1 -ml-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-grab active:cursor-grabbing"
         onPointerDown={(e) => controls.start(e)}
       >
         <GripVertical className="h-4 w-4" />
@@ -154,7 +155,7 @@ function SortableCategoryRow({
         <button
           type="button"
           onClick={onEdit}
-          className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
           aria-label="Editar categoría"
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -162,7 +163,7 @@ function SortableCategoryRow({
         <button
           type="button"
           onClick={onArchive}
-          className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger"
+          className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger"
           aria-label="Archivar categoría"
         >
           <Archive className="h-3.5 w-3.5" />
@@ -199,7 +200,7 @@ function ArchivedCategoryRow({
       <button
         type="button"
         onClick={onDelete}
-        className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger shrink-0"
+        className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger shrink-0"
         aria-label="Eliminar categoría"
       >
         <Trash2 className="h-3.5 w-3.5" />
@@ -560,7 +561,7 @@ export default function CategoriasPage() {
   const isLoading = categories === undefined;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Categorías</h1>
         <AppSheet
@@ -724,7 +725,7 @@ export default function CategoriasPage() {
           <button
             type="button"
             onClick={() => setShowArchived((v) => !v)}
-            className="flex w-full items-center gap-2 px-1 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-2 px-1 py-1.5 pointer-coarse:min-h-11 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             {showArchived ? (
               <ChevronDown className="h-3.5 w-3.5 shrink-0" />
@@ -793,6 +794,6 @@ export default function CategoriasPage() {
         onRemove={handleRemove}
         onMigrate={handleMigrateAndDelete}
       />
-    </div>
+    </PageContainer>
   );
 }

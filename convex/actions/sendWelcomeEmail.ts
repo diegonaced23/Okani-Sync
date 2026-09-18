@@ -28,7 +28,7 @@ export const run = internalAction({
     }
 
     const resend = new Resend(apiKey);
-    const signInUrl = `${appUrl}/sign-in`;
+    const signInUrl = `${appUrl}/login`;
 
     try {
       const { error } = await resend.emails.send({

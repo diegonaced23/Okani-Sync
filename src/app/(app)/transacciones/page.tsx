@@ -15,6 +15,7 @@ import { CardPurchaseItem } from "@/components/transactions/CardPurchaseItem";
 import { CardPurchaseDetailSheet } from "@/components/transactions/CardPurchaseDetailSheet";
 import { currentMonth, formatCents } from "@/lib/money";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // ─── Tipos de filtro ───────────────────────────────────────────────────────────
 
@@ -278,7 +279,7 @@ export default function TransaccionesPage() {
   }, [filteredTxs, filteredPurchases, todayKey, yesterdayKey]);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-0">
+    <PageContainer className="space-y-0">
 
       {/* ── Encabezado ──────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between pb-4">
@@ -467,7 +468,7 @@ export default function TransaccionesPage() {
               aria-checked={isActive}
               tabIndex={isActive ? 0 : -1}
               onClick={() => setFilter(key)}
-              className="flex-none whitespace-nowrap transition-all"
+              className="flex-none whitespace-nowrap transition-all pointer-coarse:min-h-11"
               style={{
                 padding: "8px 16px",
                 borderRadius: 9999,
@@ -518,7 +519,7 @@ export default function TransaccionesPage() {
             <button
               type="button"
               onClick={() => setFilter("all")}
-              className="mt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+              className="touch-hit mt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
             >
               Ver todos
             </button>
@@ -595,6 +596,6 @@ export default function TransaccionesPage() {
         }}
       />
 
-    </div>
+    </PageContainer>
   );
 }

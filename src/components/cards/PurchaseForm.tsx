@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { MoneyInput } from "@/components/ui/money-input";
@@ -163,6 +164,7 @@ export function PurchaseForm({
           <Input
             id="pu-inst"
             type="number"
+            inputMode="numeric"
             min="1"
             max="60"
             value={installments}
@@ -187,15 +189,14 @@ export function PurchaseForm({
       {hasInterest && (
         <div className="space-y-1.5">
           <Label htmlFor="pu-rate">Tasa mensual % (m.v.)</Label>
-          <Input
+          <DecimalInput
             id="pu-rate"
-            type="number"
-            min="0.001"
-            max="100"
-            step="0.001"
-            placeholder="Ej: 2.5"
+            maxDecimals={3}
+            min={0.001}
+            max={100}
+            placeholder="Ej: 2,5"
             value={interestRatePct}
-            onChange={(e) => setInterestRatePct(e.target.value)}
+            onChange={(v) => setInterestRatePct(v)}
             required
             disabled={!canEditFinancials}
           />

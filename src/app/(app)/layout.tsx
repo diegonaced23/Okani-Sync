@@ -14,7 +14,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  if (!(await authNextJs.isAuthenticated())) redirect("/sign-in");
+  if (!(await authNextJs.isAuthenticated())) redirect("/login");
 
   return (
     <NewTransactionModalProvider>
@@ -35,7 +35,7 @@ export default async function AppLayout({
           <div className="flex flex-1 flex-col min-w-0 lg:pl-64 overflow-x-hidden">
             <Header />
             <PushSubscriptionBanner />
-            <main id="main-content" className="flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
+            <main id="main-content" className="flex-1 px-4 py-6 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-8">
               <AuthGuard>{children}</AuthGuard>
             </main>
           </div>

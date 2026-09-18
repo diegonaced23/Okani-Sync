@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -157,6 +158,7 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
               <Input
                 id="cp-installments"
                 type="number"
+                inputMode="numeric"
                 min="1"
                 max="60"
                 value={installments}
@@ -192,14 +194,13 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
                 Tasa mensual % <span className="text-muted-foreground font-normal">(m.v.)</span>{" "}
                 <span aria-hidden="true" className="text-danger">*</span>
               </Label>
-              <Input
+              <DecimalInput
                 id="cp-interest"
-                type="number"
-                min="0.001"
-                max="100"
-                step="0.001"
+                maxDecimals={3}
+                min={0.001}
+                max={100}
                 value={interestRatePct}
-                onChange={(e) => { setInterestRatePct(e.target.value); if (fieldErrors.interest) setFieldErrors((fe) => ({ ...fe, interest: "" })); }}
+                onChange={(v) => { setInterestRatePct(v); if (fieldErrors.interest) setFieldErrors((fe) => ({ ...fe, interest: "" })); }}
                 required
                 aria-required="true"
                 aria-invalid={!!fieldErrors.interest}

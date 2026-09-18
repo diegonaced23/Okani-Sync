@@ -28,6 +28,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@ function PresupuestosContent() {
   const isLoadingGoals   = goals === undefined;
 
   return (
-    <div className="space-y-5 max-w-2xl mx-auto">
+    <PageContainer className="space-y-5">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
@@ -204,13 +205,13 @@ function PresupuestosContent() {
           {/* Selector de mes */}
           <div className="flex items-center justify-between rounded-xl bg-card border border-border px-4 py-2">
             <button type="button" onClick={() => setMonth((m) => shiftMonth(m, -1))}
-              className="p-1 rounded hover:bg-muted transition-colors" aria-label="Mes anterior">
+              className="touch-hit p-1 rounded hover:bg-muted transition-colors" aria-label="Mes anterior">
               <ChevronLeft className="h-4 w-4 text-muted-foreground" />
             </button>
             <span className="text-sm font-medium capitalize">{formatMonth(month)}</span>
             <button type="button" onClick={() => setMonth((m) => shiftMonth(m, 1))}
               disabled={month >= currentMonth()}
-              className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30" aria-label="Mes siguiente">
+              className="touch-hit p-1 rounded hover:bg-muted transition-colors disabled:opacity-30" aria-label="Mes siguiente">
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </button>
           </div>
@@ -453,7 +454,7 @@ function PresupuestosContent() {
           </AlertDialog>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

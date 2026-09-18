@@ -112,7 +112,7 @@ export function AvatarCard({ me }: { me: Doc<"users"> & { avatarUrl: string | nu
           <button type="button" onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             aria-label="Cambiar foto de perfil"
-            className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-accent-foreground disabled:opacity-50">
+            className="touch-hit absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-accent-foreground disabled:opacity-50">
             <Camera className="h-3 w-3" aria-hidden="true" />
           </button>
           <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp"
@@ -133,8 +133,9 @@ export function AvatarCard({ me }: { me: Doc<"users"> & { avatarUrl: string | nu
           ) : (
             <button type="button"
               onClick={() => { setNewName(me?.name ?? ""); setEditingName(true); }}
-              className="text-lg font-bold text-foreground hover:underline text-left truncate block">
-              {me?.name || "Sin nombre"}
+              // truncate va en el span: en el botón recortaría el ::after de touch-hit
+              className="touch-hit block max-w-full text-lg font-bold text-foreground hover:underline text-left">
+              <span className="block truncate">{me?.name || "Sin nombre"}</span>
             </button>
           )}
           <p className="text-sm text-muted-foreground truncate">
@@ -142,7 +143,7 @@ export function AvatarCard({ me }: { me: Doc<"users"> & { avatarUrl: string | nu
           </p>
           {me.avatarUrl && (
             <button type="button" onClick={handleRemove} disabled={removing}
-              className="text-xs text-danger hover:underline disabled:opacity-50">
+              className="touch-hit text-xs text-danger hover:underline disabled:opacity-50">
               {removing ? "Quitando…" : "Quitar foto"}
             </button>
           )}

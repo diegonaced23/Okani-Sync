@@ -30,6 +30,7 @@ import { BalanceReassignForm } from "@/components/accounts/BalanceReassignForm";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { formatCents, currentMonth, formatMonth } from "@/lib/money";
 import { toast } from "sonner";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 function shiftMonth(m: string, delta: number) {
   const [y, mo] = m.split("-").map(Number);
@@ -130,7 +131,7 @@ export default function AccountDetailPage({
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       {/* Navegación */}
       <button
         type="button"
@@ -273,7 +274,7 @@ export default function AccountDetailPage({
                     <button
                       type="button"
                       onClick={() => handleRevoke(share._id)}
-                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
+                      className="touch-hit p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
                       aria-label="Revocar acceso"
                     >
                       <UserMinus className="h-4 w-4" />
@@ -301,7 +302,7 @@ export default function AccountDetailPage({
             <button
               type="button"
               onClick={() => setMonth((m) => shiftMonth(m, -1))}
-              className="p-1 rounded hover:bg-muted transition-colors"
+              className="touch-hit p-1 rounded hover:bg-muted transition-colors"
               aria-label="Mes anterior"
             >
               <ChevronLeft className="h-4 w-4 text-muted-foreground" />
@@ -313,7 +314,7 @@ export default function AccountDetailPage({
               type="button"
               onClick={() => setMonth((m) => shiftMonth(m, 1))}
               disabled={month >= currentMonth()}
-              className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30"
+              className="touch-hit p-1 rounded hover:bg-muted transition-colors disabled:opacity-30"
               aria-label="Mes siguiente"
             >
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -380,6 +381,6 @@ export default function AccountDetailPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

@@ -158,12 +158,12 @@ export function magicLinkEmailHtml(url: string): string {
 
   const minutes = Math.round(MAGIC_LINK_EXPIRES_IN_SECONDS / 60);
 
-  // Si el enlace caduca, la salida es pedir otro desde /sign-in. El origen sale
+  // Si el enlace caduca, la salida es pedir otro desde /login. El origen sale
   // del propio magic link (se arma con SITE_URL), así que no hace falta una
   // variable de entorno extra en Convex.
   let signInUrl: string | null = null;
   try {
-    signInUrl = new URL(url).origin + "/sign-in";
+    signInUrl = new URL(url).origin + "/login";
   } catch {
     signInUrl = null;
   }

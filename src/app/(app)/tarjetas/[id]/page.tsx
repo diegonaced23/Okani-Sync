@@ -20,12 +20,13 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { CardSummary } from "@/components/cards/CardSummary";
-import { CardForm } from "@/components/cards/CardForm";
+import { CardForm, CARD_SHEET_CLASS } from "@/components/cards/CardForm";
 import { PurchaseForm } from "@/components/cards/PurchaseForm";
 import { PayCardForm } from "@/components/cards/PayCardForm";
 import { CardCycleTabs } from "@/components/cards/CardCycleTabs";
 import { formatCents } from "@/lib/money";
 import { toast } from "sonner";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // ─── Página de detalle de tarjeta ─────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export default function CardDetailPage({
 
   if (data === undefined) {
     return (
-      <div className="space-y-4 max-w-2xl mx-auto">
+      <PageContainer className="space-y-4">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-52 rounded-2xl" />
         <Skeleton className="h-24 rounded-xl" />
@@ -110,7 +111,7 @@ export default function CardDetailPage({
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -130,7 +131,7 @@ export default function CardDetailPage({
   // ── Render principal ─────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5 max-w-2xl mx-auto">
+    <PageContainer className="space-y-5">
 
       {/* Navegación + acciones de tarjeta */}
       <div className="flex items-center justify-between">
@@ -165,7 +166,8 @@ export default function CardDetailPage({
       </div>
 
       {/* Sheet: editar tarjeta */}
-      <AppSheet open={editOpen} onOpenChange={setEditOpen} title="Editar tarjeta">
+      <AppSheet open={editOpen} onOpenChange={setEditOpen} title="Editar tarjeta" footer
+        contentClassName={CARD_SHEET_CLASS}>
         <CardForm card={card} onSuccess={() => setEditOpen(false)} />
       </AppSheet>
 
@@ -279,6 +281,6 @@ export default function CardDetailPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

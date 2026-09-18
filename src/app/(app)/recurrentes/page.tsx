@@ -22,6 +22,7 @@ import { CategoryIcon } from "@/lib/category-icons";
 import { formatCents } from "@/lib/money";
 import { toast } from "sonner";
 import type { Doc } from "../../../../convex/_generated/dataModel";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 function daysUntil(ts: number): string {
   const diff = Math.ceil((ts - Date.now()) / 86_400_000);
@@ -80,7 +81,7 @@ export default function RecurrentesPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -182,7 +183,7 @@ export default function RecurrentesPage() {
                     <button
                       type="button"
                       onClick={() => setEditing(rec)}
-                      className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                       aria-label="Editar recurrente"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -190,7 +191,7 @@ export default function RecurrentesPage() {
                     <button
                       type="button"
                       onClick={() => setDeleting(rec)}
-                      className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger"
+                      className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger"
                       aria-label="Eliminar recurrente"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -260,6 +261,6 @@ export default function RecurrentesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-    </div>
+    </PageContainer>
   );
 }

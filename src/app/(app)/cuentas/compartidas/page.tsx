@@ -21,6 +21,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const PERMISSION_LABELS: Record<string, string> = {
   viewer: "Visualizador",
@@ -65,12 +66,12 @@ export default function CompartidasPage() {
   const isLoading = pending === undefined || active === undefined;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => router.push("/cuentas")}
-          className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
+          className="touch-hit p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
           aria-label="Volver a cuentas"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -108,7 +109,7 @@ export default function CompartidasPage() {
                     <button
                       type="button"
                       onClick={() => handleRespond(inv._id, false)}
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
+                      className="touch-hit flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
                       aria-label="Rechazar"
                     >
                       <X className="h-4 w-4" />
@@ -116,7 +117,7 @@ export default function CompartidasPage() {
                     <button
                       type="button"
                       onClick={() => handleRespond(inv._id, true)}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-accent-foreground hover:opacity-90 transition-opacity"
+                      className="touch-hit flex h-8 w-8 items-center justify-center rounded-full bg-accent text-accent-foreground hover:opacity-90 transition-opacity"
                       aria-label="Aceptar"
                     >
                       <Check className="h-4 w-4" />
@@ -173,7 +174,7 @@ export default function CompartidasPage() {
                       onClick={() =>
                         handleLeave(share._id, share.account?.name ?? "esta cuenta")
                       }
-                      className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
+                      className="touch-hit flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
                       aria-label="Salir de cuenta compartida"
                     >
                       <LogOut className="h-3.5 w-3.5" />
@@ -202,6 +203,6 @@ export default function CompartidasPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

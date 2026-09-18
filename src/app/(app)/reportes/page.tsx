@@ -19,6 +19,7 @@ import { currentMonth, formatMonth, formatCents } from "@/lib/money";
 import { lastNMonths } from "@/lib/utils";
 import { BookOpen, FileDown, FileText } from "lucide-react";
 import { toast } from "sonner";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type FilterType = "todos" | "ingreso" | "gasto";
 type Tab = "extracto" | "historico";
@@ -146,7 +147,7 @@ export default function ReportesPage() {
   ];
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Reportes</h1>
       </div>
@@ -272,6 +273,6 @@ export default function ReportesPage() {
       </section>
       </>
       )}
-    </div>
+    </PageContainer>
   );
 }

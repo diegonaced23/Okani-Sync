@@ -14,6 +14,7 @@ import { DebtPaymentSheet } from "@/components/debts/DebtPaymentSheet";
 import { AmortizationTable } from "@/components/debts/AmortizationTable";
 import { formatCents, currentMonth, calculateLoanAmortization } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type Tab = "resumen" | "amortizacion";
 
@@ -61,20 +62,20 @@ export default function DebtDetailPage({
 
   if (debt === undefined) {
     return (
-      <div className="max-w-2xl mx-auto space-y-4 pb-8">
+      <PageContainer className="space-y-4 pb-8">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-40 rounded-2xl" />
         <Skeleton className="h-64 rounded-xl" />
-      </div>
+      </PageContainer>
     );
   }
 
   if (debt === null) {
     return (
-      <div className="max-w-2xl mx-auto pt-16 text-center space-y-3">
+      <PageContainer className="pt-16 text-center space-y-3">
         <p className="text-muted-foreground">Deuda no encontrada.</p>
         <Button variant="outline" onClick={() => router.back()}>Volver</Button>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -84,7 +85,7 @@ export default function DebtDetailPage({
     : 100;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5 pb-8">
+    <PageContainer className="space-y-5 pb-8">
 
       {/* ── Navegación ────────────────────────────────────────────────────────── */}
       <div className="flex items-center">
@@ -246,6 +247,6 @@ export default function DebtDetailPage({
         onOpenChange={setPayOpen}
       />
 
-    </div>
+    </PageContainer>
   );
 }

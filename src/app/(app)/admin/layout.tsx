@@ -8,7 +8,7 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const me = await authNextJs.fetchAuthQuery(api.users.getMe);
-  if (!me) redirect("/sign-in");
+  if (!me) redirect("/login");
   if (me.role !== "admin") redirect("/dashboard");
 
   return <>{children}</>;

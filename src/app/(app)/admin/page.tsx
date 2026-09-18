@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelative } from "@/lib/utils";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.created":           "Usuario creado",
@@ -61,7 +62,7 @@ export default function AdminDashboardPage() {
   const logsLoading = auditLogs === undefined;
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <PageContainer variant="wide" className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Panel administrativo</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -136,6 +137,6 @@ export default function AdminDashboardPage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageContainer>
   );
 }

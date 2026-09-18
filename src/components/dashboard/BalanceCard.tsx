@@ -11,8 +11,11 @@ const STORAGE_KEY = "dashboard:balanceHidden";
 // Tinta de la tarjeta: gris-carbón casi neutro. Contraste ≈11:1 sobre el lima y
 // ≈10:1 sobre el cyan del degradado, en modo claro y oscuro por igual.
 const INK = "oklch(0.17 0.012 265)";
-// Rojo oscuro para patrimonio negativo — mismo nivel de luminancia que INK.
-const INK_NEGATIVE = "oklch(0.35 0.15 27)";
+// Patrimonio negativo: la cifra sigue en INK y el estado lo anuncia un chip oscuro.
+// Un rojo directo sobre el degradado verde vibra (complementarios) y se confunde
+// con INK en daltonismo rojo-verde; sobre el fondo INK el coral sí se lee (≈6:1).
+const CHIP_TEXT = "oklch(0.97 0 0)";
+const CHIP_ICON = "oklch(0.72 0.17 25)";
 
 interface BalanceCardProps {
   total: number | null | undefined;
@@ -109,7 +112,7 @@ export const BalanceCard = memo(function BalanceCard({
               type="button"
               aria-label="Configurar cuentas del patrimonio"
               onClick={onManageAccounts}
-              className="flex items-center justify-center bg-transparent border-0 cursor-pointer text-inherit opacity-80 py-[15px] px-3 -my-[13px] rounded-xs"
+              className="touch-hit flex items-center justify-center bg-transparent border-0 cursor-pointer text-inherit opacity-80 py-[15px] px-3 -my-[13px] rounded-xs"
             >
               <SlidersHorizontal size={14} />
             </button>
@@ -118,7 +121,7 @@ export const BalanceCard = memo(function BalanceCard({
             type="button"
             aria-label={hidden ? "Mostrar saldo" : "Ocultar saldo"}
             onClick={toggleHidden}
-            className="flex items-center justify-center bg-transparent border-0 cursor-pointer text-inherit opacity-80 py-[15px] px-3 -my-[13px] rounded-xs"
+            className="touch-hit flex items-center justify-center bg-transparent border-0 cursor-pointer text-inherit opacity-80 py-[15px] px-3 -my-[13px] rounded-xs"
           >
             {hidden ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
@@ -131,11 +134,21 @@ export const BalanceCard = memo(function BalanceCard({
 
         <p
           className="font-mono-num tracking-display text-[40px] font-extrabold leading-none mt-1.5 mb-2 whitespace-nowrap overflow-hidden"
-          style={{ color: isNegative ? INK_NEGATIVE : INK }}
           aria-label={hidden ? "Saldo oculto" : undefined}
         >
           {hidden ? <span aria-hidden="true">$ ••••••</span> : formatCents(total ?? 0, currency)}
         </p>
+
+        {/* Oculto junto con el saldo: mostrarlo revelaría el signo del patrimonio */}
+        {isNegative && !hidden && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 mb-2 text-[11px] font-semibold"
+            style={{ background: INK, color: CHIP_TEXT }}
+          >
+            <TrendingDown size={12} aria-hidden="true" style={{ color: CHIP_ICON }} />
+            En negativo
+          </span>
+        )}
 
         {/* Desglose activos / pasivos */}
         {hasBreakdown && !hidden && (

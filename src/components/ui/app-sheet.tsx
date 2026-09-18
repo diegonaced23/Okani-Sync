@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import {
   Sheet,
@@ -20,6 +21,25 @@ interface AppSheetProps {
   trigger?: React.ReactElement
   children: React.ReactNode
   contentClassName?: string
+  /**
+   * Reserva un pie fijo fuera del área con scroll. El contenido lo pinta el hijo
+   * con <AppSheetFooter>, para que las acciones vivan junto al estado del formulario.
+   * Sin esto, toda la hoja hace scroll (comportamiento de siempre).
+   */
+  footer?: boolean
+}
+
+// undefined = la hoja no reserva pie (se pinta en línea); null = el pie aún no montó
+const FooterSlotContext = React.createContext<HTMLElement | null | undefined>(undefined)
+
+/**
+ * Renderiza sus hijos en el pie fijo de la AppSheet que lo contiene. Si la hoja no
+ * tiene `footer`, o el componente se usa fuera de una AppSheet, se pinta en línea.
+ */
+export function AppSheetFooter({ children }: { children: React.ReactNode }) {
+  const slot = React.useContext(FooterSlotContext)
+  if (slot === undefined) return <div className="pt-4">{children}</div>
+  return slot ? createPortal(children, slot) : null
 }
 
 export function AppSheet({
@@ -30,8 +50,10 @@ export function AppSheet({
   trigger,
   children,
   contentClassName,
+  footer,
 }: AppSheetProps) {
   const isDesktop = useMediaQuery("(min-width: 768px)")
+  const [footerSlot, setFooterSlot] = React.useState<HTMLDivElement | null>(null)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -40,8 +62,10 @@ export function AppSheet({
         side={isDesktop ? "right" : "bottom"}
         className={cn(
           isDesktop
-            ? "overflow-y-auto overflow-x-hidden sm:max-w-md flex flex-col gap-0"
-            : "max-h-[92dvh] overflow-y-auto overflow-x-hidden rounded-t-[28px] flex flex-col gap-0 transition-[max-height] duration-300 ease-out",
+            ? "overflow-x-hidden sm:max-w-md flex flex-col gap-0"
+            : "max-h-[92dvh] overflow-x-hidden rounded-t-[28px] flex flex-col gap-0 transition-[max-height] duration-300 ease-out",
+          // Con footer, el scroll pasa al cuerpo para que el pie quede siempre visible
+          !footer && "overflow-y-auto",
           contentClassName
         )}
       >
@@ -70,9 +94,21 @@ export function AppSheet({
         </SheetHeader>
 
         {/* Contenido con padding horizontal + espacio inferior generoso */}
-        <div className={cn("flex-1", isDesktop ? "px-6 pb-8 pt-2" : "px-5 pb-10 pt-2")}>
-          {children}
-        </div>
+        {footer ? (
+          <>
+            <div className={cn("flex-1 min-h-0 overflow-y-auto", isDesktop ? "px-6 pb-6 pt-2" : "px-5 pb-5 pt-2")}>
+              <FooterSlotContext.Provider value={footerSlot}>{children}</FooterSlotContext.Provider>
+            </div>
+            <div ref={setFooterSlot} className={cn(
+              "flex-shrink-0 border-t border-border bg-popover",
+              isDesktop ? "px-6 py-4" : "px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+            )} />
+          </>
+        ) : (
+          <div className={cn("flex-1", isDesktop ? "px-6 pb-8 pt-2" : "px-5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-2")}>
+            {children}
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   )

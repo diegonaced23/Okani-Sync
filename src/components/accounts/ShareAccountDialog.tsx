@@ -14,12 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { toast } from "sonner";
 
 interface ShareAccountDialogProps {
@@ -61,54 +56,53 @@ export function ShareAccountDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Compartir cuenta</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="share-email">Correo del usuario</Label>
-            <Input
-              id="share-email"
-              type="email"
-              placeholder="usuario@ejemplo.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Solo puedes invitar a usuarios que ya tengan cuenta en Okany Sync.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Nivel de acceso</Label>
-            <Select
-              value={permission}
-              onValueChange={(v) => { if (v) setPermission(v as typeof permission); }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(PERMISSION_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? "Enviando…" : "Enviar invitación"}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <AppSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Compartir cuenta"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="share-email">Correo del usuario</Label>
+          <Input
+            id="share-email"
+            type="email"
+            placeholder="usuario@ejemplo.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Solo puedes invitar a usuarios que ya tengan cuenta en Okany Sync.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Nivel de acceso</Label>
+          <Select
+            value={permission}
+            onValueChange={(v) => { if (v) setPermission(v as typeof permission); }}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(PERMISSION_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="submit" className="flex-1" disabled={loading}>
+            {loading ? "Enviando…" : "Enviar invitación"}
+          </Button>
+        </div>
+      </form>
+    </AppSheet>
   );
 }

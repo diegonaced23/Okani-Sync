@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -147,6 +148,7 @@ export function CardPurchaseFields({
           <Input
             id="tx-installments"
             type="number"
+            inputMode="numeric"
             min="1"
             max="60"
             value={installments}
@@ -195,16 +197,15 @@ export function CardPurchaseFields({
             Tasa mensual % <span className="text-muted-foreground font-normal">(m.v.)</span>{" "}
             <span aria-hidden="true" className="text-danger">*</span>
           </Label>
-          <Input
+          <DecimalInput
             id="tx-interest"
-            type="number"
-            min="0.001"
-            max="100"
-            step="0.001"
-            placeholder={card.interestRate ? (card.interestRate * 100).toFixed(2) : "Ej: 2.5"}
+            maxDecimals={3}
+            min={0.001}
+            max={100}
+            placeholder={card.interestRate ? (card.interestRate * 100).toFixed(2).replace(".", ",") : "Ej: 2,5"}
             value={interestRatePct}
-            onChange={(e) => {
-              setInterestRatePct(e.target.value);
+            onChange={(v) => {
+              setInterestRatePct(v);
               if (fieldErrors.interest) setFieldErrors((fe) => ({ ...fe, interest: "" }));
             }}
             required

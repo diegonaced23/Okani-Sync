@@ -8,6 +8,7 @@ import {
   User, ChevronRight, Repeat,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const MAIN_LINKS = [
   { href: "/presupuestos", icon: PieChart,   label: "Presupuestos y metas",    desc: "Control mensual y objetivos financieros" },
@@ -27,7 +28,7 @@ export default function MasPage() {
 
   if (isAdmin) {
     return (
-      <div className="space-y-6 max-w-2xl mx-auto">
+      <PageContainer className="space-y-6">
         <h1 className="text-2xl font-bold text-foreground">Más</h1>
         <section className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-2">
@@ -58,12 +59,12 @@ export default function MasPage() {
         <p className="text-center text-xs text-muted-foreground pb-2">
           Okany Sync · v0.1.0
         </p>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <h1 className="text-2xl font-bold text-foreground">Más</h1>
 
       {/* Módulos principales */}
@@ -128,6 +129,6 @@ export default function MasPage() {
       <p className="text-center text-xs text-muted-foreground pb-2">
         Okany Sync · v0.1.0
       </p>
-    </div>
+    </PageContainer>
   );
 }

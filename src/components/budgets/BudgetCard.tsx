@@ -62,7 +62,7 @@ export function BudgetCard({ budget, onEdit, onDelete }: BudgetCardProps) {
             <button
               type="button"
               onClick={onEdit}
-              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              className="touch-hit p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
               aria-label="Editar presupuesto"
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -72,7 +72,7 @@ export function BudgetCard({ budget, onEdit, onDelete }: BudgetCardProps) {
             <button
               type="button"
               onClick={onDelete}
-              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
+              className="touch-hit p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
               aria-label="Eliminar presupuesto"
             >
               <Trash2 className="h-3.5 w-3.5" />

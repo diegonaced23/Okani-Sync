@@ -4,13 +4,15 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { clearCachedAvatar } from "@/components/layout/UserAvatar";
 
 export function SignOutButton() {
   const router = useRouter();
 
   async function handleSignOut() {
     await authClient.signOut();
-    router.push("/sign-in");
+    clearCachedAvatar();
+    router.push("/login");
     router.refresh();
   }
 

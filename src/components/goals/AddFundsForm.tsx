@@ -133,7 +133,7 @@ export function AddFundsForm({ goal, onSuccess }: AddFundsFormProps) {
           {mode === "abonar" && remaining > 0 && (
             <button
               type="button"
-              className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline transition-colors"
+              className="touch-hit text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline transition-colors"
               onClick={() => setAmount(String(fromCents(remaining)))}
             >
               Completar meta ({formatCents(remaining, goal.currency)})

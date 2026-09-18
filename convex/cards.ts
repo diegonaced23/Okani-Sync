@@ -43,6 +43,10 @@ export const create = mutation({
       )
     ),
     creditLimit: v.number(),   // en centavos
+    // Deuda que la tarjeta ya traía al registrarla (centavos). Entra directo a
+    // currentBalance, sin transacción: no es un gasto de este mes. Al pagar,
+    // recomputeInstallmentsPaid la cubre primero (FIFO), porque es la más antigua.
+    initialBalance: v.optional(v.number()),
     cutoffDay: v.number(),
     paymentDay: v.number(),
     interestRate: v.optional(v.number()),
@@ -53,9 +57,14 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     if (args.name.length === 0 || args.name.length > 100) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
+    const bankName = args.bankName.trim();
+    if (bankName.length === 0 || bankName.length > 35) throw new Error("El banco debe tener entre 1 y 35 caracteres");
     if (!/^\d{4}$/.test(args.lastFourDigits)) throw new Error("Los últimos cuatro dígitos deben ser exactamente 4 números");
     if (args.creditLimit <= 0 || !Number.isFinite(args.creditLimit)) throw new Error("El límite de crédito debe ser mayor que cero");
     if (!/^[A-Za-z]{3}$/.test(args.currency)) throw new Error("Código de moneda inválido");
+    const initialBalance = args.initialBalance ?? 0;
+    if (!Number.isInteger(initialBalance) || initialBalance < 0) throw new Error("La deuda actual no puede ser negativa");
+    if (initialBalance > args.creditLimit) throw new Error("La deuda actual no puede superar el cupo");
     if (args.cutoffDay < 1 || args.cutoffDay > 31) throw new Error("El día de corte debe estar entre 1 y 31");
     if (args.paymentDay < 1 || args.paymentDay > 31) throw new Error("El día de pago debe estar entre 1 y 31");
     if (args.interestRate !== undefined && (args.interestRate < 0 || args.interestRate > 1000)) throw new Error("La tasa de interés debe estar entre 0 y 1000");
@@ -66,12 +75,12 @@ export const create = mutation({
     return await ctx.db.insert("cards", {
       userId: user.clerkId,
       name: args.name,
-      bankName: args.bankName,
+      bankName,
       lastFourDigits: args.lastFourDigits,
       brand: args.brand,
       creditLimit: args.creditLimit,
-      currentBalance: 0,
-      availableCredit: args.creditLimit,
+      currentBalance: initialBalance,
+      availableCredit: args.creditLimit - initialBalance,
       cutoffDay: args.cutoffDay,
       paymentDay: args.paymentDay,
       interestRate: args.interestRate,

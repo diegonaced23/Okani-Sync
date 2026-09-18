@@ -181,7 +181,7 @@ export function AccountForm({ account, onSuccess }: AccountFormProps) {
               onClick={() => setColor(g.key)}
               title={g.label}
               className={cn(
-                "h-8 w-8 rounded-full border-2 transition-all",
+                "touch-hit h-8 w-8 rounded-full border-2 transition-all",
                 color === g.key ? "border-foreground scale-110 shadow-md" : "border-transparent"
               )}
               style={{ background: g.gradient }}

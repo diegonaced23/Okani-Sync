@@ -200,7 +200,7 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
                   document.getElementById(`${baseId}-tab-${next.key}`)?.focus();
                 }}
                 className={cn(
-                  "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors duration-150",
+                  "touch-hit rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors duration-150",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   selected
                     ? "bg-card text-foreground shadow-sm"

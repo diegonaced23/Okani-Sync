@@ -44,7 +44,7 @@ export const BudgetsMiniList = memo(function BudgetsMiniList({ budgets }: Budget
         <h2 className="text-sm font-bold text-foreground">Presupuestos</h2>
         <Link
           href="/presupuestos"
-          className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          className="touch-hit text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
         >
           Ver todos
         </Link>

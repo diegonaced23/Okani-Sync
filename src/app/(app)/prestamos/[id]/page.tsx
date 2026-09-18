@@ -27,6 +27,7 @@ import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const STATUS_CONFIG = {
   activa:  { label: "Activo",  variant: "secondary" as const },
@@ -68,11 +69,11 @@ export default function LoanDetailPage({
 
   if (loan === undefined) {
     return (
-      <div className="space-y-4 max-w-2xl mx-auto">
+      <PageContainer className="space-y-4">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-48 rounded-xl" />
         <Skeleton className="h-32 rounded-xl" />
-      </div>
+      </PageContainer>
     );
   }
 
@@ -115,7 +116,7 @@ export default function LoanDetailPage({
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       {/* Nav + acciones */}
       <div className="flex items-center justify-between">
         <button
@@ -311,6 +312,6 @@ export default function LoanDetailPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

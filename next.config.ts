@@ -45,6 +45,14 @@ const securityHeaders = [
 const baseConfig: NextConfig = {
   turbopack: {},
   headers: async () => [{ source: "/(.*)", headers: securityHeaders }],
+  // La ruta de acceso se llamó /sign-in hasta 2026-09-17. Los correos de magic
+  // link y de recuperación que ya salieron llevan ese enlace dentro
+  // (convex/lib/emailTemplates.ts), y una bandeja de entrada no se puede
+  // reescribir: sin este redirect esos accesos quedarían en 404. Mantener
+  // mientras puedan seguir vivos enlaces antiguos.
+  redirects: async () => [
+    { source: "/sign-in", destination: "/login", permanent: true },
+  ],
   images: {
     remotePatterns: [
       { hostname: "img.clerk.com" },

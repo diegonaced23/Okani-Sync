@@ -14,8 +14,9 @@ import { PillTabs } from "@/components/ui/pill-tabs";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { AccountForm } from "@/components/accounts/AccountForm";
 import { CardSummary } from "@/components/cards/CardSummary";
-import { CardForm } from "@/components/cards/CardForm";
+import { CardForm, CARD_SHEET_CLASS } from "@/components/cards/CardForm";
 import { formatCents } from "@/lib/money";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type TabKey = "cuentas" | "tarjetas";
 
@@ -45,7 +46,7 @@ function ProductosContent() {
   const totalDebt = (cards ?? []).reduce((s, c) => s + c.currentBalance, 0);
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -84,6 +85,8 @@ function ProductosContent() {
             open={openCard}
             onOpenChange={setOpenCard}
             title="Nueva tarjeta de crédito"
+            footer
+            contentClassName={CARD_SHEET_CLASS}
             trigger={
               <Button
                 size="sm"
@@ -214,26 +217,21 @@ function ProductosContent() {
             </div>
           )}
 
-          {/* Botón mobile */}
+          {/* Botón mobile — abre la misma hoja del botón de desktop: una segunda
+              AppSheet con el mismo `open` montaría dos formularios a la vez */}
           {cards !== undefined && (
             <div className="md:hidden">
-              <AppSheet
-                open={openCard}
-                onOpenChange={setOpenCard}
-                title="Nueva tarjeta de crédito"
-                trigger={
-                  <Button className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold">
-                    <Plus className="h-5 w-5" /> Agregar tarjeta
-                  </Button>
-                }
+              <Button
+                onClick={() => setOpenCard(true)}
+                className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold"
               >
-                <CardForm onSuccess={() => setOpenCard(false)} />
-              </AppSheet>
+                <Plus className="h-5 w-5" /> Agregar tarjeta
+              </Button>
             </div>
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

@@ -21,8 +21,11 @@ const TYPE_ICONS: Record<string, string> = {
 export function NotificationBell() {
   const { isAuthenticated } = useConvexAuth();
   const [open, setOpen] = useState(false);
-  const count       = useQuery(api.notifications.unreadCount, isAuthenticated ? {} : "skip");
-  const recent      = useQuery(api.notifications.listRecent, isAuthenticated ? { limit: 8 } : "skip");
+  // Espera a la fila de `users` (ver AppDataProvider): el Header vive fuera
+  // de AuthGuard y en el primer login se monta antes de que exista.
+  const me          = useQuery(api.users.getMe, isAuthenticated ? {} : "skip");
+  const count       = useQuery(api.notifications.unreadCount, me ? {} : "skip");
+  const recent      = useQuery(api.notifications.listRecent, me ? { limit: 8 } : "skip");
   const markRead    = useMutation(api.notifications.markAsRead);
   const markAllRead = useMutation(api.notifications.markAllAsRead);
 
@@ -31,16 +34,20 @@ export function NotificationBell() {
 
   const hasUnread = (count ?? 0) > 0;
 
-  // Mueve el foco al panel al abrir; devuelve el foco al botón al cerrar
+  // Mueve el foco al panel al abrir; devuelve el foco al botón al cerrar.
+  // wasOpen evita el caso del montaje (open=false de entrada): sin él, cada
+  // carga de página le robaba el foco a la campana.
+  const wasOpen = useRef(false);
   useEffect(() => {
     if (open) {
       const firstFocusable = panelRef.current?.querySelector<HTMLElement>(
         'button, [href], input, [tabindex]:not([tabindex="-1"])'
       );
       (firstFocusable ?? panelRef.current)?.focus();
-    } else {
+    } else if (wasOpen.current) {
       triggerRef.current?.focus();
     }
+    wasOpen.current = open;
   }, [open]);
 
   // Cierra con Escape
@@ -63,7 +70,7 @@ export function NotificationBell() {
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls="notification-panel"
-        className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        className="touch-hit flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
         <Bell className="h-5 w-5" aria-hidden="true" />
         {hasUnread && (
@@ -90,7 +97,7 @@ export function NotificationBell() {
             aria-label="Notificaciones"
             aria-modal="true"
             tabIndex={-1}
-            className="fixed left-4 right-4 top-[62px] z-50 rounded-xl border border-border bg-card shadow-xl overflow-hidden outline-none lg:absolute lg:left-auto lg:right-0 lg:top-10 lg:w-80"
+            className="fixed left-4 right-4 top-[calc(62px+env(safe-area-inset-top))] z-50 rounded-xl border border-border bg-card shadow-xl overflow-hidden outline-none lg:absolute lg:left-auto lg:right-0 lg:top-10 lg:w-80"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">

@@ -49,8 +49,9 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Navegación inferior"
-      className="fixed bottom-0 left-0 right-0 z-50 lg:hidden pb-safe"
-      style={{ padding: "8px 14px 14px", background: "linear-gradient(to bottom, transparent 0%, var(--background) 35%)", pointerEvents: "none" }}
+      className="fixed bottom-0 left-0 right-0 z-50 lg:hidden"
+      // El inset inferior se suma aquí: un padding inline anularía la clase .pb-safe
+      style={{ padding: "8px 14px calc(14px + env(safe-area-inset-bottom, 0px))", background: "linear-gradient(to bottom, transparent 0%, var(--background) 35%)", pointerEvents: "none" }}
     >
       <ul
         className="flex items-center justify-around"

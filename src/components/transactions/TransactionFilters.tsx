@@ -70,7 +70,7 @@ export function TransactionFilters({
             placeholder="Buscar por descripción…"
             value={searchText}
             onChange={(e) => onSearchTextChange(e.target.value)}
-            className="w-full rounded-xl border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow"
+            className="w-full pointer-coarse:min-h-11 rounded-xl border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow"
           />
           {searchText && (
             <button
@@ -88,7 +88,7 @@ export function TransactionFilters({
         <button
           type="button"
           onClick={() => setAdvanced((v) => !v)}
-          className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          className="flex items-center justify-center gap-1.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
           style={advanced ? { borderColor: "var(--os-lime)", color: "var(--os-lime-text)", background: "color-mix(in oklch, var(--os-lime) 10%, var(--card))" } : {}}
           aria-expanded={advanced}
           aria-controls={panelId}
@@ -111,7 +111,7 @@ export function TransactionFilters({
           <button
             type="button"
             onClick={onClearAll}
-            className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            className="flex items-center justify-center gap-1 pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
             aria-label="Limpiar todos los filtros"
           >
             <X size={14} />

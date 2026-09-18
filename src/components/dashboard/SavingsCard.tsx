@@ -70,7 +70,7 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
         </div>
         <Link
           href="/presupuestos"
-          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1"
+          className="touch-hit flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1"
         >
           Ver presupuestos <ArrowRight className="h-3 w-3" />
         </Link>

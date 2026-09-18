@@ -14,20 +14,21 @@ import { NotificationPrefsCard } from "@/components/perfil/NotificationPrefsCard
 import { SessionsCard } from "@/components/perfil/SessionsCard";
 import { ExportDataCard } from "@/components/perfil/ExportDataCard";
 import { SignOutButton } from "@/components/perfil/SignOutButton";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 export default function PerfilPage() {
   const me = useQuery(api.users.getMe);
 
   if (!me) {
     return (
-      <div className="space-y-4 max-w-2xl mx-auto">
+      <PageContainer className="space-y-4">
         {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <h1 className="text-2xl font-bold text-foreground">Perfil</h1>
 
       <AvatarCard me={me} />
@@ -44,6 +45,6 @@ export default function PerfilPage() {
       <Separator />
 
       <SignOutButton />
-    </div>
+    </PageContainer>
   );
 }

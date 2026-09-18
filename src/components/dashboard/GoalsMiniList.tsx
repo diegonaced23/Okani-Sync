@@ -146,7 +146,7 @@ export const GoalsMiniList = memo(function GoalsMiniList({ goals }: GoalsMiniLis
         </h2>
         <Link
           href="/presupuestos?tab=metas"
-          className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1"
+          className="touch-hit text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1"
         >
           Ver todas
         </Link>
@@ -164,7 +164,7 @@ export const GoalsMiniList = memo(function GoalsMiniList({ goals }: GoalsMiniLis
             </p>
             <Link
               href="/presupuestos?tab=metas"
-              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-foreground border border-border bg-card hover:bg-muted/60 transition-colors"
+              className="touch-hit inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-foreground border border-border bg-card hover:bg-muted/60 transition-colors"
             >
               <Plus className="h-4 w-4" strokeWidth={2.5} />
               Crear meta

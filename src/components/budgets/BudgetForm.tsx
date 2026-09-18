@@ -125,7 +125,7 @@ export function BudgetForm({ defaultMonth, editBudget, onSuccess }: BudgetFormPr
 
       <div className="space-y-1.5">
         <Label htmlFor="budget-threshold">Umbral de alerta (%)</Label>
-        <Input id="budget-threshold" type="number" min="1" max="100"
+        <Input id="budget-threshold" type="number" inputMode="numeric" min="1" max="100"
           value={alertThreshold} onChange={(e) => setAlertThreshold(e.target.value)} />
         <p className="text-xs text-muted-foreground">
           Recibirás una alerta cuando el gasto supere este porcentaje del presupuesto.

@@ -1,8 +1,9 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 export default function Loading() {
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
       <div className="space-y-1">
         <Skeleton className="h-7 w-52" />
         <Skeleton className="h-4 w-44" />
@@ -12,6 +13,6 @@ export default function Loading() {
           <Skeleton key={i} className="h-24 rounded-xl" />
         ))}
       </div>
-    </div>
+    </PageContainer>
   );
 }

@@ -40,8 +40,9 @@ export function PillTabs<T extends string>({
           aria-selected={active === tab.key}
           aria-controls={`panel-${tab.key}`}
           onClick={() => onChange(tab.key)}
-          // py-2 garantiza touch target de ≥44px con el padding del contenedor
-          className="flex-1 py-2 text-[13px]"
+          // El botón mide 36px; touch-hit extiende la zona tocable a 44px sobre
+          // el padding del contenedor (que por sí solo no responde al toque)
+          className="touch-hit flex-1 py-2 text-[13px]"
           style={{
             borderRadius: 10,
             background: active === tab.key ? "var(--surface)" : "transparent",

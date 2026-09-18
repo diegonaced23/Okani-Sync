@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 /**
  * Skeleton de ruta. Debe reflejar el ORDEN y las alturas de `page.tsx`: si se
@@ -6,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  */
 export default function Loading() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-2xl md:max-w-none mx-auto">
+    <PageContainer variant="wide" className="grid grid-cols-1 md:grid-cols-2 gap-5">
       {/* Saludo */}
       <div className="md:col-span-2 space-y-2">
         <Skeleton className="h-7 w-64" />
@@ -59,6 +60,6 @@ export default function Loading() {
       <div className="rounded-xl bg-card border border-border p-4 space-y-3">
         {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
       </div>
-    </div>
+    </PageContainer>
   );
 }

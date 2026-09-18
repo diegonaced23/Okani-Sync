@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, ArrowLeftRight, Wallet, PieChart,
-  HandCoins, Tags, BarChart3, User, Users, Repeat,
+  HandCoins, Tags, BarChart3, User, Users, Repeat, LogOut,
 } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { authClient } from "@/lib/auth-client";
+import { UserAvatar, clearCachedAvatar } from "@/components/layout/UserAvatar";
 import type { LucideIcon } from "lucide-react";
 
 type NavItem = { href: string; icon: LucideIcon; label: string; prefetch?: boolean; matchPaths?: string[] };
@@ -67,9 +69,16 @@ const BrandLogo = () => (
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const me = useQuery(api.users.getMe);
   const isAdmin = me?.role === "admin";
-  const initials = me?.name?.trim().charAt(0).toUpperCase() ?? "U";
+
+  async function handleSignOut() {
+    await authClient.signOut();
+    clearCachedAvatar();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside
@@ -148,19 +157,18 @@ export function Sidebar() {
           <User className="h-4 w-4 shrink-0" strokeWidth={1.8} />
           Perfil
         </Link>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+        >
+          <LogOut className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+          Cerrar sesión
+        </button>
 
         {/* Usuario + theme switch */}
         <div className="flex items-center gap-3 px-3 py-2">
-          <span
-            style={{
-              width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-              background: "linear-gradient(135deg, var(--os-magenta), oklch(0.32 0.14 20))",
-              display: "grid", placeItems: "center",
-              color: "white", fontWeight: 800, fontSize: 13,
-            }}
-          >
-            {initials}
-          </span>
+          <UserAvatar className="h-8 w-8 rounded-[10px] text-[13px] font-extrabold" />
           <div style={{ flex: 1, minWidth: 0, fontSize: 12 }}>
             <p style={{ fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {me?.name || "Usuario"}

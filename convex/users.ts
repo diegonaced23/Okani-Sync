@@ -9,6 +9,7 @@ import {
   AVATAR_UPLOAD_THROTTLE_MS,
 } from "../src/lib/constants";
 import { getCurrentUser, getCurrentUserOrNull, assertAdmin } from "./lib/auth";
+import { authComponent } from "./auth";
 import {
   DEFAULT_NOTIFICATION_PREFS,
   isNotificationAllowed,
@@ -89,7 +90,15 @@ export const ensureExists = mutation({
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
       .unique();
-    if (legacy && legacy.authId === undefined) {
+    // Un `authId` huérfano (su usuario de Better Auth se borró y se volvió a
+    // crear con el mismo correo) cuenta como "sin vincular": nadie puede
+    // entrar con él, y sin esto la fila queda inaccesible para siempre. Un
+    // `authId` que apunta a un usuario vivo nunca se sobrescribe.
+    const legacyIsLinkable =
+      legacy !== null &&
+      (legacy.authId === undefined ||
+        (await authComponent.getAnyUserById(ctx, legacy.authId)) === null);
+    if (legacy && legacyIsLinkable) {
       // Igual que el trigger onCreate de convex/auth.ts: solo se vincula por
       // email si el proveedor ya verificó la posesión del correo. Sin este
       // gate, un sign-up con el email de otra persona (aunque hoy el signup
@@ -98,7 +107,10 @@ export const ensureExists = mutation({
       // vínculo authId de una cuenta real. Solo aplica a este camino de
       // enlace — nunca a una fila que ya matcheó por clerkId/authId arriba,
       // ni al alta de un usuario genuinamente nuevo (gateada por invitación).
-      if (identity.emailVerified !== true) {
+      // El provider de Better Auth es `customJwt`, y Convex entrega sus claims
+      // tal cual: llega `email_verified` (snake_case) y `emailVerified` queda
+      // undefined. Se aceptan ambos por si el provider cambia a OIDC.
+      if (identity.emailVerified !== true && identity.email_verified !== true) {
         throw new Error("No autorizado: verifica tu correo antes de continuar");
       }
       if (!legacy.active) throw new Error("No autorizado: usuario desactivado");

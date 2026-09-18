@@ -7,21 +7,23 @@ import { User, LogOut } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { UserAvatar, clearCachedAvatar } from "@/components/layout/UserAvatar";
 
 export function UserMenu({ avatarClassName = "h-8 w-8 rounded-[10px]" }: { avatarClassName?: string }) {
   const router = useRouter();
   const me = useQuery(api.users.getMe);
-  const initials = me?.name?.trim().charAt(0).toUpperCase() ?? "U";
 
   async function handleSignOut() {
     await authClient.signOut();
-    router.push("/sign-in");
+    clearCachedAvatar();
+    router.push("/login");
     router.refresh();
   }
 
@@ -29,16 +31,18 @@ export function UserMenu({ avatarClassName = "h-8 w-8 rounded-[10px]" }: { avata
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Menú de usuario"
-        className={`flex shrink-0 items-center justify-center font-bold text-white ${avatarClassName}`}
-        style={{ background: "linear-gradient(135deg, var(--os-magenta), oklch(0.32 0.14 20))" }}
+        className={`touch-hit flex shrink-0 ${avatarClassName}`}
       >
-        {initials}
+        <UserAvatar className="h-full w-full rounded-[inherit] text-sm" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>
-          <p className="truncate text-foreground">{me?.name || "Usuario"}</p>
-          <p className="truncate font-normal">{me?.email}</p>
-        </DropdownMenuLabel>
+        {/* Base UI exige que GroupLabel viva dentro de un Group: sin él, abrir el menú lanza error. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>
+            <p className="truncate text-foreground">{me?.name || "Usuario"}</p>
+            <p className="truncate font-normal">{me?.email}</p>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => router.push("/perfil")}>
           <User /> Perfil

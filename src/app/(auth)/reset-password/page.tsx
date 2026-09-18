@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { AuthAlert } from "@/components/auth/AuthFields";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "Restablecer contraseña" };
 
@@ -11,18 +15,28 @@ export default async function ResetPasswordPage({
   const { token } = await searchParams;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <div className="mb-8 text-center">
-        <h1 className="text-2xl font-bold text-foreground">Define tu contraseña</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Elige una contraseña para tu cuenta de Okany Sync
-        </p>
-      </div>
+    <AuthShell
+      title="Define tu contraseña"
+      subtitle="Elige una contraseña para tu cuenta de Okany Sync"
+    >
       {token ? (
         <ResetPasswordForm token={token} />
       ) : (
-        <p className="text-sm text-danger">Enlace inválido o incompleto.</p>
+        <div className="space-y-4">
+          <AuthAlert>
+            El enlace está incompleto o ya no es válido. Los enlaces caducan y solo
+            se pueden usar una vez.
+          </AuthAlert>
+          <Button
+            render={<Link href="/login" />}
+            variant="outline"
+            size="lg"
+            className="h-11 w-full rounded-xl"
+          >
+            Volver al inicio de sesión
+          </Button>
+        </div>
       )}
-    </main>
+    </AuthShell>
   );
 }

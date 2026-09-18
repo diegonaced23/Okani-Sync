@@ -49,6 +49,7 @@ import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight, CreditCard, Plus,
 } from "lucide-react";
 import { useNewTransactionModal, type TxTab } from "@/contexts/new-transaction-modal";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type QuickAction =
   | { label: string; icon: React.ElementType; iconClassName: string; tab: TxTab }
@@ -158,7 +159,7 @@ export default function DashboardPage() {
   })();
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-2xl md:max-w-none mx-auto animate-stagger">
+    <PageContainer variant="wide" className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-stagger">
 
       {/* ── Saludo ── full width */}
       <div className="md:col-span-2 flex items-start justify-between gap-4">
@@ -256,7 +257,7 @@ export default function DashboardPage() {
       <section className="md:col-span-2">
         <div className="flex items-baseline justify-between mb-2.5">
           <h2 className="text-sm font-bold text-foreground">Mis cuentas</h2>
-          <Link href="/cuentas" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
+          <Link href="/cuentas" className="touch-hit text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
             Ver todas
           </Link>
         </div>
@@ -333,7 +334,7 @@ export default function DashboardPage() {
       <section className="space-y-2.5">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-bold text-foreground">Últimos movimientos</h2>
-          <Link href="/transacciones" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
+          <Link href="/transacciones" className="touch-hit text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
             Ver todos
           </Link>
         </div>
@@ -374,6 +375,6 @@ export default function DashboardPage() {
       {/* ── Presupuestos ── col 2 */}
       <BudgetsMiniList budgets={budgets} />
 
-    </div>
+    </PageContainer>
   );
 }

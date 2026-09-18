@@ -119,7 +119,7 @@ export const MonthlySnapshotSection = memo(function MonthlySnapshotSection({
       <div className="md:hidden space-y-2.5">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-bold text-foreground">Mes en curso · {monthName}</h2>
-          <Link href="/transacciones" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
+          <Link href="/transacciones" className="touch-hit text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 -my-2 px-1">
             Detalles
           </Link>
         </div>

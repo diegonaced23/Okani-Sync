@@ -17,6 +17,7 @@ import { LoanCard } from "@/components/loans/LoanCard";
 import { LoanForm } from "@/components/loans/LoanForm";
 import { formatCents } from "@/lib/money";
 import { useRouter } from "next/navigation";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type PageTab = "deudas" | "prestamos";
 
@@ -76,7 +77,7 @@ export default function DeudasPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <PageContainer className="space-y-6">
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
@@ -329,6 +330,6 @@ export default function DeudasPage() {
           onOpenChange={(open) => { if (!open) setSelected(null); }}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }

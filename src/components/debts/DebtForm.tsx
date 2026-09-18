@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MoneyInput } from "@/components/ui/money-input";
@@ -118,8 +119,8 @@ export function DebtForm({ onSuccess }: { onSuccess?: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label htmlFor="debt-rate">Tasa mensual % (opcional)</Label>
-          <Input id="debt-rate" type="number" min="0" step="0.01" placeholder="Ej: 1.8"
-            value={interestRate} onChange={(e) => setInterestRate(e.target.value)} />
+          <DecimalInput id="debt-rate" maxDecimals={2} min={0} placeholder="Ej: 1,8"
+            value={interestRate} onChange={(v) => setInterestRate(v)} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="debt-payment">Cuota mensual (opcional)</Label>
@@ -144,7 +145,7 @@ export function DebtForm({ onSuccess }: { onSuccess?: () => void }) {
         <div className="flex flex-wrap gap-2">
           {ACCOUNT_COLORS.map((c) => (
             <button key={c} type="button" onClick={() => setColor(c)}
-              className={cn("h-7 w-7 rounded-full border-2 transition-transform",
+              className={cn("touch-hit h-7 w-7 rounded-full border-2 transition-transform",
                 color === c ? "border-foreground scale-110" : "border-transparent")}
               style={{ backgroundColor: c }} />
           ))}

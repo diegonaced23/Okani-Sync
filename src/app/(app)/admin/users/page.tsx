@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateUserDialog } from "@/components/admin/CreateUserDialog";
 import { formatRelative } from "@/lib/utils";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 export default function AdminUsersPage() {
   const users = useQuery(api.users.listAll);
@@ -28,7 +29,7 @@ export default function AdminUsersPage() {
   const isLoading = users === undefined;
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <PageContainer variant="wide" className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Usuarios</h1>
@@ -112,6 +113,6 @@ export default function AdminUsersPage() {
       </div>
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
-    </div>
+    </PageContainer>
   );
 }
