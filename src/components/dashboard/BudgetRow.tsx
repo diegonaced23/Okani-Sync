@@ -61,7 +61,7 @@ export const BudgetRow = memo(function BudgetRow({ budget }: BudgetRowProps) {
         className="h-1.5 w-full rounded-full overflow-hidden bg-muted"
       >
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-full bar-fill"
           style={{
             width: `${pct}%`,
             backgroundColor: isOver ? "var(--danger)" : isWarning ? "var(--warning)" : (budget.categoryColor ?? "var(--accent)"),

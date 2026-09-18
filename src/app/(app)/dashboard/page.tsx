@@ -30,22 +30,19 @@ import { AccountCard } from "@/components/accounts/AccountCard";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const SpendingChart = dynamic(
-  () => import("@/components/dashboard/SpendingChart").then((m) => ({ default: m.SpendingChart })),
-  { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
+const SpendingBreakdownCard = dynamic(
+  () => import("@/components/dashboard/SpendingBreakdownCard").then((m) => ({ default: m.SpendingBreakdownCard })),
+  // h-72 coincide con el skeleton interno del componente (evita CLS en la carga del bundle)
+  { ssr: false, loading: () => <Skeleton className="h-72 rounded-xl" /> }
 );
 const MonthlyChart = dynamic(
   () => import("@/components/dashboard/MonthlyChart").then((m) => ({ default: m.MonthlyChart })),
   { ssr: false, loading: () => <Skeleton className="h-56 rounded-xl" /> }
 );
-const SpendingBySourceChart = dynamic(
-  () => import("@/components/dashboard/SpendingBySourceChart").then((m) => ({ default: m.SpendingBySourceChart })),
-  // h-48 coincide con el skeleton interno del componente (evita CLS en la carga del bundle)
-  { ssr: false, loading: () => <Skeleton className="h-48 rounded-xl" /> }
-);
 import { currentMonth } from "@/lib/money";
 import { MonthlySnapshotSection } from "@/components/dashboard/MonthlySnapshotSection";
 import { BudgetsMiniList } from "@/components/dashboard/BudgetsMiniList";
+import { GoalsMiniList } from "@/components/dashboard/GoalsMiniList";
 import { lastNMonths } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -107,6 +104,7 @@ export default function DashboardPage() {
   const categories = useQuery(api.categories.list, {});
   const budgets    = useQuery(api.budgets.listByMonthWithCategory, { month: today });
   const savings    = useQuery(api.accounts.monthlySavingsSummary, { month: today });
+  const goals      = useQuery(api.goals.list);
 
   const catMap = useMemo(
     () => Object.fromEntries((categories ?? []).map((c) => [c._id, c.name])),
@@ -121,6 +119,33 @@ export default function DashboardPage() {
   const monthIngresos  = currentTrend?.ingresos ?? 0;
   const monthGastos    = currentTrend?.gastos   ?? 0;
   const spentPct       = monthIngresos > 0 ? Math.round((monthGastos / monthIngresos) * 100) : 0;
+
+  // Base de comparación para los chips de variación mes a mes. `lastNMonths(6)`
+  // viene en orden cronológico, así que el mes previo es el elemento anterior al
+  // actual — no hace falta ninguna query adicional.
+  //
+  // El mes en curso está a medias: el día 17 lleva 17 días de movimientos frente
+  // a los 30 completos del mes pasado. Comparar ambos en crudo daría una caída
+  // falsa casi todos los días del mes, así que se prorratea el mes anterior a la
+  // fracción de días transcurridos. Sigue siendo una aproximación — un ingreso
+  // que cae en un día fijo de nómina distorsiona el chip de Ingresos hasta esa
+  // fecha — pero no invierte el signo como sí hacía la comparación cruda.
+  const prevProrated = useMemo(() => {
+    const months = trend ?? [];
+    const idx = months.findIndex((t) => t.month === today);
+    if (idx <= 0) return undefined;
+    const prev = months[idx - 1];
+
+    const now = new Date();
+    // Día 0 del mes siguiente = último día del mes actual
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const elapsed = now.getDate() / daysInMonth;
+
+    return {
+      ingresos: prev.ingresos * elapsed,
+      gastos: prev.gastos * elapsed,
+    };
+  }, [trend, today]);
 
   const monthName = new Date().toLocaleDateString("es-CO", { month: "long" })
     .replace(/^\w/, (c) => c.toUpperCase());
@@ -183,7 +208,7 @@ export default function DashboardPage() {
       <div className="md:hidden grid grid-cols-4 gap-2.5">
         {QUICK_ACTIONS.map((action) => {
           const { label, icon: Icon, iconClassName } = action;
-          const sharedClass = "flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-xl border border-border bg-card transition-all active:scale-95 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+          const sharedClass = "flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-xl border border-border bg-card transition-[background-color,transform] [transition-duration:var(--dur-fast)] ease-out active:scale-95 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
           const inner = (
             <>
               <span className={`flex items-center justify-center w-10 h-10 rounded-sm ${iconClassName}`}>
@@ -222,14 +247,12 @@ export default function DashboardPage() {
         spentPct={spentPct}
         monthName={monthName}
         currency={currency}
+        prevIngresos={prevProrated?.ingresos}
+        prevGastos={prevProrated?.gastos}
       />
 
-      {/* ── Próximos 30 días ── full width (arriba para que el usuario vea compromisos urgentes de inmediato) */}
-      <div className="md:col-span-2">
-        <UpcomingCommitmentsCard data={upcoming} loading={upcoming === undefined} />
-      </div>
-
-      {/* ── Mis cuentas ── full width; visible en todos los tamaños de pantalla */}
+      {/* ── Mis cuentas ── full width; pegado al hero de patrimonio: el carrusel
+          desglosa el mismo total que muestra la tarjeta de arriba. */}
       <section className="md:col-span-2">
         <div className="flex items-baseline justify-between mb-2.5">
           <h2 className="text-sm font-bold text-foreground">Mis cuentas</h2>
@@ -258,26 +281,33 @@ export default function DashboardPage() {
         )}
       </section>
 
+      {/* ── Próximos 30 días ── full width */}
+      <div className="md:col-span-2">
+        <UpcomingCommitmentsCard data={upcoming} loading={upcoming === undefined} />
+      </div>
+
       {/* ── Evolución del patrimonio ── full width */}
       <div className="md:col-span-2">
         <NetWorthChart data={nwHistory} currency={currency} />
       </div>
 
-      {/* ── Análisis de gastos ── 3 gráficos agrupados bajo una región semántica */}
+      {/* ── Análisis de gastos ── 2 bloques bajo una región semántica.
+           "Por categoría" y "por fuente" son dos vistas del MISMO total del mes,
+           así que comparten tarjeta con pestañas en vez de ocupar dos bloques. */}
       <section aria-label="Análisis de gastos" className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* ── Gastos por categoría ── col 1 */}
+        {/* ── Desglose del gasto (categoría / fuente) ── col 1 */}
         <div>
-          <SpendingChart data={spending} currency={currency} monthName={monthName} />
+          <SpendingBreakdownCard
+            byCategory={spending}
+            bySource={spendingBySource}
+            currency={currency}
+            monthName={monthName}
+          />
         </div>
 
         {/* ── Tendencia 6 meses ── col 2 */}
         <div>
           <MonthlyChart data={trend} currency={currency} />
-        </div>
-
-        {/* ── Gastos por fuente ── full width */}
-        <div className="md:col-span-2">
-          <SpendingBySourceChart data={spendingBySource} currency={currency} monthName={monthName} />
         </div>
       </section>
 
@@ -286,14 +316,18 @@ export default function DashboardPage() {
         <HealthScoreCard data={health} loading={health === undefined} />
       </div>
 
-      {/* ── Ahorro del mes ── full width */}
-      <div className="md:col-span-2">
+      {/* ── Ahorro del mes ── col 1 (la comparativa con el mes anterior venía
+           duplicada como KPI "Ahorro previo" en Salud financiera) */}
+      <div>
         {savings === undefined ? (
           <SavingsCard loading />
         ) : (
-          <SavingsCard {...savings} />
+          <SavingsCard {...savings} prevTasaAhorro={health?.savingsRate} />
         )}
       </div>
+
+      {/* ── Metas de ahorro ── col 2 */}
+      <GoalsMiniList goals={goals} />
 
       {/* ── Últimos movimientos ── col 1 */}
       <section className="space-y-2.5">

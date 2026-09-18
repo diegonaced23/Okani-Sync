@@ -1,13 +1,18 @@
 "use client";
 
 import { formatCents } from "@/lib/money";
-import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Eye, EyeOff, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useState, startTransition, memo } from "react";
 
 // Solo persiste una preferencia booleana de UI — ningún dato financiero toca localStorage
 const STORAGE_KEY = "dashboard:balanceHidden";
+
+// Tinta de la tarjeta: gris-carbón casi neutro. Contraste ≈11:1 sobre el lima y
+// ≈10:1 sobre el cyan del degradado, en modo claro y oscuro por igual.
+const INK = "oklch(0.17 0.012 265)";
+// Rojo oscuro para patrimonio negativo — mismo nivel de luminancia que INK.
+const INK_NEGATIVE = "oklch(0.35 0.15 27)";
 
 interface BalanceCardProps {
   total: number | null | undefined;
@@ -70,7 +75,10 @@ export const BalanceCard = memo(function BalanceCard({
           linear-gradient(135deg, var(--os-lime) 0%, var(--os-cyan) 100%)
         `,
         boxShadow: "var(--shadow-lg), inset 0 1px 0 oklch(1 0 0 / 0.45)",
-        color: "oklch(0.18 0.04 190)",
+        // Literal fijo, NO var(--foreground): el degradado es claro en ambos temas
+        // (--os-lime L 0.85 / --os-cyan L 0.82 en dark), y --foreground se invierte
+        // a casi blanco en .dark — quedaría blanco sobre lima.
+        color: INK,
       }}
     >
       {/* Textura puntillada */}
@@ -122,10 +130,8 @@ export const BalanceCard = memo(function BalanceCard({
         </span>
 
         <p
-          className={cn(
-            "font-mono-num tracking-display text-[40px] font-extrabold leading-none mt-1.5 mb-2 whitespace-nowrap overflow-hidden",
-            isNegative ? "text-[oklch(0.35_0.15_27)]" : "text-[oklch(0.18_0.04_190)]"
-          )}
+          className="font-mono-num tracking-display text-[40px] font-extrabold leading-none mt-1.5 mb-2 whitespace-nowrap overflow-hidden"
+          style={{ color: isNegative ? INK_NEGATIVE : INK }}
           aria-label={hidden ? "Saldo oculto" : undefined}
         >
           {hidden ? <span aria-hidden="true">$ ••••••</span> : formatCents(total ?? 0, currency)}

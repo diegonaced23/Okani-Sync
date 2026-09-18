@@ -69,7 +69,7 @@ export const BudgetsMiniList = memo(function BudgetsMiniList({ budgets }: Budget
             </Link>
           </div>
         ) : (
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-border os-enter">
             {top5.map((budget) => (
               <BudgetRow key={budget._id} budget={budget} />
             ))}

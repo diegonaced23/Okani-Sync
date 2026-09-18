@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { PiggyBank, ArrowRight, AlertTriangle } from "lucide-react";
+import { PiggyBank, ArrowRight, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
@@ -19,6 +19,12 @@ type SavingsCardProps =
       currency: string;
       missingRates?: string[];
       cuentasAhorro: { id: string; name: string; balance: number; color: string }[];
+      /**
+       * Tasa de ahorro del mes anterior (0-100), de financialHealthMetrics.
+       * Misma fórmula que `tasaAhorro` — ahorro ÷ ingresos — sobre el mes previo.
+       * null = sin ingresos el mes pasado; undefined = métrica aún cargando.
+       */
+      prevTasaAhorro?: number | null;
     };
 
 export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
@@ -37,9 +43,15 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
   }
 
   // Después del guard de loading, TypeScript estrecha props a la rama de datos
-  const { totalAhorrado, transferenciasAhorro, gastosMetaVinculada, tasaAhorro, totalIngresos, currency, cuentasAhorro, missingRates = [] } = props;
+  const { totalAhorrado, transferenciasAhorro, gastosMetaVinculada, tasaAhorro, totalIngresos, currency, cuentasAhorro, missingRates = [], prevTasaAhorro } = props;
   const hasSavings = totalAhorrado > 0;
   const tasa = tasaAhorro !== null ? Math.round(tasaAhorro) : null;
+  const prevTasa =
+    prevTasaAhorro !== undefined && prevTasaAhorro !== null ? Math.round(prevTasaAhorro) : null;
+  // Variación en puntos porcentuales — no en %, porque comparar dos porcentajes
+  // en términos relativos ("subió 50%") se malinterpreta.
+  const tasaDeltaPp = tasa !== null && prevTasa !== null ? tasa - prevTasa : null;
+  const totalCuentasAhorro = cuentasAhorro.reduce((s, c) => s + c.balance, 0);
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 space-y-4">
@@ -72,8 +84,38 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
           {formatCents(totalAhorrado, currency)}
         </p>
         {tasa !== null && totalIngresos > 0 && (
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {tasa}% de los ingresos del mes
+          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <span>{tasa}% de los ingresos del mes</span>
+            {prevTasa !== null && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>
+                  mes anterior <strong className="tabular-nums font-semibold">{prevTasa}%</strong>
+                </span>
+                {tasaDeltaPp !== null && tasaDeltaPp !== 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+                    style={{
+                      color: tasaDeltaPp > 0 ? "var(--os-lime-text)" : "var(--destructive)",
+                      background: `color-mix(in oklch, ${tasaDeltaPp > 0 ? "var(--os-lime-text)" : "var(--destructive)"} 12%, transparent)`,
+                    }}
+                  >
+                    {tasaDeltaPp > 0 ? (
+                      <TrendingUp size={10} strokeWidth={2.5} aria-hidden="true" />
+                    ) : (
+                      <TrendingDown size={10} strokeWidth={2.5} aria-hidden="true" />
+                    )}
+                    <span aria-hidden="true">
+                      {tasaDeltaPp > 0 ? "+" : ""}{tasaDeltaPp} pp
+                    </span>
+                    <span className="sr-only">
+                      {tasaDeltaPp > 0 ? "sube" : "baja"} {Math.abs(tasaDeltaPp)} puntos
+                      porcentuales respecto al mes anterior
+                    </span>
+                  </span>
+                )}
+              </>
+            )}
           </p>
         )}
       </div>
@@ -90,7 +132,7 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
           style={{ background: "var(--muted)" }}
         >
           <div
-            className="h-full rounded-full transition-all duration-500"
+            className="h-full rounded-full bar-fill"
             style={{
               width: `${Math.min(100, tasa ?? 0)}%`,
               background: "linear-gradient(90deg, var(--os-cyan), var(--os-lime))",
@@ -131,29 +173,40 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
         </div>
       )}
 
-      {/* ── Cuentas de ahorro ───────────────────────────────────────────────── */}
+      {/* ── Cuentas de ahorro ─────────────────────────────────────────────────
+          Resumen en una línea: el detalle por cuenta ya está en el carrusel
+          "Mis cuentas", que ahora vive justo debajo del hero de patrimonio. */}
       {cuentasAhorro.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Saldos en cuentas de ahorro
-          </p>
-          <div className="space-y-1.5">
-            {cuentasAhorro.slice(0, 3).map((cuenta) => (
-              <div key={cuenta.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="flex-shrink-0 rounded-full"
-                    style={{ width: 8, height: 8, background: cuenta.color }}
-                  />
-                  <span className="text-xs text-foreground truncate">{cuenta.name}</span>
-                </div>
-                <span className="font-mono-num text-xs font-semibold text-foreground ml-3 shrink-0">
-                  {formatCents(cuenta.balance, currency)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        // El fondo va en clases, no en `style` inline: un estilo inline gana
+        // siempre al `hover:` de Tailwind y dejaria el hover sin efecto.
+        <Link
+          href="/cuentas"
+          className="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 border border-border bg-surface-2 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            <span className="flex -space-x-1 shrink-0" aria-hidden="true">
+              {cuentasAhorro.slice(0, 3).map((cuenta) => (
+                <span
+                  key={cuenta.id}
+                  className="rounded-full"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    background: cuenta.color,
+                    // Halo del color de la superficie para separar los puntos solapados
+                    boxShadow: "0 0 0 2px var(--surface-2)",
+                  }}
+                />
+              ))}
+            </span>
+            <span className="text-xs text-muted-foreground truncate">
+              {cuentasAhorro.length} cuenta{cuentasAhorro.length !== 1 ? "s" : ""} de ahorro
+            </span>
+          </span>
+          <span className="font-mono-num text-xs font-bold text-foreground shrink-0">
+            {formatCents(totalCuentasAhorro, currency)}
+          </span>
+        </Link>
       )}
 
       {/* ── Estado vacío ────────────────────────────────────────────────────── */}

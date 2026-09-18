@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, CreditCard, Shield, AlertTriangle } from "lucide-react";
+import { TrendingDown, CreditCard, Shield, AlertTriangle } from "lucide-react";
 
 type MetricStatus = "good" | "warn" | "bad" | "neutral";
 
@@ -53,7 +53,7 @@ function MetricChip({ metric }: { metric: HealthMetric }) {
   const srStatus = STATUS_SR_LABELS[metric.status];
   return (
     // min-w-0: evita desbordamiento del chip en viewports de 320px dentro del grid de 2 columnas
-    <div className={`rounded-xl border border-border bg-card p-3 space-y-2 min-w-0 border-l-[3px] ${classes.border}`}>
+    <div className={`os-enter rounded-xl border border-border bg-card p-3 space-y-2 min-w-0 border-l-[3px] ${classes.border}`}>
       <div className="flex items-center gap-1.5">
         <Icon size={13} className={classes.icon} aria-hidden="true" />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -69,12 +69,6 @@ function MetricChip({ metric }: { metric: HealthMetric }) {
       )}
     </div>
   );
-}
-
-function savingsStatus(rate: number): MetricStatus {
-  if (rate >= 20) return "good";
-  if (rate >= 5)  return "warn";
-  return "bad";
 }
 
 function dtiStatus(ratio: number): MetricStatus {
@@ -100,8 +94,8 @@ export const HealthScoreCard = memo(function HealthScoreCard({ data, loading }: 
     return (
       <section className="space-y-2.5">
         <h2 className="text-sm font-bold text-foreground">Salud financiera</h2>
-        <div className="grid grid-cols-2 gap-2.5">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 [&>*:last-child]:col-span-2 md:[&>*:last-child]:col-span-1">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
       </section>
     );
@@ -110,25 +104,17 @@ export const HealthScoreCard = memo(function HealthScoreCard({ data, loading }: 
   if (data === null) return null;
 
   const {
-    savingsRate, dti, dtiIncomplete,
+    dti, dtiIncomplete,
     creditUtilization, emergencyRunway,
     currency, avgMonthlyExpenses,
     missingRates = [],
   } = data;
 
+  // NOTA: `savingsRate` (tasa de ahorro del mes pasado) ya NO se muestra aquí.
+  // Es la misma fórmula que `tasaAhorro` de monthlySavingsSummary — ahorro ÷ ingresos —
+  // solo que del mes anterior, así que vivía duplicada en dos tarjetas separadas por
+  // media página. SavingsCard la presenta ahora como comparativa junto al mes en curso.
   const metrics: HealthMetric[] = [
-    // Tasa de ahorro del mes pasado (complementa "Ahorro este mes" de SavingsCard, que es el mes actual)
-    {
-      label: "Ahorro previo",
-      value: savingsRate !== null ? `${savingsRate.toFixed(1)}%` : "—",
-      subtext: savingsRate !== null && savingsRate === 0
-        ? "Transfiere a una cuenta de ahorro o vincula un gasto a una meta"
-        : savingsRate !== null
-          ? `del ingreso del mes pasado`
-          : "Sin ingresos el mes pasado",
-      status: savingsRate !== null ? savingsStatus(savingsRate) : "neutral",
-      Icon: TrendingUp,
-    },
     // DTI
     {
       label: "Deuda/Ingreso",
@@ -169,7 +155,8 @@ export const HealthScoreCard = memo(function HealthScoreCard({ data, loading }: 
         <h2 className="text-sm font-bold text-foreground">Salud financiera</h2>
         <span className="text-xs text-muted-foreground">Último mes completo</span>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      {/* 3 KPIs en 2 columnas dejarían un hueco en móvil: el último ocupa el ancho */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 [&>*:last-child]:col-span-2 md:[&>*:last-child]:col-span-1">
         {metrics.map((m) => (
           <MetricChip key={m.label} metric={m} />
         ))}

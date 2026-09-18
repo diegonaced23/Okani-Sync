@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { MoMDelta } from "./MoMDelta";
 
 interface MonthlySnapshotSectionProps {
   /** true mientras la query de tendencia está cargando */
@@ -16,6 +17,10 @@ interface MonthlySnapshotSectionProps {
   /** Nombre capitalizado del mes actual (ej. "Junio") */
   monthName: string;
   currency: string;
+  /** Ingresos del mes anterior — undefined si no hay mes previo en la tendencia */
+  prevIngresos: number | undefined;
+  /** Gastos del mes anterior — undefined si no hay mes previo en la tendencia */
+  prevGastos: number | undefined;
 }
 
 /**
@@ -29,6 +34,8 @@ export const MonthlySnapshotSection = memo(function MonthlySnapshotSection({
   spentPct,
   monthName,
   currency,
+  prevIngresos,
+  prevGastos,
 }: MonthlySnapshotSectionProps) {
   return (
     <section>
@@ -46,28 +53,44 @@ export const MonthlySnapshotSection = memo(function MonthlySnapshotSection({
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-2 gap-4 os-enter">
+              <div className="min-w-0">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <span className="w-2 h-2 rounded-full bg-lime shrink-0" />
                   <span className="text-[11px] text-muted-foreground font-semibold">Ingresos</span>
                 </div>
-                <p className="font-mono-num text-[22px] font-extrabold text-lime-text tracking-[-0.025em]">
-                  {formatCents(monthIngresos, currency)}
-                </p>
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <p className="font-mono-num text-[22px] font-extrabold text-lime-text tracking-[-0.025em]">
+                    {formatCents(monthIngresos, currency)}
+                  </p>
+                  <MoMDelta
+                    current={monthIngresos}
+                    previous={prevIngresos}
+                    polarity="up-good"
+                    srLabel="Ingresos"
+                  />
+                </div>
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <span className="w-2 h-2 rounded-full bg-magenta shrink-0" />
                   <span className="text-[11px] text-muted-foreground font-semibold">Gastos</span>
                 </div>
-                <p className="font-mono-num text-[22px] font-extrabold text-magenta tracking-[-0.025em]">
-                  {formatCents(monthGastos, currency)}
-                </p>
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <p className="font-mono-num text-[22px] font-extrabold text-magenta tracking-[-0.025em]">
+                    {formatCents(monthGastos, currency)}
+                  </p>
+                  <MoMDelta
+                    current={monthGastos}
+                    previous={prevGastos}
+                    polarity="up-bad"
+                    srLabel="Gastos"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="mt-auto space-y-1.5">
+            <div className="mt-auto space-y-1.5 os-enter">
               <div
                 role="progressbar"
                 aria-valuenow={Math.min(100, spentPct)}
@@ -78,7 +101,7 @@ export const MonthlySnapshotSection = memo(function MonthlySnapshotSection({
               >
                 <div
                   className={cn(
-                    "h-full rounded-full transition-all",
+                    "h-full rounded-full bar-fill",
                     spentPct >= 100 ? "bg-danger" : spentPct >= 80 ? "bg-warning" : "bg-lime"
                   )}
                   style={{ width: `${Math.min(100, spentPct)}%` }}
@@ -108,23 +131,39 @@ export const MonthlySnapshotSection = memo(function MonthlySnapshotSection({
             </>
           ) : (
             <>
-              <div className="rounded-xl p-4 bg-[color-mix(in_oklch,var(--os-lime)_12%,var(--card))] border border-[color-mix(in_oklch,var(--os-lime)_28%,var(--border))]">
+              <div className="os-enter rounded-xl p-4 bg-[color-mix(in_oklch,var(--os-lime)_12%,var(--card))] border border-[color-mix(in_oklch,var(--os-lime)_28%,var(--border))]">
                 <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
                   <span className="w-2 h-2 rounded-full bg-lime shrink-0 shadow-[0_0_0_3px_color-mix(in_oklch,var(--os-lime)_28%,transparent)]" />
                   Ingresos
                 </div>
-                <p className="font-mono-num text-[20px] font-extrabold tracking-[-0.025em] text-lime-text">
-                  {formatCents(monthIngresos, currency)}
-                </p>
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <p className="font-mono-num text-[20px] font-extrabold tracking-[-0.025em] text-lime-text">
+                    {formatCents(monthIngresos, currency)}
+                  </p>
+                  <MoMDelta
+                    current={monthIngresos}
+                    previous={prevIngresos}
+                    polarity="up-good"
+                    srLabel="Ingresos"
+                  />
+                </div>
               </div>
-              <div className="rounded-xl p-4 bg-[color-mix(in_oklch,var(--os-magenta)_12%,var(--card))] border border-[color-mix(in_oklch,var(--os-magenta)_28%,var(--border))]">
+              <div className="os-enter rounded-xl p-4 bg-[color-mix(in_oklch,var(--os-magenta)_12%,var(--card))] border border-[color-mix(in_oklch,var(--os-magenta)_28%,var(--border))]">
                 <div className="flex items-center gap-2 mb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
                   <span className="w-2 h-2 rounded-full bg-magenta shrink-0 shadow-[0_0_0_3px_color-mix(in_oklch,var(--os-magenta)_25%,transparent)]" />
                   Gastos
                 </div>
-                <p className="font-mono-num text-[20px] font-extrabold tracking-[-0.025em] text-magenta">
-                  {formatCents(monthGastos, currency)}
-                </p>
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <p className="font-mono-num text-[20px] font-extrabold tracking-[-0.025em] text-magenta">
+                    {formatCents(monthGastos, currency)}
+                  </p>
+                  <MoMDelta
+                    current={monthGastos}
+                    previous={prevGastos}
+                    polarity="up-bad"
+                    srLabel="Gastos"
+                  />
+                </div>
               </div>
             </>
           )}

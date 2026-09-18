@@ -136,7 +136,7 @@ export const UpcomingCommitmentsCard = memo(function UpcomingCommitmentsCard({ d
           </p>
         ) : (
           <>
-            <ul className="divide-y divide-border">
+            <ul className="divide-y divide-border os-enter">
               {visible.map((item: CommitmentItem, idx: number) => (
                 <li key={idx} className="px-4 py-3 flex items-center gap-3 transition-colors hover:bg-muted/40">
                   {/* Icono decorativo — el tipo se anuncia con sr-only en la descripción */}
