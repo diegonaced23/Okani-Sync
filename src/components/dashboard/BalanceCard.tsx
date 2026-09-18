@@ -3,10 +3,8 @@
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Eye, EyeOff, SlidersHorizontal, TrendingDown, TrendingUp } from "lucide-react";
-import { useEffect, useState, startTransition, memo } from "react";
-
-// Solo persiste una preferencia booleana de UI — ningún dato financiero toca localStorage
-const STORAGE_KEY = "dashboard:balanceHidden";
+import { memo } from "react";
+import { useBalanceHidden } from "@/hooks/use-balance-hidden";
 
 // Tinta de la tarjeta: gris-carbón casi neutro. Contraste ≈11:1 sobre el lima y
 // ≈10:1 sobre el cyan del degradado, en modo claro y oscuro por igual.
@@ -43,22 +41,8 @@ export const BalanceCard = memo(function BalanceCard({
   totalDebt,
   totalLoansReceivable,
 }: BalanceCardProps) {
-  // Inicializar en false para que SSR y primer render del cliente coincidan (evita hydration mismatch).
-  const [hidden, setHidden] = useState(false);
-
-  useEffect(() => {
-    startTransition(() => {
-      setHidden(localStorage.getItem(STORAGE_KEY) === "true");
-    });
-  }, []);
-
-  const toggleHidden = () => {
-    setHidden((h) => {
-      const next = !h;
-      localStorage.setItem(STORAGE_KEY, String(next));
-      return next;
-    });
-  };
+  // Compartido con "Mes en curso": el ojo oculta los saldos de ambas tarjetas
+  const [hidden, toggleHidden] = useBalanceHidden();
 
   if (loading || total === undefined) {
     return <Skeleton className="h-40 rounded-2xl" />;

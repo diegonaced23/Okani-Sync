@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { GRADIENT_MAP, ACCOUNT_GRADIENTS } from "@/lib/constants";
 import type { CardBrand } from "@/lib/cardCycle";
 import { BrandLogo } from "./BrandLogo";
+import { cn } from "@/lib/utils";
 
 interface CardFaceProps {
   brand: CardBrand;
@@ -12,6 +13,8 @@ interface CardFaceProps {
   color: string;
   /** Contenido de la esquina inferior derecha (saldo, cupo…). */
   trailing?: ReactNode;
+  /** Para darle un alto fijo desde fuera (p. ej. "h-full"); el pie se pega abajo. */
+  className?: string;
 }
 
 function resolveCard(color: string) {
@@ -21,13 +24,13 @@ function resolveCard(color: string) {
 }
 
 /** Cara visual de la tarjeta. La comparten el listado (CardSummary) y la vista previa del formulario. */
-export function CardFace({ brand, lastFourDigits, name, color, trailing }: CardFaceProps) {
+export function CardFace({ brand, lastFourDigits, name, color, trailing, className }: CardFaceProps) {
   const { background, darkText } = resolveCard(color);
   const textColor = darkText ? "oklch(0.18 0.02 260)" : "white";
 
   return (
     <div
-      className="relative overflow-hidden"
+      className={cn("relative flex flex-col overflow-hidden", className)}
       style={{ background, color: textColor, padding: 18, minHeight: 120 }}
     >
       <span aria-hidden style={{
@@ -43,10 +46,10 @@ export function CardFace({ brand, lastFourDigits, name, color, trailing }: CardF
         }} />
         <BrandLogo brand={brand} size={30} className="opacity-90" />
       </div>
-      <p className="font-mono-num" style={{ fontSize: 15, letterSpacing: "0.18em", fontWeight: 600, opacity: 0.90 }}>
+      <p className="font-mono-num whitespace-nowrap" style={{ fontSize: 15, letterSpacing: "0.18em", fontWeight: 600, opacity: 0.90 }}>
         •••• •••• •••• {lastFourDigits || "••••"}
       </p>
-      <div className="flex justify-between items-end gap-3 mt-2" style={{ fontSize: 11, opacity: 0.80 }}>
+      <div className="mt-auto flex justify-between items-end gap-3 pt-2" style={{ fontSize: 11, opacity: 0.80 }}>
         <span className="truncate">{name}</span>
         {trailing}
       </div>

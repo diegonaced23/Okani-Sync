@@ -4,7 +4,7 @@ import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { GRADIENT_MAP, ACCOUNT_GRADIENTS } from "@/lib/constants";
 import type { Doc } from "../../../convex/_generated/dataModel";
-import { Wallet } from "lucide-react";
+import { Landmark, PiggyBank, TrendingDown, TrendingUp, Users, Wallet, type LucideIcon } from "lucide-react";
 
 export type AccountSummary = Pick<
   Doc<"accounts">,
@@ -15,24 +15,42 @@ interface AccountCardProps {
   account: AccountSummary;
   isShared?: boolean;
   onClick?: () => void;
+  /**
+   * "tile": alto fijo que marca el contenedor, sin sombra ni elevación propias
+   * (las pone CardTilt en el carrusel del dashboard).
+   */
+  variant?: "default" | "tile";
+  /** Oculta el saldo (preferencia del ojo del dashboard) */
+  hideBalance?: boolean;
 }
 
-const TYPE_LABELS: Record<Doc<"accounts">["type"], string> = {
-  billetera: "Billetera",
-  bancaria:  "Bancaria",
-  ahorros:   "Ahorros",
-  inversion: "Inversión",
+const TYPE_META: Record<Doc<"accounts">["type"], { label: string; icon: LucideIcon }> = {
+  billetera: { label: "Efectivo",  icon: Wallet },
+  bancaria:  { label: "Bancaria",  icon: Landmark },
+  ahorros:   { label: "Ahorros",   icon: PiggyBank },
+  inversion: { label: "Inversión", icon: TrendingUp },
 };
 
-function resolveCard(color: string) {
-  const g = GRADIENT_MAP[color];
-  if (g) return { background: g.gradient, darkText: g.darkText };
-  return { background: ACCOUNT_GRADIENTS[0].gradient, darkText: false };
+/** "Itaú · Ahorros · ···9565"; la billetera solo dice "Efectivo". */
+function subtitle(account: AccountSummary) {
+  if (account.type === "billetera") return TYPE_META.billetera.label;
+  return [
+    account.bankName,
+    TYPE_META[account.type].label,
+    account.accountNumber ? `···${account.accountNumber}` : undefined,
+  ].filter(Boolean).join(" · ");
 }
 
-export function AccountCard({ account, isShared, onClick }: AccountCardProps) {
-  const { background, darkText } = resolveCard(account.color);
-  const textColor = darkText ? "oklch(0.18 0.02 260)" : "white";
+/**
+ * Ficha de cuenta. A propósito NO imita un plástico (sin degradado de fondo, chip
+ * ni número enmascarado): eso queda para las tarjetas de crédito (CardFace), para
+ * que ambas se distingan de un vistazo. El color de la cuenta vive solo en la
+ * pastilla del ícono.
+ */
+export function AccountCard({ account, isShared, onClick, variant = "default", hideBalance }: AccountCardProps) {
+  const isTile = variant === "tile";
+  const g = GRADIENT_MAP[account.color] ?? ACCOUNT_GRADIENTS[0];
+  const { icon: Icon } = TYPE_META[account.type];
   const isNegative = account.balance < 0;
 
   return (
@@ -40,62 +58,61 @@ export function AccountCard({ account, isShared, onClick }: AccountCardProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full text-left relative overflow-hidden transition-transform active:scale-[0.985]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        "w-full text-left rounded-[20px] border-[1.5px] border-transparent p-4",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isTile
+          ? "flex h-full flex-col"
+          : cn(
+              "shadow-[inset_0_1px_0_oklch(1_0_0/0.6),0_1px_2px_oklch(0_0_0/0.06),0_6px_16px_-10px_oklch(0_0_0/0.2)]",
+              "dark:shadow-[inset_0_1px_0_oklch(1_0_0/0.06),0_6px_16px_-10px_oklch(0_0_0/0.5)]",
+              "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_oklch(1_0_0/0.6),0_14px_28px_-14px_oklch(0_0_0/0.3)]",
+              "active:scale-[0.985]"
+            )
       )}
       style={{
-        borderRadius: 22,
-        padding: 18,
-        background,
-        color: textColor,
-        minHeight: 130,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        boxShadow: "var(--shadow-md)",
+        // Borde con el color de la cuenta que se funde con el borde neutro: identidad
+        // sin volver al plástico (el degradado de fondo queda para las tarjetas)
+        background: `linear-gradient(var(--card), var(--card)) padding-box,
+          linear-gradient(135deg, color-mix(in oklch, ${g.preview} 75%, transparent), var(--border) 55%) border-box`,
       }}
     >
-      {/* Arco decorativo */}
-      <span aria-hidden style={{
-        position: "absolute", top: -70, right: -70,
-        width: 180, height: 180, borderRadius: "50%",
-        border: "28px solid oklch(1 0 0 / 0.10)",
-        pointerEvents: "none",
-      }} />
-
-      {/* Fila superior: chip + tipo */}
-      <div className="flex justify-between items-start">
-        {/* Chip EMV / ícono billetera */}
-        {account.type === "billetera" ? (
-          <span aria-hidden style={{ flexShrink: 0, opacity: 0.85 }}>
-            <Wallet style={{ width: 26, height: 26 }} strokeWidth={1.8} />
+      <div className="flex items-start gap-3">
+        {/* El ring separa del fondo los colores oscuros (p. ej. "Noche") en modo oscuro */}
+        <span
+          aria-hidden
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-white/15"
+          style={{ background: g.gradient, color: g.darkText ? "oklch(0.18 0.02 260)" : "white" }}
+        >
+          <Icon className="h-5 w-5" strokeWidth={2} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-semibold text-foreground">{account.name}</p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            {isShared && <Users className="h-3 w-3 flex-shrink-0" aria-label="Compartida" />}
+            <span className="truncate">{subtitle(account)}</span>
+          </p>
+        </div>
+        {/* El sobregiro ocupa el lugar de la moneda para no agrandar la ficha;
+            la moneda sigue visible en el símbolo del saldo */}
+        {isNegative ? (
+          <span className="flex flex-shrink-0 items-center gap-1 rounded-md bg-danger/10 px-1.5 py-0.5 text-[10px] font-bold text-danger">
+            <TrendingDown className="h-3 w-3" aria-hidden="true" />
+            Sobregiro
           </span>
         ) : (
-          <span aria-hidden style={{
-            width: 32, height: 22, borderRadius: 5,
-            background: "linear-gradient(135deg, oklch(0.85 0.05 90), oklch(0.65 0.08 60))",
-            flexShrink: 0, position: "relative",
-          }} />
+          <span className="flex-shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            {account.currency}
+          </span>
         )}
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", opacity: 0.85 }}>
-          {account.bankName ?? TYPE_LABELS[account.type]}
-          {isShared && " · Compartida"}
-        </span>
       </div>
 
-      {/* Fila inferior: nombre + saldo + meta */}
-      <div>
-        <p style={{ fontSize: 11, fontWeight: 600, opacity: 0.80, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 2 }}>
-          {account.name}
-        </p>
-        <p className={cn("font-mono-num", isNegative ? "opacity-70" : "")} style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1 }}>
-          {formatCents(account.balance, account.currency)}
-        </p>
-        <p className="flex justify-between items-end" style={{ fontSize: 11, opacity: 0.72, marginTop: 4 }}>
-          <span>{account.accountNumber ? `···${account.accountNumber}` : TYPE_LABELS[account.type]}</span>
-          <span>{account.currency}</span>
-        </p>
-      </div>
+      <p className={cn(
+        "font-mono-num text-2xl font-extrabold tracking-tight whitespace-nowrap",
+        isTile ? "mt-auto" : "mt-4",
+        isNegative ? "text-danger" : "text-foreground"
+      )}>
+        {hideBalance ? "$ ••••••" : formatCents(account.balance, account.currency)}
+      </p>
     </button>
   );
 }

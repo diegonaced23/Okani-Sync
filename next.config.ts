@@ -2,31 +2,30 @@ import type { NextConfig } from "next";
 import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-// Dominio personalizado de Clerk (ej. "clerk.danchest.cloud").
-// Configurar en Vercel: CLERK_CSP_DOMAIN=clerk.danchest.cloud
-// No usar NEXT_PUBLIC_CLERK_DOMAIN — Clerk lo interpreta y altera la carga de scripts.
-const clerkCustomDomain = process.env.CLERK_CSP_DOMAIN;
-const clerkSrc = [
-  "https://*.clerk.accounts.dev",
-  "https://clerk.accounts.dev",
-  ...(clerkCustomDomain ? [`https://${clerkCustomDomain}`] : []),
-].join(" ");
-
 const isDev = process.env.NODE_ENV !== "production";
+
+// Tras la migración a Better Auth (ver docs/migracion-better-auth.md) el login
+// ya no carga nada de Clerk ni de Cloudflare Turnstile: todo va por /api/auth
+// (mismo origen). Solo quedan los hosts de imagen de Clerk, porque los usuarios
+// que tenían foto antes de la migración la siguen sirviendo desde ahí
+// (`users.imageUrl`, heredado). Quitarlos cuando nadie dependa de ese campo.
+const legacyClerkImages = "https://img.clerk.com https://images.clerk.dev";
 
 const csp = [
   "default-src 'self'",
-  // Clerk inyecta scripts inline; Cloudflare Turnstile es requerido por Clerk para bot detection.
+  // 'unsafe-inline': scripts inline de Next.js (hidratación) sin nonce.
   // 'wasm-unsafe-eval': necesario para @react-pdf/renderer (WebAssembly). Más seguro que 'unsafe-eval'.
   // 'unsafe-eval': requerido por React en desarrollo para reconstruir call stacks (solo dev).
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""} ${clerkSrc} https://challenges.cloudflare.com`,
+  // va.vercel-scripts.com: Speed Insights carga su script de depuración desde ahí solo en
+  // desarrollo; en producción lo sirve Vercel desde el mismo origen (/_vercel/...).
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval' https://va.vercel-scripts.com" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://img.clerk.com https://images.clerk.dev",
+  // *.convex.cloud: avatares subidos por el usuario (URLs de Convex storage)
+  `img-src 'self' data: blob: https://*.convex.cloud ${legacyClerkImages}`,
   "font-src 'self' data:",
-  // Convex (REST + WebSocket), Clerk, Sentry
-  `connect-src 'self' https://*.convex.cloud wss://*.convex.cloud ${clerkSrc} https://*.sentry.io wss://*.sentry.io https://challenges.cloudflare.com`,
-  // Clerk OAuth popups y Cloudflare Turnstile iframe
-  `frame-src ${clerkSrc} https://challenges.cloudflare.com`,
+  // Convex (REST + WebSocket), Sentry
+  "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.sentry.io wss://*.sentry.io",
+  "frame-src 'none'",
   "frame-ancestors 'none'",
   // Serwist Service Worker
   "worker-src 'self' blob:",

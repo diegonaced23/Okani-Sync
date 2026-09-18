@@ -383,8 +383,11 @@ export function CardForm({ card, onSuccess }: CardFormProps) {
                         <SelectTrigger id="card-bank" ref={bankRef} className="w-full"
                           aria-invalid={!!errors.bank && !isOtherBank}
                           aria-describedby={errors.bank && !isOtherBank ? "card-bank-error" : undefined}>
-                          <SelectValue placeholder="Elige tu banco" className="truncate">
-                            {(v: string | null) => v === OTHER_BANK ? "Otro" : v}
+                          {/* Con children, Base UI ignora `placeholder`: el vacío se pinta aquí */}
+                          <SelectValue className="truncate">
+                            {(v: string | null) => v === null
+                              ? <span className="text-muted-foreground">Elige tu banco</span>
+                              : v === OTHER_BANK ? "Otro" : v}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent>

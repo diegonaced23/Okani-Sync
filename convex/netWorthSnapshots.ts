@@ -1,22 +1,6 @@
-import { query, internalMutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { getCurrentUserId } from "./lib/auth";
 import { buildRateMap, convertAmount, type RateMap } from "./lib/money";
-
-// ─── Queries ──────────────────────────────────────────────────────────────────
-
-/** Retorna todos los snapshots del usuario ordenados por mes ascendente (para el gráfico). */
-export const listByUser = query({
-  args: {},
-  handler: async (ctx) => {
-    const clerkId = await getCurrentUserId(ctx);
-    return await ctx.db
-      .query("netWorthSnapshots")
-      .withIndex("by_user_month", (q) => q.eq("userId", clerkId))
-      .order("asc")
-      .collect();
-  },
-});
 
 // ─── Helper interno ───────────────────────────────────────────────────────────
 

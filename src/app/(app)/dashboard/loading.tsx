@@ -18,46 +18,33 @@ export default function Loading() {
       <Skeleton className="h-[170px] rounded-2xl" />
       <Skeleton className="hidden md:block h-[170px] rounded-xl" />
 
-      {/* Quick actions — mobile */}
-      <div className="md:hidden grid grid-cols-4 gap-2.5">
-        {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[78px] rounded-xl" />)}
+      {/* Mes en curso — mobile (título + tarjeta de cristal) */}
+      <div className="md:hidden space-y-2.5">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-[172px] rounded-[24px]" />
       </div>
 
-      {/* Mes en curso — mobile (dos mini-tarjetas) */}
-      <div className="md:hidden grid grid-cols-2 gap-3">
-        <Skeleton className="h-[72px] rounded-xl" />
-        <Skeleton className="h-[72px] rounded-xl" />
-      </div>
-
-      {/* Mis cuentas — carrusel horizontal */}
-      <div className="md:col-span-2 flex gap-3 overflow-x-hidden">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="flex-none w-[220px] h-[130px] rounded-2xl" />)}
-      </div>
-
-      {/* Próximos 30 días */}
-      <Skeleton className="md:col-span-2 h-48 rounded-xl" />
-
-      {/* Evolución del patrimonio */}
-      <Skeleton className="md:col-span-2 h-60 rounded-xl" />
-
-      {/* Desglose del gasto (h-72, con pestañas) + tendencia 6 meses (h-56) */}
-      <Skeleton className="h-72 rounded-xl" />
-      <Skeleton className="h-56 rounded-xl" />
-
-      {/* Salud financiera — 3 KPIs; el último ocupa el ancho en móvil */}
-      <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-2.5 [&>*:last-child]:col-span-2 md:[&>*:last-child]:col-span-1">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
-      </div>
-
-      {/* Ahorro del mes + Metas */}
-      <Skeleton className="h-56 rounded-xl" />
-      <Skeleton className="h-56 rounded-xl" />
-
-      {/* Últimos movimientos + Presupuestos */}
-      <div className="rounded-xl bg-card border border-border p-4 space-y-3">
+      {/* Últimos movimientos */}
+      <div className="md:col-span-2 rounded-xl bg-card border border-border p-4 space-y-3">
         {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
       </div>
-      <div className="rounded-xl bg-card border border-border p-4 space-y-3">
+
+      {/* Mis productos — cuentas (fichas) + tarjetas (plásticos) */}
+      <div className="md:col-span-2 space-y-2">
+        <Skeleton className="h-4 w-28" />
+        <div className="flex gap-3 overflow-x-hidden pt-3 pb-5">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="flex-none w-[264px] h-[166px] rounded-[20px]" />)}
+        </div>
+      </div>
+
+      {/* Desglose del gasto (h-72, con pestañas) */}
+      <Skeleton className="md:col-span-2 h-72 rounded-xl" />
+
+      {/* Ahorro del mes (Metas solo aparece si hay metas activas) */}
+      <Skeleton className="md:col-span-2 h-56 rounded-xl" />
+
+      {/* Presupuestos */}
+      <div className="md:col-span-2 rounded-xl bg-card border border-border p-4 space-y-3">
         {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
       </div>
     </PageContainer>

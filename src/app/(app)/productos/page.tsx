@@ -122,9 +122,9 @@ function ProductosContent() {
               Mis cuentas
             </h2>
             {accounts === undefined ? (
-              <div className="space-y-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-20 rounded-xl" />
+                  <Skeleton key={i} className="h-[120px] rounded-[20px]" />
                 ))}
               </div>
             ) : accounts.length === 0 ? (
@@ -132,7 +132,7 @@ function ProductosContent() {
                 No tienes cuentas registradas aún.
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {accounts.map((account) => (
                   <AccountCard
                     key={account._id}
@@ -151,7 +151,7 @@ function ProductosContent() {
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Compartidas conmigo
                 </h2>
-                <div className="space-y-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   {sharedAccounts!.map((account) =>
                     account ? (
                       <AccountCard
@@ -167,20 +167,14 @@ function ProductosContent() {
             </>
           )}
 
-          {/* Botón mobile */}
+          {/* Botón mobile — abre la misma hoja del botón de desktop (ver tarjetas) */}
           <div className="md:hidden">
-            <AppSheet
-              open={openAccount}
-              onOpenChange={setOpenAccount}
-              title="Nueva cuenta"
-              trigger={
-                <Button className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold">
-                  <Plus className="h-5 w-5" /> Agregar cuenta
-                </Button>
-              }
+            <Button
+              onClick={() => setOpenAccount(true)}
+              className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold"
             >
-              <AccountForm onSuccess={() => setOpenAccount(false)} />
-            </AppSheet>
+              <Plus className="h-5 w-5" /> Agregar cuenta
+            </Button>
           </div>
         </div>
       )}

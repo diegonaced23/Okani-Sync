@@ -148,3 +148,6 @@ temp/
 *.tmp
 *.bak
 *.orig
+
+# Capturas y logs del MCP de Playwright
+.playwright-mcp/
