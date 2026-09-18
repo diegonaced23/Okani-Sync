@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+// Solo por su efecto: registra el listener de `beforeinstallprompt` desde el
+// arranque, antes de que el usuario llegue a la tarjeta de instalación del perfil.
+import "@/hooks/usePwaInstall";
 
 export function SWRegistration() {
   useEffect(() => {

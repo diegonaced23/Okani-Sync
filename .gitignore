@@ -56,10 +56,6 @@ next-env.d.ts
 # _generated/ se commitea (tipos TypeScript que afectan el typecheck del equipo)
 .convex/
 
-# ── Serwist / PWA ─────────────────────────────────────────────────────────────
-public/sw.js
-public/sw.js.map
-public/workbox-*.js
 public/workbox-*.js.map
 public/fallback-*.js
 public/fallback-*.js.map

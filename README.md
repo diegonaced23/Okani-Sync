@@ -23,7 +23,7 @@ PWA de gestión de finanzas personales con soporte multi-moneda. Diseñada para 
 | Backend | Convex (BD reactiva + serverless + crons) |
 | Auth | Clerk |
 | Estilos | Tailwind CSS v4 + Shadcn/ui |
-| PWA | Serwist (Service Worker) |
+| PWA | Service Worker propio servido por `src/app/sw.js/route.ts` |
 | Email | Resend |
 | Errores | Sentry (solo producción) |
 | Tests | Vitest |
@@ -94,4 +94,4 @@ npm run test:coverage  # Cobertura (solo src/lib/**)
 ## Notas de implementación
 
 - Los montos en la BD son **enteros × 100** (centavos). Usar `toCents` / `fromCents` / `formatCents` de `src/lib/money.ts`.
-- El Service Worker solo está activo en producción (Serwist lo deshabilita en desarrollo).
+- El Service Worker solo se registra en producción (`SWRegistration` lo omite en desarrollo).

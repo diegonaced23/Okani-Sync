@@ -10,6 +10,7 @@ import { CurrencyCard } from "@/components/perfil/CurrencyCard";
 import { ThemeCard } from "@/components/perfil/ThemeCard";
 import { PasswordCard } from "@/components/perfil/PasswordCard";
 import { PushCard } from "@/components/perfil/PushCard";
+import { InstallAppCard } from "@/components/perfil/InstallAppCard";
 import { NotificationPrefsCard } from "@/components/perfil/NotificationPrefsCard";
 import { SessionsCard } from "@/components/perfil/SessionsCard";
 import { ExportDataCard } from "@/components/perfil/ExportDataCard";
@@ -36,6 +37,7 @@ export default function PerfilPage() {
       <CurrencyCard currency={me?.currency ?? "COP"} />
       <ThemeCard />
       <PasswordCard email={me.email} />
+      <InstallAppCard />
       <PushCard />
       <NotificationPrefsCard prefs={me.notificationPrefs} />
 

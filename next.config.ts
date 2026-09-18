@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -27,7 +26,7 @@ const csp = [
   "connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.sentry.io wss://*.sentry.io",
   "frame-src 'none'",
   "frame-ancestors 'none'",
-  // Serwist Service Worker
+  // Service Worker (src/app/sw.js/route.ts)
   "worker-src 'self' blob:",
   "manifest-src 'self'",
 ].join("; ");
@@ -60,16 +59,10 @@ const baseConfig: NextConfig = {
   },
 };
 
-const withSerwist = withSerwistInit({
-  swSrc: "src/app/sw.ts",
-  swDest: "public/sw.js",
-  disable: process.env.NODE_ENV === "development",
-});
-
 // En dev: config base sin webpack plugins
-// En prod: Serwist (SW) + Sentry (error tracking)
+// En prod: Sentry (error tracking)
 const productionConfig = withSentryConfig(
-  withSerwist(baseConfig),
+  baseConfig,
   {
     org: process.env.SENTRY_ORG,
     project: process.env.SENTRY_PROJECT,

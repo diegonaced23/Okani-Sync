@@ -83,10 +83,8 @@ Okany Sync es una Progressive Web App (PWA) en español (es-CO) que centraliza l
 ```
 okany-sync/
 ├── public/
-│   ├── icons/                     # Iconos PWA (192, 512, maskable) - placeholder
+│   ├── icons/                     # Íconos PWA (192, 512, maskable) y badge de notificaciones
 │   ├── logo-placeholder.svg       # Logo provisional
-│   ├── manifest.json              # Manifest PWA en español
-│   └── sw.js                      # Service Worker (generado por next-pwa)
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx             # ClerkProvider + ConvexProvider + ThemeProvider
@@ -547,7 +545,7 @@ export function calculateInstallment(
 
 ## 13. Configuración PWA
 
-- `public/manifest.json`: `name: "Okany Sync"`, `short_name: "Okany"`, `lang: "es-CO"`, theme color `#1F262A`, background `#1F262A`.
+- `src/app/manifest.ts` (servido por Next en `/manifest.webmanifest`): `name: "Okany Sync"`, `short_name: "Okany"`, `lang: "es-CO"`, theme color `#1F262A`, background `#1F262A`.
 - Iconos placeholder 192/512/maskable hasta tener logo final.
 - `next-pwa` con runtime caching para queries Convex (`NetworkFirst` + fallback offline).
 - Splash screen iOS via meta tags.
