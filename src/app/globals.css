@@ -483,17 +483,6 @@
   100% { background-position:  200% 0; }
 }
 
-/* ─── Pulse ring para FAB ─────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: no-preference) {
-  .pulse-ring {
-    animation: os-pulse-ring 2.6s ease-in-out infinite;
-  }
-}
-@keyframes os-pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--os-lime) 55%, transparent), 0 10px 28px -4px color-mix(in oklch, var(--os-lime) 50%, transparent); }
-  50%       { box-shadow: 0 0 0 10px color-mix(in oklch, var(--os-lime) 0%, transparent),  0 10px 28px -4px color-mix(in oklch, var(--os-lime) 50%, transparent); }
-}
-
 /* ─── Progress bar con gradiente ─────────────────────────────────────────── */
 .progress-bar {
   height: 8px;
@@ -574,3 +563,146 @@
 }
 @keyframes os-fade-in  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes os-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* ─── Vidrio líquido estilo iOS (sidebar de escritorio y BottomNav) ──────────
+   Material de las barras flotantes. La superficie es translúcida con
+   blur + saturación; el canto lleva un borde degradado (más brillante arriba,
+   como la luz que cae sobre el vidrio) pintado con máscara en ::before, y
+   ::after añade el brillo especular superior. Sin backdrop-filter se queda en
+   la superficie sólida, igual que .os-glass-menu, para no perder contraste.
+   El radio y el posicionamiento (fixed/relative) los pone quien la usa: los
+   pseudo-elementos heredan el radio y necesitan un contenedor posicionado. */
+.os-liquid-glass {
+  isolation: isolate;
+  background: var(--surface);
+  box-shadow:
+    0 1px 1px oklch(0 0 0 / 0.04),
+    0 12px 32px -12px oklch(0.18 0.02 260 / 0.18),
+    0 32px 72px -24px oklch(0.18 0.02 260 / 0.22);
+}
+.dark .os-liquid-glass {
+  box-shadow:
+    0 1px 1px oklch(0 0 0 / 0.30),
+    0 12px 32px -12px oklch(0 0 0 / 0.55),
+    0 32px 72px -24px oklch(0 0 0 / 0.60);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .os-liquid-glass {
+    background: color-mix(in oklch, var(--surface) 58%, transparent);
+    -webkit-backdrop-filter: blur(40px) saturate(1.9);
+    backdrop-filter: blur(40px) saturate(1.9);
+  }
+  .dark .os-liquid-glass {
+    background: color-mix(in oklch, var(--surface) 52%, transparent);
+  }
+}
+.os-liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    165deg,
+    oklch(1 0 0 / 0.95) 0%,
+    oklch(1 0 0 / 0.35) 28%,
+    color-mix(in oklch, var(--foreground) 8%, transparent) 60%,
+    oklch(1 0 0 / 0.45) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  z-index: 2;
+}
+.dark .os-liquid-glass::before {
+  background: linear-gradient(
+    165deg,
+    oklch(1 0 0 / 0.30) 0%,
+    oklch(1 0 0 / 0.08) 30%,
+    oklch(1 0 0 / 0.04) 60%,
+    oklch(1 0 0 / 0.14) 100%
+  );
+}
+.os-liquid-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(120% 126px at 20% 0%, oklch(1 0 0 / 0.55), transparent 60%);
+  opacity: 0.55;
+  z-index: -1;
+}
+.dark .os-liquid-glass::after { opacity: 0.10; }
+
+/* Píldora de la sección activa: vidrio dentro del vidrio, con tinte lima.
+   El radio lo pone quien la usa. */
+.os-glass-pill {
+  background:
+    linear-gradient(135deg,
+      color-mix(in oklch, var(--os-lime) 20%, transparent),
+      color-mix(in oklch, var(--os-cyan) 12%, transparent)),
+    oklch(1 0 0 / 0.55);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.85),
+    inset 0 0 0 0.5px color-mix(in oklch, var(--os-lime) 40%, transparent),
+    0 6px 16px -8px color-mix(in oklch, var(--os-lime) 55%, transparent),
+    0 1px 2px oklch(0 0 0 / 0.06);
+}
+.dark .os-glass-pill {
+  background:
+    linear-gradient(135deg,
+      color-mix(in oklch, var(--os-lime) 22%, transparent),
+      color-mix(in oklch, var(--os-cyan) 12%, transparent)),
+    oklch(1 0 0 / 0.06);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.16),
+    inset 0 0 0 0.5px color-mix(in oklch, var(--os-lime) 35%, transparent),
+    0 8px 20px -10px color-mix(in oklch, var(--os-lime) 45%, transparent);
+}
+
+/* Cápsula de la cuenta en el pie del sidebar. */
+.os-glass-well {
+  border-radius: 20px;
+  background: oklch(1 0 0 / 0.45);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.7),
+    inset 0 0 0 0.5px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.dark .os-glass-well {
+  background: oklch(1 0 0 / 0.04);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.08),
+    inset 0 0 0 0.5px oklch(1 0 0 / 0.06);
+}
+
+/* Separador fino que se desvanece hacia los extremos. */
+.os-hairline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--foreground) 10%, transparent) 20%, color-mix(in oklch, var(--foreground) 10%, transparent) 80%, transparent);
+}
+
+/* El scroll del nav se funde con el vidrio en lugar de cortarse en seco. */
+.os-sidebar-scroll {
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+}
+.os-sidebar-scroll::-webkit-scrollbar { display: none; }
+
+/* Botón «Nuevo» del BottomNav: gota de gel con brillo interior. */
+.os-gel-button {
+  background:
+    radial-gradient(120% 80% at 30% 15%, oklch(1 0 0 / 0.55), transparent 55%),
+    linear-gradient(135deg, var(--os-lime), var(--os-cyan));
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.7),
+    inset 0 -2px 6px oklch(0 0 0 / 0.10),
+    0 8px 20px -6px color-mix(in oklch, var(--os-lime) 60%, transparent);
+  transition: transform 300ms var(--ease-spring);
+}
+.os-gel-button:active { transform: scale(0.9); }
+@media (hover: hover) {
+  .os-gel-button:hover { transform: scale(1.06) rotate(8deg); }
+}

@@ -3,14 +3,19 @@ import { PageContainer } from "@/components/layout/PageContainer";
 
 export default function Loading() {
   return (
-    <PageContainer className="space-y-6">
-      <div className="space-y-1">
-        <Skeleton className="h-7 w-52" />
-        <Skeleton className="h-4 w-44" />
+    <PageContainer className="space-y-5">
+      <div className="flex items-end justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-44" />
+          <Skeleton className="h-4 w-28" />
+        </div>
+        <Skeleton className="h-10 w-10 rounded-full" />
       </div>
-      <div className="space-y-3">
+      <Skeleton className="h-[168px] rounded-[28px]" />
+      <Skeleton className="h-11 rounded-[18px]" />
+      <div className="space-y-1.5 rounded-[24px] border border-border p-2">
         {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-24 rounded-xl" />
+          <Skeleton key={i} className="h-14 rounded-[16px]" />
         ))}
       </div>
     </PageContainer>

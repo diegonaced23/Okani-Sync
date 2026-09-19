@@ -308,6 +308,7 @@ export default defineSchema({
     color: v.string(),
     icon: v.string(),
     notes: v.optional(v.string()),
+    archived: v.optional(v.boolean()),  // archivada: fuera de la lista y de las alertas
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -492,7 +493,8 @@ export default defineSchema({
     startDate: v.number(),
     endDate: v.optional(v.number()),
     nextOccurrence: v.number(),
-    active: v.boolean(),
+    active: v.boolean(),            // false = eliminado (soft delete)
+    paused: v.optional(v.boolean()), // pausado por el usuario: el cron lo salta
     currency: v.string(),
     notes: v.optional(v.string()),
     createdAt: v.number(),

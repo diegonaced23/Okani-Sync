@@ -1,23 +1,9 @@
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { assertCanWrite } from "./lib/permissions";
+import { applyAccountDelta, deleteTransactionWithEffects, reopenedStatus } from "./lib/transactionEffects";
 import { toMonthString } from "./lib/utils";
-
-async function applyAccountDelta(
-  ctx: MutationCtx,
-  accountId: Id<"accounts">,
-  delta: number
-) {
-  const account = await ctx.db.get(accountId);
-  if (!account) throw new Error("Cuenta no encontrada");
-  await ctx.db.patch(accountId, {
-    balance: account.balance + delta,
-    updatedAt: Date.now(),
-  });
-}
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -149,8 +135,10 @@ export const update = mutation({
     color: v.optional(v.string()),
     icon: v.optional(v.string()),
     notes: v.optional(v.string()),
+    /** Quitar campos opcionales */
+    clear: v.optional(v.array(v.union(v.literal("dueDate"), v.literal("notes")))),
   },
-  handler: async (ctx, { loanId, ...fields }) => {
+  handler: async (ctx, { loanId, clear, ...fields }) => {
     if (fields.name !== undefined && (fields.name.length === 0 || fields.name.length > 100)) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
     if (fields.borrower !== undefined && (fields.borrower.length === 0 || fields.borrower.length > 100)) throw new Error("El nombre de la persona debe tener entre 1 y 100 caracteres");
     if (fields.notes !== undefined && fields.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
@@ -159,9 +147,17 @@ export const update = mutation({
     const loan = await ctx.db.get(loanId);
     if (!loan || loan.userId !== user.clerkId) throw new Error("Préstamo no encontrado");
 
-    const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    const now = Date.now();
+    const patch: Record<string, unknown> = { updatedAt: now };
     for (const [k, val] of Object.entries(fields)) {
-      if (val !== undefined) patch[k] = val;
+      if (val !== undefined) patch[k] = typeof val === "string" ? val.trim() : val;
+    }
+    for (const k of clear ?? []) patch[k] = undefined;
+
+    // Mover o quitar la fecha de devolución reevalúa si sigue vencido
+    if (loan.status !== "pagada" && ("dueDate" in patch)) {
+      const due = patch.dueDate as number | undefined;
+      patch.status = due !== undefined && due < now ? "vencida" : "activa";
     }
     await ctx.db.patch(loanId, patch);
   },
@@ -186,6 +182,7 @@ export const addRepayment = mutation({
     if (!loan || loan.userId !== user.clerkId) throw new Error("Préstamo no encontrado");
     if (loan.status === "pagada") throw new Error("Este préstamo ya está pagado");
     if (loan.archived) throw new Error("No se puede abonar a un préstamo archivado");
+    if (args.amount > loan.currentBalance) throw new Error("El abono supera el saldo pendiente");
 
     if (args.toAccountId) {
       await assertCanWrite(ctx, args.toAccountId);
@@ -261,23 +258,19 @@ export const remove = mutation({
     if (!loan || loan.userId !== user.clerkId) throw new Error("Préstamo no encontrado");
     if (!loan.archived) throw new Error("Solo se pueden eliminar préstamos archivados");
 
-    // Revertir transacciones vinculadas (deshacer deltas de cuenta)
+    // Revertir y borrar los movimientos vinculados. Antes esto invertía el signo
+    // solo para "ingreso", que un préstamo nunca genera: los cobros
+    // (prestamo_cobrado) se sumaban otra vez a la cuenta en lugar de restarse.
     const txs = await ctx.db
       .query("transactions")
       .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
       .filter((q) => q.eq(q.field("loanId"), loanId))
       .collect();
-
     for (const tx of txs) {
-      // Revertir delta de cuenta si aplica
-      if (tx.accountId) {
-        const delta = tx.type === "ingreso" ? -tx.amount : tx.amount;
-        await applyAccountDelta(ctx, tx.accountId, delta);
-      }
-      await ctx.db.delete(tx._id);
+      await deleteTransactionWithEffects(ctx, tx);
     }
 
-    // Eliminar abonos
+    // Abonos que quedaran sin movimiento enlazado
     const repayments = await ctx.db
       .query("loanRepayments")
       .withIndex("by_loan", (q) => q.eq("loanId", loanId))
@@ -290,6 +283,30 @@ export const remove = mutation({
   },
 });
 
+/** Borra un abono recibido: el préstamo vuelve a deber ese monto y la cuenta se revierte. */
+export const removeRepayment = mutation({
+  args: { repaymentId: v.id("loanRepayments") },
+  handler: async (ctx, { repaymentId }) => {
+    const user = await getCurrentUser(ctx);
+    const repayment = await ctx.db.get(repaymentId);
+    if (!repayment || repayment.userId !== user.clerkId) throw new Error("Abono no encontrado");
+    const tx = repayment.transactionId ? await ctx.db.get(repayment.transactionId) : null;
+    if (tx) {
+      await deleteTransactionWithEffects(ctx, tx);
+      return;
+    }
+    const loan = await ctx.db.get(repayment.loanId);
+    if (loan) {
+      await ctx.db.patch(loan._id, {
+        currentBalance: loan.currentBalance + repayment.amount,
+        status: reopenedStatus(loan.status, loan.dueDate),
+        updatedAt: Date.now(),
+      });
+    }
+    await ctx.db.delete(repaymentId);
+  },
+});
+
 // ─── Internals para el cron ───────────────────────────────────────────────────
 
 export const listOverdue = internalQuery({
@@ -299,7 +316,7 @@ export const listOverdue = internalQuery({
       .query("loans")
       .filter((q) => q.eq(q.field("status"), "activa"))
       .collect();
-    return all.filter((l) => l.dueDate !== undefined && l.dueDate < now);
+    return all.filter((l) => !l.archived && l.dueDate !== undefined && l.dueDate < now);
   },
 });
 
@@ -312,7 +329,7 @@ export const listDueSoon = internalQuery({
         q.eq("status", "activa").gte("dueDate", now)
       )
       .take(500);
-    return dueSoon.filter((l) => l.dueDate !== undefined && l.dueDate <= beforeTs);
+    return dueSoon.filter((l) => !l.archived && l.dueDate !== undefined && l.dueDate <= beforeTs);
   },
 });
 

@@ -6,6 +6,19 @@ import { getSystemInterestsCategoryId } from "./utils";
 
 // ─── Helpers de delta ─────────────────────────────────────────────────────────
 
+/**
+ * Estado de una deuda o préstamo al que se le devuelve saldo (se borra un abono).
+ * Si estaba saldado vuelve a quedar pendiente: vencido si su fecha límite ya pasó.
+ */
+export function reopenedStatus(
+  status: "activa" | "pagada" | "vencida",
+  dueDate: number | undefined,
+  now = Date.now()
+): "activa" | "vencida" {
+  if (status === "vencida") return "vencida";
+  return dueDate !== undefined && dueDate < now ? "vencida" : "activa";
+}
+
 export async function applyAccountDelta(
   ctx: MutationCtx,
   accountId: Id<"accounts">,
@@ -113,8 +126,10 @@ export async function applyGoalDelta(
  *   debe garantizar que no llame a esta función dos veces con piernas del mismo grupo
  *   (usar un Set de transferGroupId procesados).
  *
- * Alcance actual: revierte efectos sobre cuentas, tarjetas, presupuestos y deudas
- * (`pago_deuda` restaura `debts.currentBalance` y elimina el `debtPayments` asociado).
+ * Alcance actual: revierte efectos sobre cuentas, tarjetas, presupuestos, deudas
+ * (`pago_deuda` restaura `debts.currentBalance` y elimina el `debtPayments` asociado)
+ * y préstamos (`prestamo_cobrado` restaura `loans.currentBalance` y elimina el
+ * `loanRepayments` asociado).
  */
 export async function deleteTransactionWithEffects(
   ctx: MutationCtx,
@@ -215,7 +230,7 @@ export async function deleteTransactionWithEffects(
     if (debt) {
       await ctx.db.patch(tx.debtId, {
         currentBalance: debt.currentBalance + tx.amount,
-        status: debt.status === "pagada" ? "activa" : debt.status,
+        status: reopenedStatus(debt.status, debt.dueDate),
         updatedAt: Date.now(),
       });
     }
@@ -225,6 +240,24 @@ export async function deleteTransactionWithEffects(
       .collect();
     const linkedPayment = payments.find((p) => p.transactionId === tx._id);
     if (linkedPayment) await ctx.db.delete(linkedPayment._id);
+  }
+
+  // Revertir prestamo_cobrado: el préstamo vuelve a deber ese monto y se borra el abono
+  if (tx.type === "prestamo_cobrado" && tx.loanId) {
+    const loan = await ctx.db.get(tx.loanId);
+    if (loan) {
+      await ctx.db.patch(tx.loanId, {
+        currentBalance: loan.currentBalance + tx.amount,
+        status: reopenedStatus(loan.status, loan.dueDate),
+        updatedAt: Date.now(),
+      });
+    }
+    const repayments = await ctx.db
+      .query("loanRepayments")
+      .withIndex("by_loan", (q) => q.eq("loanId", tx.loanId!))
+      .collect();
+    const linkedRepayment = repayments.find((r) => r.transactionId === tx._id);
+    if (linkedRepayment) await ctx.db.delete(linkedRepayment._id);
   }
 
   await ctx.db.delete(tx._id);

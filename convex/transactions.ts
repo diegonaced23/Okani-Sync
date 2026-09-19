@@ -891,7 +891,13 @@ export const listDueRecurring = internalQuery({
     return await ctx.db
       .query("recurringTransactions")
       .withIndex("by_next_occurrence", (q) => q.lte("nextOccurrence", now))
-      .filter((q) => q.eq(q.field("active"), true))
+      // `paused` es opcional: las filas anteriores a la pausa no lo tienen (undefined)
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("active"), true),
+          q.or(q.eq(q.field("paused"), undefined), q.eq(q.field("paused"), false))
+        )
+      )
       .collect();
   },
 });

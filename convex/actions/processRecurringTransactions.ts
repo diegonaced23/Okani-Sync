@@ -2,33 +2,7 @@
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { notify } from "../lib/notify";
-
-const FREQ_TO_MS: Record<string, number> = {
-  diaria:    1 * 24 * 60 * 60 * 1000,
-  semanal:   7 * 24 * 60 * 60 * 1000,
-  quincenal: 15 * 24 * 60 * 60 * 1000,
-  mensual:   30 * 24 * 60 * 60 * 1000, // aproximado; se ajusta por día del mes
-  anual:     365 * 24 * 60 * 60 * 1000,
-};
-
-function nextOccurrenceAfter(frequency: string, fromTs: number, dayOfMonth?: number): number {
-  if (frequency === "mensual" && dayOfMonth) {
-    // Calcular mes destino sin overflow: si dayOfMonth > último día del mes destino,
-    // clampear (ej: día 31 en febrero → 28). La próxima ocurrencia en marzo vuelve al 31.
-    const d = new Date(fromTs);
-    const rawMonth = d.getMonth() + 1;
-    const targetYear = d.getFullYear() + Math.floor(rawMonth / 12);
-    const targetMonth = rawMonth % 12;
-    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-    return new Date(targetYear, targetMonth, Math.min(dayOfMonth, lastDay), 0, 0, 0, 0).getTime();
-  }
-  if (frequency === "anual") {
-    const d = new Date(fromTs);
-    d.setFullYear(d.getFullYear() + 1);
-    return d.getTime();
-  }
-  return fromTs + (FREQ_TO_MS[frequency] ?? FREQ_TO_MS.mensual);
-}
+import { ENDED_OCCURRENCE, nextOccurrenceAfter } from "../../src/lib/recurrence";
 
 export const run = internalAction({
   args: {},
@@ -43,17 +17,21 @@ export const run = internalAction({
     const processed: Record<string, string[]> = {};
 
     for (const rec of due) {
+      // listDueRecurring ya excluye los pausados; esto es solo defensa
+      if (rec.paused) continue;
+
       // Validar fecha de fin — desactivar atomicamente (ya es mutación única)
       if (rec.endDate && rec.endDate < now) {
         await ctx.runMutation(internal.transactions.updateNextOccurrence, {
           recurringId: rec._id,
-          nextOccurrence: Number.MAX_SAFE_INTEGER,
+          nextOccurrence: ENDED_OCCURRENCE,
         });
         continue;
       }
 
       try {
-        const next = nextOccurrenceAfter(rec.frequency, now, rec.dayOfMonth);
+        // Avanza desde la ocurrencia vencida (no desde `now`) para no correr la fecha
+        const next = nextOccurrenceAfter(rec.frequency, rec.nextOccurrence, now, rec.dayOfMonth);
 
         if (rec.cardId && rec.type === "gasto") {
           // Gastos con tarjeta: crear compra y avanzar nextOccurrence atómicamente

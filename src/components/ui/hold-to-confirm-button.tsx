@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { haptic } from "./shared";
+import { haptic } from "@/lib/ios";
 
 /**
  * Botón destructivo de "mantener presionado": un relleno avanza mientras el dedo

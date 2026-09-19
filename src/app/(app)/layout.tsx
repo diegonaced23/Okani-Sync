@@ -32,7 +32,7 @@ export default async function AppLayout({
           <Sidebar />
 
           {/* Área principal — min-w-0 evita que el flex item se expanda más allá del viewport */}
-          <div className="flex flex-1 flex-col min-w-0 lg:pl-64 overflow-x-hidden">
+          <div className="flex flex-1 flex-col min-w-0 lg:pl-[17.5rem] overflow-x-hidden">
             <Header />
             <PushSubscriptionBanner />
             <main id="main-content" className="flex-1 px-4 py-6 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-8">

@@ -8,7 +8,7 @@ import { AppSheet } from "@/components/ui/app-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { cn } from "@/lib/utils";
-import { HoldToConfirmButton } from "./HoldToConfirmButton";
+import { HoldToConfirmButton } from "@/components/ui/hold-to-confirm-button";
 import { EASE_OUT_EXPO, haptic, isTypeCompatible, tint, type Category } from "./shared";
 
 /**

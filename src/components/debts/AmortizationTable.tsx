@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { formatCents } from "@/lib/money";
 import type { AmortizationResult } from "@/lib/money";
+import { GLASS_SURFACE } from "@/lib/ios";
+import { cn } from "@/lib/utils";
 
 interface AmortizationTableProps {
   result: AmortizationResult;
@@ -29,21 +31,21 @@ export function AmortizationTable({ result, currency }: AmortizationTableProps) 
     <div className="space-y-4">
       {/* Resumen */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
+        <div className={cn("rounded-[20px] p-3 text-center", GLASS_SURFACE)}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Cuotas restantes
           </p>
           <p className="text-xl font-bold text-foreground tabular-nums">{totalPayments}</p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
+        <div className={cn("rounded-[20px] p-3 text-center", GLASS_SURFACE)}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Total intereses
           </p>
-          <p className="text-lg font-bold tabular-nums" style={{ color: "#F59E0B" }}>
+          <p className="text-lg font-bold tabular-nums" style={{ color: "var(--os-orange)" }}>
             {formatCents(totalInterest, currency)}
           </p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
+        <div className={cn("rounded-[20px] p-3 text-center", GLASS_SURFACE)}>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
             Liquidación
           </p>
@@ -52,7 +54,7 @@ export function AmortizationTable({ result, currency }: AmortizationTableProps) 
       </div>
 
       {/* Tabla */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className={cn("overflow-hidden rounded-[24px]", GLASS_SURFACE)}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -70,10 +72,10 @@ export function AmortizationTable({ result, currency }: AmortizationTableProps) 
                 <tr key={row.monthNumber} className="hover:bg-muted/20 transition-colors">
                   <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">{row.monthNumber}</td>
                   <td className="px-3 py-2.5 text-xs font-medium text-foreground">{monthLabel(row.month)}</td>
-                  <td className="px-3 py-2.5 text-xs text-right tabular-nums" style={{ color: "var(--os-lime)" }}>
+                  <td className="px-3 py-2.5 text-xs text-right tabular-nums text-lime-text">
                     {formatCents(row.principal, currency)}
                   </td>
-                  <td className="px-3 py-2.5 text-xs text-right tabular-nums" style={{ color: "#F59E0B" }}>
+                  <td className="px-3 py-2.5 text-xs text-right tabular-nums" style={{ color: "var(--os-orange)" }}>
                     {formatCents(row.interest, currency)}
                   </td>
                   <td className="px-3 py-2.5 text-xs text-right tabular-nums font-semibold text-foreground">
@@ -89,10 +91,10 @@ export function AmortizationTable({ result, currency }: AmortizationTableProps) 
             <tfoot>
               <tr className="border-t-2 border-border bg-muted/30">
                 <td className="px-3 py-2.5 text-xs font-bold text-foreground" colSpan={2}>Total</td>
-                <td className="px-3 py-2.5 text-xs text-right tabular-nums font-bold" style={{ color: "var(--os-lime)" }}>
+                <td className="px-3 py-2.5 text-xs text-right tabular-nums font-bold text-lime-text">
                   {formatCents(totalPaid - totalInterest, currency)}
                 </td>
-                <td className="px-3 py-2.5 text-xs text-right tabular-nums font-bold" style={{ color: "#F59E0B" }}>
+                <td className="px-3 py-2.5 text-xs text-right tabular-nums font-bold" style={{ color: "var(--os-orange)" }}>
                   {formatCents(totalInterest, currency)}
                 </td>
                 <td className="px-3 py-2.5 text-xs text-right tabular-nums font-bold text-foreground">

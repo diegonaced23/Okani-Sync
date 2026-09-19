@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function PrestamosPage() {
-  redirect("/deudas");
+  redirect("/deudas?tab=prestamos");
 }

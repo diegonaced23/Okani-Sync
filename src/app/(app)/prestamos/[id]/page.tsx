@@ -1,317 +1,131 @@
 "use client";
 
-import { use, useState, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { use, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { Archive, ArchiveRestore, HandCoins, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Pencil, Archive, ArchiveRestore, Trash2, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { AppSheet } from "@/components/ui/app-sheet";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
-import { LoanForm } from "@/components/loans/LoanForm";
-import { LoanRepaymentSheet } from "@/components/loans/LoanRepaymentSheet";
-import { LoanRepaymentList } from "@/components/loans/LoanRepaymentList";
-import { formatCents } from "@/lib/money";
-import { formatDateShort } from "@/lib/utils";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoanSheet } from "@/components/debts/LoanSheet";
+import { PaymentSheet } from "@/components/debts/PaymentSheet";
+import { ActionButton, BackButton, DetailHero, PaymentHistory } from "@/components/debts/detail";
+import { fromLoan } from "@/components/debts/shared";
+import { FIELD_LABEL, GLASS_SURFACE, haptic } from "@/lib/ios";
+import { cn } from "@/lib/utils";
 
-const STATUS_CONFIG = {
-  activa:  { label: "Activo",  variant: "secondary" as const },
-  pagada:  { label: "Cobrado", variant: "outline" as const },
-  vencida: { label: "Vencido", variant: "destructive" as const },
-};
+const BACK = "/deudas?tab=prestamos";
 
-export default function LoanDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function LoanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const loanId = id as Id<"loans">;
   const router = useRouter();
 
   const loan = useQuery(api.loans.getById, { loanId });
+  const repayments = useQuery(api.loanRepayments.listByLoan, { loanId });
+  const removeRepayment = useMutation(api.loans.removeRepayment);
+  const setArchived = useMutation(api.loans.setArchived);
 
-  const setArchived  = useMutation(api.loans.setArchived);
-  const removeLoan   = useMutation(api.loans.remove);
-
-  const [editOpen, setEditOpen]         = useState(false);
-  const [repayOpen, setRepayOpen]       = useState(false);
-  const [deleteOpen, setDeleteOpen]     = useState(false);
-  const [deleting, setDeleting]         = useState(false);
-  const [archiving, setArchiving]       = useState(false);
-
-  const renderNow = useState(() => Date.now())[0];
-  const { overdueDays, daysLeft, collectedPercent } = useMemo(() => {
-    const orig = loan?.originalAmount ?? 0;
-    const curr = loan?.currentBalance ?? 0;
-    const due  = loan?.dueDate;
-    return {
-      collectedPercent: orig > 0 ? Math.min(100, ((orig - curr) / orig) * 100) : 100,
-      overdueDays: due && due < renderNow ? Math.floor((renderNow - due) / (24 * 60 * 60 * 1000)) : 0,
-      daysLeft:    due && due >= renderNow ? Math.ceil((due - renderNow) / (24 * 60 * 60 * 1000)) : 0,
-    };
-  }, [loan?.originalAmount, loan?.currentBalance, loan?.dueDate, renderNow]);
+  const [payOpen, setPayOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   if (loan === undefined) {
     return (
-      <PageContainer className="space-y-4">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-48 rounded-xl" />
-        <Skeleton className="h-32 rounded-xl" />
+      <PageContainer className="space-y-4 pb-8">
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-[420px] rounded-[30px]" />
+        <Skeleton className="h-16 rounded-[20px]" />
+      </PageContainer>
+    );
+  }
+  if (loan === null) {
+    return (
+      <PageContainer className="space-y-3 pt-16 text-center">
+        <p className="text-muted-foreground">Este préstamo no existe o fue eliminado.</p>
+        <button type="button" onClick={() => router.push(BACK)} className="text-sm font-semibold text-foreground underline">
+          Volver a préstamos
+        </button>
       </PageContainer>
     );
   }
 
-  if (!loan) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-muted-foreground">Préstamo no encontrado.</p>
-        <Button variant="outline" onClick={() => router.push("/deudas")}>
-          Volver
-        </Button>
-      </div>
-    );
-  }
+  const o = fromLoan(loan);
+  const paid = loan.status === "pagada";
 
-  const status = STATUS_CONFIG[loan.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.activa;
-
-  async function handleArchive() {
-    setArchiving(true);
+  async function toggleArchive() {
+    const archived = !loan!.archived;
+    haptic(15);
     try {
-      await setArchived({ loanId, archived: !loan!.archived });
-      toast.success(loan!.archived ? "Préstamo restaurado" : "Préstamo archivado");
+      await setArchived({ loanId, archived });
+      toast(archived ? "Préstamo archivado" : "Préstamo restaurado", {
+        action: {
+          label: "Deshacer",
+          onClick: () => { setArchived({ loanId, archived: !archived }).catch(() => toast.error("No se pudo deshacer")); },
+        },
+      });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
-    } finally {
-      setArchiving(false);
+      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
     }
   }
 
-  async function executeDelete() {
-    setDeleteOpen(false);
-    setDeleting(true);
+  async function deleteRepayment(repaymentId: string) {
     try {
-      await removeLoan({ loanId });
-      toast.success("Préstamo eliminado");
-      router.push("/deudas");
+      await removeRepayment({ repaymentId: repaymentId as Id<"loanRepayments"> });
+      haptic(15);
+      toast.success("Abono borrado");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar");
-      setDeleting(false);
+      toast.error(err instanceof Error ? err.message : "No se pudo borrar el abono");
+      throw err;
     }
   }
 
   return (
-    <PageContainer className="space-y-6">
-      {/* Nav + acciones */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => router.push("/deudas")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" /> Deudas y préstamos
-        </button>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={() => setEditOpen(true)}
-            aria-label="Editar préstamo"
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={handleArchive}
-            disabled={archiving}
-            aria-label={loan.archived ? "Restaurar préstamo" : "Archivar préstamo"}
-          >
-            {loan.archived
-              ? <ArchiveRestore className="h-4 w-4" />
-              : <Archive className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-danger"
-            onClick={() => setDeleteOpen(true)}
-            disabled={!loan.archived || deleting}
-            aria-label="Eliminar préstamo"
-            title={!loan.archived ? "Archiva el préstamo antes de eliminarlo" : "Eliminar"}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+    <PageContainer className="space-y-5 pb-8">
+      <BackButton onClick={() => router.push(BACK)} label="Préstamos" />
 
-      {/* Sheet editar */}
-      <AppSheet
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        title="Editar préstamo"
-      >
-        <LoanForm loan={loan} onSuccess={() => setEditOpen(false)} />
-      </AppSheet>
+      {loan.archived && (
+        <p className={cn("rounded-[18px] px-4 py-2.5 text-center text-xs font-semibold text-muted-foreground", GLASS_SURFACE)}>
+          Archivado · no aparece en la lista ni genera alertas
+        </p>
+      )}
 
-      {/* Resumen */}
-      <div
-        className="rounded-xl border border-border p-5 space-y-4"
-        style={{ background: "var(--surface)" }}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <span
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold"
-              style={{ backgroundColor: loan.color + "22", color: loan.color }}
-            >
-              {loan.borrower.charAt(0).toUpperCase()}
-            </span>
-            <div className="min-w-0">
-              <p className="font-bold text-lg text-foreground leading-tight truncate">
-                {loan.name}
-              </p>
-              <p className="text-sm text-muted-foreground">A: {loan.borrower}</p>
-            </div>
-          </div>
-          <Badge variant={status.variant}>{status.label}</Badge>
-        </div>
+      <DetailHero o={o} startDate={loan.startDate} />
 
-        {/* Montos */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg p-3" style={{ background: "var(--surface-2)" }}>
-            <p className="text-[11px] text-muted-foreground">Pendiente de cobro</p>
-            <p className={cn(
-              "text-xl font-bold tabular-nums mt-0.5",
-              loan.status === "vencida" ? "text-danger" : "text-foreground"
-            )}>
-              {formatCents(loan.currentBalance, loan.currency)}
-            </p>
-          </div>
-          <div className="rounded-lg p-3" style={{ background: "var(--surface-2)" }}>
-            <p className="text-[11px] text-muted-foreground">Monto original</p>
-            <p className="text-xl font-bold tabular-nums text-foreground mt-0.5">
-              {formatCents(loan.originalAmount, loan.currency)}
-            </p>
-          </div>
-        </div>
-
-        {/* Progreso */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Cobrado: {collectedPercent.toFixed(0)}%</span>
-            <span>{formatCents(loan.originalAmount - loan.currentBalance, loan.currency)} de {formatCents(loan.originalAmount, loan.currency)}</span>
-          </div>
-          <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all",
-                loan.status === "vencida" ? "bg-danger" : "bg-accent"
-              )}
-              style={{ width: `${collectedPercent}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Fechas */}
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground border-t border-border pt-3">
-          <span>Prestado el: {formatDateShort(loan.startDate)}</span>
-          {loan.dueDate && (
-            <span className={cn(loan.status === "vencida" && "text-danger font-medium")}>
-              {loan.status === "vencida"
-                ? `Venció hace ${overdueDays} día${overdueDays !== 1 ? "s" : ""}`
-                : `Vence en ${daysLeft} día${daysLeft !== 1 ? "s" : ""} · ${formatDateShort(loan.dueDate)}`}
-            </span>
-          )}
-        </div>
-
-        {loan.notes && (
-          <p className="text-xs text-muted-foreground border-t border-border pt-3">
-            {loan.notes}
-          </p>
-        )}
-      </div>
-
-      {/* Callout vencido */}
       {loan.status === "vencida" && (
-        <div className="rounded-xl bg-danger/10 border border-danger/20 p-4">
-          <p className="text-sm font-semibold text-danger">
-            Este préstamo venció hace {overdueDays} día{overdueDays !== 1 ? "s" : ""}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {loan.borrower} no ha devuelto el dinero en la fecha acordada.
-          </p>
-        </div>
+        <p className="rounded-[18px] bg-[color-mix(in_oklch,var(--os-magenta)_12%,transparent)] px-4 py-3 text-sm text-[var(--os-magenta)]">
+          {loan.borrower} no ha devuelto el dinero en la fecha acordada.
+        </p>
       )}
 
-      {/* Botón registrar abono */}
-      {loan.status !== "pagada" && !loan.archived && (
-        <Button
-          className="w-full gap-2 rounded-xl h-12 text-base font-semibold border-0 shadow-md"
-          style={{
-            background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
-            color: "var(--primary-foreground)",
-          }}
-          onClick={() => setRepayOpen(true)}
-        >
-          <Plus className="h-5 w-5" /> Registrar abono
-        </Button>
-      )}
+      <div className="flex items-start justify-around gap-2 px-2">
+        <ActionButton icon={HandCoins} label="Cobrar" primary onClick={() => setPayOpen(true)} disabled={paid || loan.archived} />
+        <ActionButton icon={Pencil} label="Editar" onClick={() => setEditOpen(true)} />
+        <ActionButton
+          icon={loan.archived ? ArchiveRestore : Archive}
+          label={loan.archived ? "Restaurar" : "Archivar"}
+          onClick={toggleArchive}
+        />
+      </div>
 
-      {/* Histórico de abonos */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Historial de abonos
-        </h2>
-        <LoanRepaymentList loanId={loanId} currency={loan.currency} />
+        <h2 className={FIELD_LABEL}>Lo que te ha devuelto</h2>
+        <PaymentHistory
+          kind="loan"
+          items={repayments?.map((r) => ({ id: r._id, amount: r.amount, currency: r.currency, date: r.date, notes: r.notes }))}
+          onDelete={deleteRepayment}
+        />
       </section>
 
-      {/* Sheet de abono */}
-      <LoanRepaymentSheet
-        loanId={loanId}
-        loanName={loan.name}
-        borrower={loan.borrower}
-        currentBalance={loan.currentBalance}
-        currency={loan.currency}
-        open={repayOpen}
-        onOpenChange={setRepayOpen}
-      />
+      {loan.notes && (
+        <p className={cn("whitespace-pre-line rounded-[20px] px-4 py-3 text-sm text-muted-foreground", GLASS_SURFACE)}>
+          {loan.notes}
+        </p>
+      )}
 
-      {/* AlertDialog eliminar */}
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar préstamo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminarán también todos los abonos y transacciones asociadas. Los saldos de cuentas serán revertidos. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel />
-            <AlertDialogAction onClick={executeDelete} disabled={deleting}>
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <PaymentSheet obligation={o} open={payOpen} onOpenChange={setPayOpen} />
+      <LoanSheet open={editOpen} onOpenChange={setEditOpen} loan={loan} onDeleted={() => router.push(BACK)} />
     </PageContainer>
   );
 }

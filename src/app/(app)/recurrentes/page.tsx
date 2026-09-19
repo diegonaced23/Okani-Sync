@@ -1,266 +1,352 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
-import { useState } from "react";
-import { Plus, Pencil, Trash2, Repeat, CalendarClock } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { AppSheet } from "@/components/ui/app-sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
-import { RecurrenteForm } from "@/components/recurrentes/RecurrenteForm";
-import { CategoryIcon } from "@/lib/category-icons";
-import { formatCents } from "@/lib/money";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { CalendarClock, Plus, Repeat } from "lucide-react";
 import { toast } from "sonner";
-import type { Doc } from "../../../../convex/_generated/dataModel";
+import { api } from "../../../../convex/_generated/api";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { Skeleton } from "@/components/ui/skeleton";
+import { RecurringRow } from "@/components/recurrentes/RecurringRow";
+import { RecurringSheet } from "@/components/recurrentes/RecurringSheet";
+import { SummaryCard } from "@/components/recurrentes/SummaryCard";
+import {
+  daysUntil,
+  isEnded,
+  kindOf,
+  relativeLabel,
+  type Recurring,
+  type RecurringKind,
+} from "@/components/recurrentes/shared";
+import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
+import { cn } from "@/lib/utils";
 
-function daysUntil(ts: number): string {
-  const diff = Math.ceil((ts - Date.now()) / 86_400_000);
-  if (diff <= 0) return "hoy o mañana";
-  if (diff === 1) return "mañana";
-  return `en ${diff} días`;
-}
+type Filter = "todos" | RecurringKind;
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "todos", label: "Todos" },
+  { key: "gasto", label: "Gastos" },
+  { key: "ingreso", label: "Ingresos" },
+];
+
+/** Hasta cuántos días se agrupan como "próximos" */
+const SOON_DAYS = 7;
 
 export default function RecurrentesPage() {
+  const reduce = useReducedMotion();
   const recurrentes = useQuery(api.recurringTransactions.list);
-  const accounts   = useQuery(api.accounts.list);
-  const cards      = useQuery(api.cards.list);
+  const summary = useQuery(api.recurringTransactions.summary);
+  const accounts = useQuery(api.accounts.list);
+  const cards = useQuery(api.cards.list);
   const categories = useQuery(api.categories.list, {});
-  const removeRec  = useMutation(api.recurringTransactions.remove);
+  const setPaused = useMutation(api.recurringTransactions.setPaused);
+  const removeRec = useMutation(api.recurringTransactions.remove);
+  const restoreRec = useMutation(api.recurringTransactions.restore);
 
-  const [newOpen, setNewOpen]     = useState(false);
-  const [editing, setEditing]     = useState<Doc<"recurringTransactions"> | null>(null);
-  const [deleting, setDeleting]   = useState<Doc<"recurringTransactions"> | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [filter, setFilter] = useState<Filter>("todos");
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editing, setEditing] = useState<Recurring | null>(null);
+
+  const catMap = useMemo(() => new Map((categories ?? []).map((c) => [c._id as string, c])), [categories]);
+  const sourceNames = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of accounts ?? []) m.set(a._id, a.name);
+    for (const c of cards ?? []) m.set(c._id, `${c.name} ····${c.lastFourDigits}`);
+    return m;
+  }, [accounts, cards]);
+
+  const counts = useMemo(() => {
+    const all = recurrentes ?? [];
+    return {
+      todos: all.length,
+      gasto: all.filter((r) => kindOf(r) === "gasto").length,
+      ingreso: all.filter((r) => kindOf(r) === "ingreso").length,
+    };
+  }, [recurrentes]);
+
+  const groups = useMemo(() => {
+    const list = [...(recurrentes ?? [])]
+      .filter((r) => filter === "todos" || kindOf(r) === filter)
+      .sort((a, b) => a.nextOccurrence - b.nextOccurrence);
+    const soon: Recurring[] = [];
+    const later: Recurring[] = [];
+    const inactive: Recurring[] = [];
+    for (const r of list) {
+      if (r.paused || isEnded(r)) inactive.push(r);
+      else if (daysUntil(r.nextOccurrence) <= SOON_DAYS) soon.push(r);
+      else later.push(r);
+    }
+    return [
+      { key: "soon", title: `Próximos ${SOON_DAYS} días`, items: soon },
+      { key: "later", title: "Más adelante", items: later },
+      { key: "inactive", title: "Pausados y finalizados", items: inactive },
+    ].filter((g) => g.items.length > 0);
+  }, [recurrentes, filter]);
+
+  const nextUp = useMemo(() => {
+    const next = [...(recurrentes ?? [])]
+      .filter((r) => !r.paused && !isEnded(r))
+      .sort((a, b) => a.nextOccurrence - b.nextOccurrence)[0];
+    return next ? { description: next.description, when: relativeLabel(next.nextOccurrence) } : undefined;
+  }, [recurrentes]);
+
+  const pausedCount = (recurrentes ?? []).filter((r) => r.paused).length;
+
+  // ── Acciones ──────────────────────────────────────────────────────────────
+
+  function openCreate() {
+    setOpenRowId(null);
+    setEditing(null);
+    setSheetOpen(true);
+  }
+
+  function openEdit(rec: Recurring) {
+    setEditing(rec);
+    setSheetOpen(true);
+  }
+
+  async function togglePause(rec: Recurring) {
+    const paused = !rec.paused;
+    haptic(15);
+    try {
+      await setPaused({ recurringId: rec._id, paused });
+      toast(paused ? `«${rec.description}» en pausa` : `«${rec.description}» reanudado`, {
+        description: paused ? "No se registrará hasta que lo reanudes." : undefined,
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            setPaused({ recurringId: rec._id, paused: !paused }).catch(() => toast.error("No se pudo deshacer"));
+          },
+        },
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo actualizar");
+    }
+  }
+
+  async function handleDelete(rec: Recurring) {
+    haptic(15);
+    try {
+      await removeRec({ recurringId: rec._id });
+      toast(`«${rec.description}» eliminado`, {
+        description: "Los movimientos ya registrados se conservan.",
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            restoreRec({ recurringId: rec._id }).catch(() => toast.error("No se pudo restaurar"));
+          },
+        },
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+    }
+  }
 
   const isLoading = recurrentes === undefined;
-
-  const sorted = [...(recurrentes ?? [])].sort((a, b) => a.nextOccurrence - b.nextOccurrence);
-
-  const totalMonthly = (recurrentes ?? []).reduce((s, r) => s + r.amount, 0);
-
-  function resolveSource(r: Doc<"recurringTransactions">): string {
-    if (r.accountId) {
-      const acc = (accounts ?? []).find((a) => a._id === r.accountId);
-      return acc ? acc.name : "Sin fuente";
-    }
-    if (r.cardId) {
-      const card = (cards ?? []).find((c) => c._id === r.cardId);
-      return card ? `${card.name} ····${card.lastFourDigits}` : "Sin fuente";
-    }
-    return "Sin fuente";
-  }
-
-  function resolveCategory(r: Doc<"recurringTransactions">) {
-    if (!r.categoryId) return null;
-    return (categories ?? []).find((c) => c._id === r.categoryId) ?? null;
-  }
-
-  async function handleDelete() {
-    if (!deleting) return;
-    setDeleteLoading(true);
-    try {
-      await removeRec({ recurringId: deleting._id });
-      toast.success("Recurrente eliminado");
-      setDeleting(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar");
-    } finally {
-      setDeleteLoading(false);
-    }
-  }
+  const isEmpty = !isLoading && recurrentes.length === 0;
+  let rowIndex = 0;
 
   return (
-    <PageContainer className="space-y-6">
-
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Recurrentes</h1>
-          {!isLoading && totalMonthly > 0 && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Total mensual estimado: {formatCents(totalMonthly, "COP")}
-            </p>
-          )}
-        </div>
-        {/* Botón desktop */}
-        <Button
-          size="sm"
-          onClick={() => setNewOpen(true)}
-          className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md shrink-0"
-        >
-          <Plus className="h-4 w-4" /> Nuevo
-        </Button>
-      </div>
-
-      {/* Lista */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
-        </div>
-      ) : sorted.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-2xl"
-            style={{ background: "var(--surface-2)" }}
-          >
-            <Repeat className="h-6 w-6 text-muted-foreground" />
-          </span>
-          <p className="text-base font-semibold text-foreground">Sin movimientos recurrentes</p>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            Define tus gastos mensuales y se registrarán automáticamente cada mes.
+    <PageContainer className="space-y-5">
+      {/* Título grande estilo iOS */}
+      <header className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-foreground">Recurrentes</h1>
+          <p className="text-sm text-muted-foreground">
+            {isLoading
+              ? " "
+              : `${recurrentes.length - pausedCount} activos${pausedCount ? ` · ${pausedCount} en pausa` : ""}`}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={openCreate}
+          aria-label="Nuevo recurrente"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_8px_20px_-8px_rgb(16_185_129/0.9)] transition-transform active:scale-90"
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
+        </button>
+      </header>
+
+      {isLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-[168px] rounded-[28px]" />
+          <Skeleton className="h-11 rounded-[18px]" />
+          <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+            {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-14 rounded-[16px]" />)}
+          </div>
+        </div>
+      ) : isEmpty ? (
+        <EmptyState onCreate={openCreate} />
       ) : (
-        <div className="space-y-2">
-          {sorted.map((rec) => {
-            const sourceName = resolveSource(rec);
-            const category   = resolveCategory(rec);
-            const sourceCurrency = (() => {
-              if (rec.accountId) return (accounts ?? []).find((a) => a._id === rec.accountId)?.currency ?? rec.currency;
-              if (rec.cardId)    return (cards ?? []).find((c) => c._id === rec.cardId)?.currency ?? rec.currency;
-              return rec.currency;
-            })();
+        <>
+          <SummaryCard summary={summary} nextUp={nextUp} />
 
-            return (
-              <div
-                key={rec._id}
-                className="rounded-xl bg-card border border-border p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  {/* Info principal */}
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-foreground truncate">
-                        {rec.description}
-                      </span>
-                      <span
-                        className="text-sm font-bold tabular-nums shrink-0"
-                        style={{ color: "var(--os-magenta)" }}
-                      >
-                        {formatCents(rec.amount, sourceCurrency)}
-                      </span>
-                    </div>
-
-                    {/* Fuente */}
-                    <p className="text-xs text-muted-foreground truncate">{sourceName}</p>
-
-                    {/* Categoría */}
-                    {category && (
-                      <span
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                        style={{
-                          background: category.color + "22",
-                          color: category.color,
-                        }}
-                      >
-                        <CategoryIcon name={category.icon} className="h-3 w-3 shrink-0" />
-                        {category.name}
-                      </span>
+          {/* Filtro con indicador que se desliza; fijo bajo el header al hacer scroll */}
+          <div className="sticky top-[calc(64px+env(safe-area-inset-top))] z-30 lg:top-4">
+            <div
+              role="tablist"
+              aria-label="Filtrar recurrentes"
+              className={cn("flex rounded-[18px] p-1", GLASS_SURFACE, "md:bg-[color-mix(in_oklch,var(--card)_85%,transparent)] md:backdrop-blur-xl")}
+            >
+              {FILTERS.map((f) => {
+                const active = filter === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls="rec-panel"
+                    onClick={() => { if (!active) { haptic(); setFilter(f.key); setOpenRowId(null); } }}
+                    className={cn(
+                      "touch-hit relative flex flex-1 items-center justify-center gap-1.5 rounded-[14px] py-2 text-sm transition-colors",
+                      active ? "font-bold text-foreground" : "font-semibold text-muted-foreground",
                     )}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="rec-filter-pill"
+                        className="absolute inset-0 rounded-[14px] bg-[var(--surface)] shadow-[0_2px_10px_-4px_rgb(0_0_0/0.25)] dark:bg-white/10"
+                        transition={SPRING}
+                      />
+                    )}
+                    <span className="relative">{f.label}</span>
+                    <span className={cn(
+                      "relative rounded-full px-1.5 text-[11px] font-bold tabular-nums",
+                      active ? "bg-muted text-foreground" : "bg-muted text-muted-foreground",
+                    )}>
+                      {counts[f.key]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-                    {/* Próxima ejecución */}
-                    <div className="flex items-center gap-1.5 pt-0.5">
-                      <CalendarClock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-[11px] text-muted-foreground">
-                        Día {rec.dayOfMonth} de cada mes · {daysUntil(rec.nextOccurrence)}
-                      </span>
+          <div id="rec-panel" role="tabpanel" className="relative">
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div
+                key={filter}
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
+                className="space-y-5"
+              >
+                {groups.length === 0 ? (
+                  <div className={cn("rounded-[24px] px-6 py-10 text-center", GLASS_SURFACE)}>
+                    <p className="text-sm font-semibold text-foreground">
+                      {filter === "ingreso" ? "No tienes ingresos recurrentes" : "No tienes gastos recurrentes"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openCreate}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-muted px-4 py-2 text-sm font-semibold text-foreground transition-[background-color,transform] hover:bg-muted/70 active:scale-95"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" /> Agregar
+                    </button>
+                  </div>
+                ) : groups.map((g) => (
+                  <section key={g.key} className="space-y-2" aria-label={g.title}>
+                    <h2 className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                      {g.title}
+                    </h2>
+                    <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                      <ul className="space-y-0.5">
+                        <AnimatePresence initial={false}>
+                          {g.items.map((rec) => (
+                            <RecurringRow
+                              key={rec._id}
+                              rec={rec}
+                              index={rowIndex++}
+                              category={rec.categoryId ? catMap.get(rec.categoryId) : undefined}
+                              sourceLabel={sourceNames.get(rec.accountId ?? rec.cardId ?? "")}
+                              openId={openRowId}
+                              setOpenId={setOpenRowId}
+                              onEdit={() => openEdit(rec)}
+                              onTogglePause={() => togglePause(rec)}
+                              onDelete={() => handleDelete(rec)}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </ul>
                     </div>
-                  </div>
+                  </section>
+                ))}
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
-                  {/* Acciones */}
-                  <div className="flex items-center gap-0.5 shrink-0 -mr-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditing(rec)}
-                      className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                      aria-label="Editar recurrente"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleting(rec)}
-                      className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger"
-                      aria-label="Eliminar recurrente"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+          <p className="px-1 text-center text-xs text-muted-foreground/80">
+            Desliza hacia la izquierda para pausar o eliminar.
+          </p>
+        </>
       )}
 
-      {/* Botón mobile */}
-      {!isLoading && (
-        <div className="md:hidden">
-          <Button
-            onClick={() => setNewOpen(true)}
-            className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold"
-          >
-            <Plus className="h-5 w-5" /> Agregar recurrente
-          </Button>
-        </div>
-      )}
-
-      {/* Sheet creación */}
-      <AppSheet
-        open={newOpen}
-        onOpenChange={(open) => { if (!open) setNewOpen(false); }}
-        title="Nuevo recurrente"
-        description="El gasto se registrará automáticamente cada mes."
-      >
-        <RecurrenteForm onSuccess={() => setNewOpen(false)} />
-      </AppSheet>
-
-      {/* Sheet edición */}
-      <AppSheet
-        open={!!editing}
-        onOpenChange={(open) => { if (!open) setEditing(null); }}
-        title="Editar recurrente"
-        description="Los cambios aplican a partir del próximo mes."
-      >
-        {editing && (
-          <RecurrenteForm recurrente={editing} onSuccess={() => setEditing(null)} />
-        )}
-      </AppSheet>
-
-      {/* AlertDialog eliminar */}
-      <AlertDialog open={!!deleting} onOpenChange={(open) => { if (!open) setDeleting(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar recurrente</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleting && (
-                <>
-                  <strong>&ldquo;{deleting.description}&rdquo;</strong> dejará de generar gastos automáticos.
-                  Las transacciones ya registradas se mantendrán intactas.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleteLoading}>
-              {deleteLoading ? "Eliminando…" : "Eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
+      <RecurringSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        recurring={editing}
+        defaultKind={filter === "ingreso" ? "ingreso" : "gasto"}
+        onTogglePause={togglePause}
+        onDelete={handleDelete}
+      />
     </PageContainer>
+  );
+}
+
+/** Sin recurrentes: calendario con fichas flotando y el botón para programar el primero. */
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const reduce = useReducedMotion();
+  const chips = [
+    { label: "Arriendo", day: "1", tone: "var(--os-violet)" },
+    { label: "Netflix", day: "12", tone: "var(--os-magenta)" },
+    { label: "Salario", day: "30", tone: "var(--os-lime)" },
+  ];
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: EASE_OUT_EXPO }}
+      className={cn("relative overflow-hidden rounded-[28px] px-6 pb-7 pt-8 text-center", GLASS_SURFACE)}
+    >
+      <div className="relative mx-auto mb-6 h-36 w-52" aria-hidden="true">
+        <span className="absolute inset-x-6 inset-y-3 flex items-center justify-center rounded-[26px] bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_14px_34px_-12px_rgb(16_185_129/0.7)]">
+          <CalendarClock className="h-10 w-10" />
+        </span>
+        {chips.map((c, i) => (
+          <motion.span
+            key={c.label}
+            className="absolute flex items-center gap-1.5 rounded-full border border-white/50 bg-[color-mix(in_oklch,var(--card)_80%,transparent)] px-2.5 py-1 text-[11px] font-bold text-foreground shadow-md backdrop-blur-md dark:border-white/10"
+            style={[{ left: -6, top: 4 }, { right: -10, top: 44 }, { left: 6, bottom: 0 }][i]}
+            initial={reduce ? false : { opacity: 0, scale: 0.6 }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: [0, -5, 0] }}
+            transition={{
+              opacity: { delay: 0.15 + i * 0.1 },
+              scale: { delay: 0.15 + i * 0.1, type: "spring", stiffness: 500, damping: 20 },
+              y: { duration: 3 + i * 0.5, repeat: Infinity, ease: "easeInOut", delay: i * 0.4 },
+            }}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ background: c.tone }} />
+            {c.label} · {c.day}
+          </motion.span>
+        ))}
+      </div>
+
+      <h2 className="text-lg font-extrabold tracking-tight text-foreground">Automatiza lo que se repite</h2>
+      <p className="mx-auto mt-1.5 max-w-xs text-sm text-muted-foreground">
+        Arriendo, suscripciones o tu salario: prográmalos una vez y se registran solos en su fecha.
+      </p>
+      <button
+        type="button"
+        onClick={onCreate}
+        className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98]"
+      >
+        <Repeat className="h-4 w-4" aria-hidden="true" /> Programar el primero
+      </button>
+    </motion.div>
   );
 }
