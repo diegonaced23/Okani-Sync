@@ -1,27 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, LogIn, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
-import { toast } from "sonner";
 import { AUTH_INPUT_CLASS, AuthAlert, FieldIcon, PasswordInput } from "./AuthFields";
+import { SuccessCheck } from "./SuccessCheck";
 import { authErrorMessage } from "./authErrors";
+import { stashHandoffEmail } from "./emailHandoff";
 
 export function SignInForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  // Estado propio: si compartiera `loading` con el submit, pedir el enlace de
-  // recuperación dejaría el botón de entrar deshabilitado y al revés.
-  const [resetLoading, setResetLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const busy = loading || resetLoading;
+  const busy = loading || success;
+
+  const trimmedEmail = email.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +32,7 @@ export function SignInForm() {
     setError(null);
     setLoading(true);
     const { error: signInError } = await authClient.signIn.email({
-      email: email.trim(),
+      email: trimmedEmail,
       password,
     });
 
@@ -42,38 +44,12 @@ export function SignInForm() {
       return;
     }
 
-    // Sin setLoading(false): la navegación desmonta el formulario y apagar el
-    // spinner antes dejaría el botón "listo" mientras la página aún cambia.
+    // Sin volver a habilitar el formulario: la navegación lo desmonta, y el
+    // check confirma el acceso mientras la página cambia.
+    setLoading(false);
+    setSuccess(true);
     router.push("/");
     router.refresh();
-  }
-
-  async function handleForgotPassword() {
-    if (busy) return;
-
-    if (!email.trim()) {
-      setError("Escribe tu correo y volvemos a enviarte el enlace.");
-      return;
-    }
-
-    setError(null);
-    setResetLoading(true);
-    const { error: resetError } = await authClient.requestPasswordReset({
-      email: email.trim(),
-      redirectTo: "/reset-password",
-    });
-    setResetLoading(false);
-
-    if (resetError) {
-      setError(authErrorMessage(resetError, "No se pudo enviar el correo. Inténtalo de nuevo."));
-      return;
-    }
-
-    // Better Auth responde lo mismo exista o no el correo, para no filtrar qué
-    // cuentas hay registradas — el mensaje se mantiene igual de ambiguo.
-    toast.success("Si ese correo tiene cuenta, te llega un enlace en un momento.", {
-      description: "Revisa también la carpeta de spam.",
-    });
   }
 
   return (
@@ -98,20 +74,7 @@ export function SignInForm() {
       </div>
 
       <div className="space-y-1.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <Label htmlFor="password">Contraseña</Label>
-          <button
-            type="button"
-            onClick={handleForgotPassword}
-            disabled={busy}
-            className="touch-hit inline-flex items-center gap-1.5 text-xs font-medium text-lime-text transition-opacity hover:underline disabled:opacity-50"
-          >
-            {resetLoading && (
-              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-            )}
-            {resetLoading ? "Enviando…" : "¿Olvidaste tu contraseña?"}
-          </button>
-        </div>
+        <Label htmlFor="password">Contraseña</Label>
         <PasswordInput
           id="password"
           autoComplete="current-password"
@@ -120,6 +83,19 @@ export function SignInForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <div className="flex justify-end">
+          {/* El correo ya escrito viaja a /forgot-password para no obligar a
+              teclearlo dos veces — por sessionStorage, no por la URL (ver
+              emailHandoff.ts). Solo si parece un correo: un texto a medias no
+              aporta nada. */}
+          <Link
+            href="/forgot-password"
+            onClick={() => stashHandoffEmail(trimmedEmail.includes("@") ? trimmedEmail : "")}
+            className="touch-hit rounded-sm text-xs font-medium text-lime-text hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            ¿Olvidaste tu contraseña?
+          </Link>
+        </div>
       </div>
 
       {error && <AuthAlert>{error}</AuthAlert>}
@@ -130,12 +106,14 @@ export function SignInForm() {
         disabled={busy}
         className="h-11 w-full gap-2 rounded-xl font-semibold"
       >
-        {loading ? (
+        {success ? (
+          <SuccessCheck />
+        ) : loading ? (
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
         ) : (
           <LogIn className="size-4" aria-hidden="true" />
         )}
-        {loading ? "Entrando…" : "Iniciar sesión"}
+        {success ? "¡Bienvenido!" : loading ? "Entrando…" : "Iniciar sesión"}
       </Button>
     </form>
   );

@@ -28,6 +28,13 @@ export default async function ResetPasswordPage({
             se pueden usar una vez.
           </AuthAlert>
           <Button
+            render={<Link href="/forgot-password" />}
+            size="lg"
+            className="h-11 w-full rounded-xl font-semibold"
+          >
+            Pedir un enlace nuevo
+          </Button>
+          <Button
             render={<Link href="/login" />}
             variant="outline"
             size="lg"

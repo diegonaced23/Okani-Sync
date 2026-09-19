@@ -2,28 +2,31 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, KeyRound, Loader2 } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { PASSWORD_MIN_LENGTH, passwordStrength } from "@/lib/passwordStrength";
 import { toast } from "sonner";
 import { AuthAlert, PasswordInput } from "./AuthFields";
+import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
+import { SuccessCheck } from "./SuccessCheck";
 import { authErrorMessage } from "./authErrors";
-
-const MIN_LENGTH = 8;
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const longEnough = password.length >= MIN_LENGTH;
+  const strength = passwordStrength(password);
   // Solo se avisa del desajuste cuando ya escribió algo en la confirmación: si
   // no, el error aparece en la primera tecla y acusa a alguien que va bien.
   const mismatch = confirm.length > 0 && password !== confirm;
-  const canSubmit = longEnough && confirm.length > 0 && !mismatch && !loading;
+  const busy = loading || success;
+  const canSubmit = strength.valid && confirm.length > 0 && !mismatch && !busy;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,13 +44,15 @@ export function ResetPasswordForm({ token }: { token: string }) {
       setError(
         authErrorMessage(
           resetError,
-          "El enlace expiró o ya fue usado. Pide uno nuevo desde el inicio de sesión."
+          "El enlace expiró o ya fue usado. Pide uno nuevo desde «¿Olvidaste tu contraseña?»."
         )
       );
       return;
     }
 
     const { data: session } = await authClient.getSession();
+    setLoading(false);
+    setSuccess(true);
     toast.success("Contraseña definida", {
       description: "Ya puedes entrar con tu correo y tu nueva contraseña.",
     });
@@ -56,7 +61,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" aria-busy={loading}>
+    <form onSubmit={handleSubmit} className="space-y-4" aria-busy={busy}>
       <div className="space-y-1.5">
         <Label htmlFor="password">Nueva contraseña</Label>
         <PasswordInput
@@ -64,21 +69,13 @@ export function ResetPasswordForm({ token }: { token: string }) {
           autoComplete="new-password"
           autoFocus
           required
-          minLength={MIN_LENGTH}
-          disabled={loading}
+          minLength={PASSWORD_MIN_LENGTH}
+          disabled={busy}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          aria-describedby="password-hint"
+          aria-describedby="password-strength"
         />
-        <p
-          id="password-hint"
-          className={`flex items-center gap-1.5 text-xs transition-colors ${
-            longEnough ? "text-lime-text" : "text-muted-foreground"
-          }`}
-        >
-          {longEnough && <Check className="size-3" aria-hidden="true" />}
-          Mínimo {MIN_LENGTH} caracteres
-        </p>
+        <PasswordStrengthMeter id="password-strength" strength={strength} />
       </div>
 
       <div className="space-y-1.5">
@@ -87,8 +84,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
           id="confirm"
           autoComplete="new-password"
           required
-          minLength={MIN_LENGTH}
-          disabled={loading}
+          minLength={PASSWORD_MIN_LENGTH}
+          disabled={busy}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           aria-invalid={mismatch}
@@ -104,12 +101,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
         disabled={!canSubmit}
         className="h-11 w-full gap-2 rounded-xl font-semibold"
       >
-        {loading ? (
+        {success ? (
+          <SuccessCheck />
+        ) : loading ? (
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
         ) : (
           <KeyRound className="size-4" aria-hidden="true" />
         )}
-        {loading ? "Guardando…" : "Definir contraseña"}
+        {success ? "¡Contraseña lista!" : loading ? "Guardando…" : "Definir contraseña"}
       </Button>
     </form>
   );
