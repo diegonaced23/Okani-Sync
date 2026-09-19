@@ -73,22 +73,22 @@ npx web-push generate-vapid-keys
 ## Desarrollo
 
 ```bash
-npm install
+pnpm install
 
 # Requiere dos terminales en paralelo:
-npm run dev          # Next.js → http://localhost:3000
-npm run dev:convex   # Convex en modo watch
+pnpm dev          # Next.js → http://localhost:3000
+pnpm dev:convex   # Convex en modo watch
 ```
 
 ## Comandos disponibles
 
 ```bash
-npm run build          # Build de producción
-npm run typecheck      # TypeScript
-npm run lint           # ESLint
-npm test               # Vitest (una pasada)
-npm run test:watch     # Vitest en modo watch
-npm run test:coverage  # Cobertura (solo src/lib/**)
+pnpm build              # Build de producción
+pnpm typecheck          # TypeScript
+pnpm lint               # ESLint
+pnpm test               # Vitest (una pasada)
+pnpm test:watch         # Vitest en modo watch
+pnpm test:coverage      # Cobertura (solo src/lib/**)
 ```
 
 ## Notas de implementación
