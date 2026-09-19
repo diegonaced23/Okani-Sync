@@ -1,791 +1,454 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
-import { useState, useEffect, useRef } from "react";
-import { Reorder, useDragControls } from "framer-motion";
-import { Plus, Archive, Pencil, GripVertical, Trash2, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { AppSheet } from "@/components/ui/app-sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { AnimatePresence, Reorder, motion, useReducedMotion } from "framer-motion";
+import { Check, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
-import { ACCOUNT_COLORS, CATEGORY_ICONS } from "@/lib/constants";
-import { CategoryIcon } from "@/lib/category-icons";
-import { cn } from "@/lib/utils";
-import type { Doc, Id } from "../../../../convex/_generated/dataModel";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CategoryRow, type RowStats } from "@/components/categories/CategoryRow";
+import { CategorySheet } from "@/components/categories/CategorySheet";
+import { DeleteCategoryFlow } from "@/components/categories/DeleteCategoryFlow";
+import { ArchivedSection } from "@/components/categories/ArchivedSection";
+import { EmptyState } from "@/components/categories/EmptyState";
+import {
+  EASE_OUT_EXPO,
+  GLASS_SURFACE,
+  SPRING,
+  haptic,
+  inTab,
+  type Category,
+  type CategoryTab,
+} from "@/components/categories/shared";
+import { currentMonth, formatCents, formatMonth } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
-type CategoryType = "ingreso" | "gasto" | "ambos";
+const TABS: { key: CategoryTab; label: string }[] = [
+  { key: "gasto", label: "Gastos" },
+  { key: "ingreso", label: "Ingresos" },
+];
 
-function isTypeCompatible(sourceType: CategoryType, targetType: CategoryType): boolean {
-  if (sourceType === "ambos") return true;
-  return targetType === sourceType || targetType === "ambos";
-}
-
-// ─── Pickers ──────────────────────────────────────────────────────────────────
-
-function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
-  return (
-    <div role="group" aria-label="Seleccionar color" className="flex flex-wrap gap-2">
-      {ACCOUNT_COLORS.map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => onChange(c)}
-          aria-label={`Color ${c}`}
-          aria-pressed={value === c}
-          className={cn(
-            "touch-hit h-7 w-7 rounded-full border-2 transition-transform",
-            value === c ? "border-foreground scale-110" : "border-transparent"
-          )}
-          style={{ backgroundColor: c }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function IconPicker({
-  value,
-  onChange,
-  color,
-}: {
-  value: string;
-  onChange: (name: string) => void;
-  color: string;
-}) {
-  return (
-    <div role="group" aria-label="Seleccionar ícono" className="grid grid-cols-7 gap-1.5">
-      {CATEGORY_ICONS.map((name) => {
-        const selected = value === name;
-        return (
-          <button
-            key={name}
-            type="button"
-            onClick={() => onChange(name)}
-            aria-label={name}
-            aria-pressed={selected}
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-lg border-2 transition-colors",
-              selected ? "border-foreground bg-muted" : "border-transparent hover:bg-muted"
-            )}
-          >
-            <CategoryIcon
-              name={name}
-              className="h-4 w-4"
-              style={{ color: selected ? color : undefined }}
-            />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Fila ordenable (activas) ─────────────────────────────────────────────────
-
-function SortableCategoryRow({
-  cat,
-  onEdit,
-  onArchive,
-  onDragEnd,
-}: {
-  cat: Doc<"categories">;
-  onEdit: () => void;
-  onArchive: () => void;
-  onDragEnd: () => void;
-}) {
-  const controls = useDragControls();
-
-  return (
-    <Reorder.Item
-      as="li"
-      value={cat}
-      dragListener={false}
-      dragControls={controls}
-      onDragEnd={onDragEnd}
-      className="flex items-center gap-3 py-2.5 px-4 bg-card border-b border-border last:border-b-0"
-      style={{ listStyle: "none", position: "relative" }}
-      whileDrag={{
-        scale: 1.02,
-        boxShadow: "0 8px 28px -6px rgba(0,0,0,0.18)",
-        borderRadius: 12,
-        zIndex: 50,
-      }}
-    >
-      <button
-        type="button"
-        aria-label="Arrastrar para reordenar"
-        className="touch-hit touch-none shrink-0 p-1 -ml-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-grab active:cursor-grabbing"
-        onPointerDown={(e) => controls.start(e)}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      <span
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-        style={{ backgroundColor: cat.color + "33", color: cat.color }}
-      >
-        <CategoryIcon name={cat.icon} className="h-4 w-4" />
-      </span>
-
-      <span className="flex-1 text-sm font-medium text-foreground truncate">{cat.name}</span>
-
-      <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-          aria-label="Editar categoría"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={onArchive}
-          className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger"
-          aria-label="Archivar categoría"
-        >
-          <Archive className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </Reorder.Item>
-  );
-}
-
-// ─── Fila archivada ───────────────────────────────────────────────────────────
-
-function ArchivedCategoryRow({
-  cat,
-  onDelete,
-}: {
-  cat: Doc<"categories">;
-  onDelete: () => void;
-}) {
-  return (
-    <li className="flex items-center gap-3 py-2.5 px-4 bg-card border-b border-border last:border-b-0">
-      <span
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full opacity-60"
-        style={{ backgroundColor: cat.color + "33", color: cat.color }}
-      >
-        <CategoryIcon name={cat.icon} className="h-4 w-4" />
-      </span>
-
-      <span className="flex-1 text-sm font-medium text-muted-foreground truncate">{cat.name}</span>
-
-      <span className="text-[10px] text-muted-foreground/60 shrink-0 capitalize">
-        {cat.type === "ambos" ? "ambos" : cat.type}
-      </span>
-
-      <button
-        type="button"
-        onClick={onDelete}
-        className="touch-hit p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-danger shrink-0"
-        aria-label="Eliminar categoría"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </li>
-  );
-}
-
-// ─── Flujo de eliminación ─────────────────────────────────────────────────────
-
-function DeleteCategoryFlow({
-  deletingCat,
-  txCount,
-  activeCategories,
-  onClose,
-  onRemove,
-  onMigrate,
-}: {
-  deletingCat: Doc<"categories"> | null;
-  txCount: number | undefined;
-  activeCategories: Doc<"categories">[];
-  onClose: () => void;
-  onRemove: () => Promise<void>;
-  onMigrate: (targetId: Id<"categories">) => Promise<void>;
-}) {
-  const [confirmName, setConfirmName] = useState("");
-  const [migrationTarget, setMigrationTarget] = useState<string>("");
-  const [migrationStep, setMigrationStep] = useState<"select" | "confirm">("select");
-  const [loading, setLoading] = useState(false);
-
-  // Resetear estado al cambiar categoría (durante render, sin efecto)
-  const [prevCatId, setPrevCatId] = useState(deletingCat?._id);
-  if (deletingCat?._id !== prevCatId) {
-    setPrevCatId(deletingCat?._id);
-    setConfirmName("");
-    setMigrationTarget("");
-    setMigrationStep("select");
-    setLoading(false);
-  }
-
-  const isOpen = deletingCat !== null;
-  const catName = deletingCat?.name ?? "";
-  const catType = deletingCat?.type as CategoryType | undefined;
-  const countLabel = txCount === 501 ? "más de 500" : String(txCount ?? 0);
-
-  const compatibleTargets = catType
-    ? activeCategories.filter(
-        (c) => c._id !== deletingCat?._id && isTypeCompatible(catType, c.type as CategoryType)
-      )
-    : [];
-
-  const targetCat = compatibleTargets.find((c) => c._id === migrationTarget);
-
-  async function handleRemove() {
-    setLoading(true);
-    try {
-      await onRemove();
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleMigrate() {
-    if (!migrationTarget) return;
-    setLoading(true);
-    try {
-      await onMigrate(migrationTarget as Id<"categories">);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <AppSheet
-      open={isOpen}
-      onOpenChange={(open) => { if (!open) onClose(); }}
-      title={
-        txCount === undefined
-          ? "Eliminar categoría"
-          : txCount === 0
-          ? "Eliminar categoría"
-          : "Categoría con movimientos"
-      }
-    >
-      {/* Loading */}
-      {txCount === undefined && (
-        <div className="space-y-3">
-          <Skeleton className="h-5 w-2/3" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      )}
-
-      {/* Sin transacciones → confirmar con nombre */}
-      {txCount === 0 && (
-        <div className="space-y-5">
-          <div className="flex items-start gap-3 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-            <p className="text-sm text-destructive">
-              Esta acción es <strong>irreversible</strong>. Una vez eliminada, la categoría no se puede recuperar.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="confirm-name">
-              Escribí <strong>{catName}</strong> para confirmar
-            </Label>
-            <Input
-              id="confirm-name"
-              placeholder={catName}
-              value={confirmName}
-              onChange={(e) => setConfirmName(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-
-          <Button
-            variant="destructive"
-            className="w-full"
-            disabled={loading || confirmName !== catName}
-            onClick={handleRemove}
-          >
-            {loading ? "Eliminando…" : "Eliminar categoría"}
-          </Button>
-        </div>
-      )}
-
-      {/* Con transacciones → migrar */}
-      {txCount !== undefined && txCount > 0 && (
-        <div className="space-y-5">
-          {migrationStep === "select" && (
-            <>
-              <div className="rounded-lg bg-muted px-4 py-3 space-y-1">
-                <p className="text-sm text-muted-foreground">
-                  <strong className="text-foreground">{catName}</strong> tiene{" "}
-                  <strong className="text-foreground">{countLabel} movimientos</strong>.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Antes de eliminarla, migrá los movimientos a otra categoría.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Categoría destino</Label>
-                <Select value={migrationTarget} onValueChange={(v) => { if (v) setMigrationTarget(v); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccioná una categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {compatibleTargets.map((c) => (
-                      <SelectItem key={c._id} value={c._id}>
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-full"
-                            style={{ backgroundColor: c.color + "33", color: c.color }}
-                          >
-                            <CategoryIcon name={c.icon} className="h-2.5 w-2.5" />
-                          </span>
-                          {c.name}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Button
-                className="w-full"
-                disabled={!migrationTarget}
-                onClick={() => setMigrationStep("confirm")}
-              >
-                Migrar
-              </Button>
-            </>
-          )}
-
-          {migrationStep === "confirm" && targetCat && (
-            <>
-              <div className="flex items-start gap-3 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-                <p className="text-sm text-destructive">
-                  Se migrarán <strong>{countLabel} movimientos</strong> a{" "}
-                  <strong>{targetCat.name}</strong> y la categoría{" "}
-                  <strong>{catName}</strong> se eliminará automáticamente.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Button
-                  variant="destructive"
-                  className="w-full"
-                  disabled={loading}
-                  onClick={handleMigrate}
-                >
-                  {loading ? "Migrando…" : "Confirmar y eliminar"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  disabled={loading}
-                  onClick={() => setMigrationStep("select")}
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </AppSheet>
-  );
-}
-
-// ─── Página ───────────────────────────────────────────────────────────────────
+/** Con más filas que esto aparece el buscador */
+const SEARCH_THRESHOLD = 8;
 
 export default function CategoriasPage() {
+  const reduce = useReducedMotion();
+  const month = currentMonth();
+
   const categories = useQuery(api.categories.list, {});
-  const createCategory = useMutation(api.categories.create);
-  const updateCategory = useMutation(api.categories.update);
+  const monthStats = useQuery(api.categories.monthStats, { month });
   const archiveCategory = useMutation(api.categories.archive);
+  const unarchiveCategory = useMutation(api.categories.unarchive);
   const reorderCategories = useMutation(api.categories.reorder);
   const removeCategory = useMutation(api.categories.remove);
   const migrateAndDeleteMutation = useMutation(api.categories.migrateAndDelete);
+  const seedDefaults = useMutation(api.categories.seedDefaults);
 
-  // ── Estado formulario creación ────────────────────────────────────────────
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState<CategoryType>("gasto");
-  const [newColor, setNewColor] = useState(ACCOUNT_COLORS[3]);
-  const [newIcon, setNewIcon] = useState<string>(CATEGORY_ICONS[0]);
-  const [createLoading, setCreateLoading] = useState(false);
+  const [tab, setTab] = useState<CategoryTab>("gasto");
+  const [editing, setEditing] = useState(false);
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [seeding, setSeeding] = useState(false);
 
-  // ── Estado formulario edición ─────────────────────────────────────────────
-  const [editingCat, setEditingCat] = useState<Doc<"categories"> | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editColor, setEditColor] = useState(ACCOUNT_COLORS[0]);
-  const [editIcon, setEditIcon] = useState<string>(CATEGORY_ICONS[0]);
-  const [editLoading, setEditLoading] = useState(false);
+  // Hoja de crear/editar
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingCat, setEditingCat] = useState<Category | null>(null);
 
-  // ── Estado confirmación archivo ───────────────────────────────────────────
-  const [archivingCat, setArchivingCat] = useState<Doc<"categories"> | null>(null);
-
-  // ── Estado archivadas ─────────────────────────────────────────────────────
+  // Archivadas y eliminación
   const [showArchived, setShowArchived] = useState(false);
-  const [deletingCat, setDeletingCat] = useState<Doc<"categories"> | null>(null);
-
-  const archivedCategories = useQuery(
-    api.categories.listArchived,
-    showArchived ? {} : "skip"
-  );
+  const [deletingCat, setDeletingCat] = useState<Category | null>(null);
+  const archivedCategories = useQuery(api.categories.listArchived, showArchived ? {} : "skip");
   const txCount = useQuery(
     api.categories.transactionCount,
     deletingCat ? { categoryId: deletingCat._id } : "skip"
   );
 
-  // ── Estado local para reordenamiento optimista ────────────────────────────
-  const [gastosItems, setGastosItems] = useState<Doc<"categories">[]>([]);
-  const [ingresosItems, setIngresosItems] = useState<Doc<"categories">[]>([]);
+  // ── Orden local optimista por pestaña ─────────────────────────────────────
+  const [items, setItems] = useState<Category[]>([]);
+  const itemsRef = useRef<Category[]>([]);
+  const [prevSource, setPrevSource] = useState<{ categories: typeof categories; tab: CategoryTab }>();
+  if (prevSource?.categories !== categories || prevSource?.tab !== tab) {
+    setPrevSource({ categories, tab });
+    if (categories !== undefined) setItems(categories.filter((c) => inTab(c, tab)));
+  }
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
-  const gastosRef = useRef<Doc<"categories">[]>([]);
-  const ingresosRef = useRef<Doc<"categories">[]>([]);
-
-  const [prevCategories, setPrevCategories] = useState(categories);
-  if (categories !== prevCategories) {
-    setPrevCategories(categories);
-    if (categories !== undefined) {
-      const sorted = [...categories].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
-      setGastosItems(sorted.filter((c) => c.type === "gasto" || c.type === "ambos"));
-      setIngresosItems(sorted.filter((c) => c.type === "ingreso" || c.type === "ambos"));
+  // ── Estadísticas del mes por pestaña ──────────────────────────────────────
+  const side = tab === "gasto" ? "expense" : "income";
+  const { rowStats, tabTotal, tabCount } = useMemo(() => {
+    const stats = monthStats?.stats ?? {};
+    let total = 0;
+    let count = 0;
+    for (const c of items) {
+      const s = stats[c._id];
+      if (!s) continue;
+      total += s[side];
+      count += s[side] > 0 ? 1 : 0;
     }
+    const map = new Map<string, RowStats>();
+    for (const c of items) {
+      const s = stats[c._id];
+      if (!s) continue;
+      const amount = s[side];
+      // "ambos" cuenta los movimientos de los dos lados; se muestra solo si hay monto en este
+      if (amount <= 0) continue;
+      map.set(c._id, { amount, count: s.count, share: total > 0 ? amount / total : 0 });
+    }
+    return { rowStats: map, tabTotal: total, tabCount: count };
+  }, [monthStats, items, side]);
+
+  const tabCounts = useMemo(
+    () => ({
+      gasto: categories?.filter((c) => inTab(c, "gasto")).length ?? 0,
+      ingreso: categories?.filter((c) => inTab(c, "ingreso")).length ?? 0,
+    }),
+    [categories]
+  );
+
+  const existingNames = useMemo(
+    () => new Set((categories ?? []).map((c) => c.name.trim().toLowerCase())),
+    [categories]
+  );
+
+  const q = query.trim().toLowerCase();
+  const visible = q ? items.filter((c) => c.name.toLowerCase().includes(q)) : items;
+  const showSearch = items.length > SEARCH_THRESHOLD || q.length > 0;
+  const canReorder = items.length > 1 && !q;
+
+  // ── Acciones ──────────────────────────────────────────────────────────────
+
+  function switchTab(next: CategoryTab) {
+    if (next === tab) return;
+    haptic();
+    setTab(next);
+    setOpenRowId(null);
+    setQuery("");
+    setEditing(false);
   }
 
-  useEffect(() => { gastosRef.current = gastosItems; }, [gastosItems]);
-  useEffect(() => { ingresosRef.current = ingresosItems; }, [ingresosItems]);
+  function openCreate() {
+    setOpenRowId(null);
+    setEditingCat(null);
+    setSheetOpen(true);
+  }
 
-  function openEdit(cat: Doc<"categories">) {
+  function openEdit(cat: Category) {
     setEditingCat(cat);
-    setEditName(cat.name);
-    setEditColor(cat.color);
-    setEditIcon(cat.icon);
+    setSheetOpen(true);
   }
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setCreateLoading(true);
+  async function handleArchive(cat: Category) {
+    haptic(15);
+    // Se quita de la lista al instante; Convex la confirma (o la devuelve si falla)
+    setItems((prev) => prev.filter((c) => c._id !== cat._id));
     try {
-      await createCategory({ name: newName.trim(), type: newType, color: newColor, icon: newIcon });
-      toast.success("Categoría creada");
-      setNewName("");
-      setNewIcon(CATEGORY_ICONS[0]);
-      setCreateOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
-    } finally {
-      setCreateLoading(false);
-    }
-  }
-
-  async function handleUpdate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingCat || !editName.trim()) return;
-    setEditLoading(true);
-    try {
-      await updateCategory({
-        categoryId: editingCat._id as Id<"categories">,
-        name: editName.trim(),
-        color: editColor,
-        icon: editIcon,
+      await archiveCategory({ categoryId: cat._id });
+      toast(`«${cat.name}» archivada`, {
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            unarchiveCategory({ categoryId: cat._id }).catch(() =>
+              toast.error("No se pudo restaurar")
+            );
+          },
+        },
       });
-      toast.success("Categoría actualizada");
-      setEditingCat(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
-    } finally {
-      setEditLoading(false);
+      if (categories) setItems(categories.filter((c) => inTab(c, tab)));
+      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
     }
   }
 
-  async function executeArchive() {
-    if (!archivingCat) return;
+  async function handleRestore(cat: Category) {
     try {
-      await archiveCategory({ categoryId: archivingCat._id });
-      toast.success("Categoría archivada");
-      setArchivingCat(null);
+      await unarchiveCategory({ categoryId: cat._id });
+      haptic();
+      toast.success(`«${cat.name}» restaurada`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(err instanceof Error ? err.message : "No se pudo restaurar");
     }
   }
 
-  function handleSectionDragEnd(sectionRef: React.MutableRefObject<Doc<"categories">[]>) {
-    reorderCategories({
-      categoryIds: sectionRef.current.map((c) => c._id),
-    }).catch(() => toast.error("Error al guardar el orden"));
+  async function handleSeed() {
+    setSeeding(true);
+    try {
+      const { added } = await seedDefaults({ type: tab });
+      haptic(15);
+      toast.success(added > 0 ? `${added} categorías agregadas` : "Ya tienes todas las sugeridas");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudieron agregar");
+    } finally {
+      setSeeding(false);
+    }
+  }
+
+  function handleReorderEnd() {
+    haptic(8);
+    reorderCategories({ categoryIds: itemsRef.current.map((c) => c._id) }).catch(() =>
+      toast.error("No se pudo guardar el orden")
+    );
   }
 
   async function handleRemove() {
     if (!deletingCat) return;
-    await removeCategory({ categoryId: deletingCat._id });
-    toast.success("Categoría eliminada");
+    try {
+      await removeCategory({ categoryId: deletingCat._id });
+      toast.success("Categoría eliminada");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      throw err;
+    }
   }
 
   async function handleMigrateAndDelete(targetId: Id<"categories">) {
     if (!deletingCat) return;
-    const result = await migrateAndDeleteMutation({
-      categoryId: deletingCat._id,
-      targetCategoryId: targetId,
-    });
-    if (result?.willContinue) {
-      toast.success("Migrando movimientos…");
-    } else {
-      toast.success("Movimientos migrados y categoría eliminada");
+    try {
+      const result = await migrateAndDeleteMutation({
+        categoryId: deletingCat._id,
+        targetCategoryId: targetId,
+      });
+      toast.success(
+        result?.willContinue ? "Migrando movimientos…" : "Movimientos migrados y categoría eliminada"
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo migrar");
+      throw err;
     }
   }
 
   const isLoading = categories === undefined;
+  const tabIndex = TABS.findIndex((t) => t.key === tab);
 
   return (
-    <PageContainer className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Categorías</h1>
-        <AppSheet
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          title="Nueva categoría"
-          trigger={
-            <Button
-              size="sm"
-              className="gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
-            >
-              <Plus className="h-4 w-4" /> Nueva
-            </Button>
-          }
-        >
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="cat-name">Nombre</Label>
-              <Input
-                id="cat-name"
-                placeholder="Ej: Mascotas"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tipo</Label>
-              <Select value={newType} onValueChange={(v) => { if (v) setNewType(v as CategoryType); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gasto">Gasto</SelectItem>
-                  <SelectItem value="ingreso">Ingreso</SelectItem>
-                  <SelectItem value="ambos">Ambos</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Color</Label>
-              <ColorPicker value={newColor} onChange={setNewColor} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Ícono</Label>
-              <IconPicker value={newIcon} onChange={setNewIcon} color={newColor} />
-            </div>
-            <Button type="submit" className="w-full" disabled={createLoading}>
-              {createLoading ? "Guardando…" : "Crear categoría"}
-            </Button>
-          </form>
-        </AppSheet>
-      </div>
-
-      {/* Sheet de edición */}
-      <AppSheet
-        open={!!editingCat}
-        onOpenChange={(open) => { if (!open) setEditingCat(null); }}
-        title="Editar categoría"
-      >
-        <form onSubmit={handleUpdate} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-cat-name">Nombre</Label>
-            <Input
-              id="edit-cat-name"
-              placeholder="Nombre de la categoría"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              required
-            />
-          </div>
-          {editingCat && (
-            <div className="space-y-1.5">
-              <Label>Tipo</Label>
-              <p className="text-sm px-3 py-2 rounded-md bg-muted text-foreground capitalize">
-                {editingCat.type === "ambos" ? "Ingresos y gastos" : editingCat.type === "ingreso" ? "Ingreso" : "Gasto"}
-              </p>
-            </div>
-          )}
-          <div className="space-y-1.5">
-            <Label>Color</Label>
-            <ColorPicker value={editColor} onChange={setEditColor} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Ícono</Label>
-            <IconPicker value={editIcon} onChange={setEditIcon} color={editColor} />
-          </div>
-          <Button type="submit" className="w-full" disabled={editLoading}>
-            {editLoading ? "Guardando…" : "Guardar cambios"}
-          </Button>
-        </form>
-      </AppSheet>
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}
+    <PageContainer className="space-y-5">
+      {/* Título grande estilo iOS */}
+      <header className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-foreground">Categorías</h1>
+          <p className="text-sm text-muted-foreground">
+            {isLoading ? " " : `${categories.length} activas · ${formatMonth(month)}`}
+          </p>
         </div>
-      ) : (
-        <>
-          {/* Gastos */}
-          <section className="rounded-xl bg-card border border-border">
-            <div className="px-4 py-2.5 bg-muted/50 border-b border-border rounded-t-xl">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Gastos ({gastosItems.length})
-              </h2>
-            </div>
-            <Reorder.Group
-              as="ul"
-              axis="y"
-              values={gastosItems}
-              onReorder={(items) => {
-                setGastosItems(items);
-                gastosRef.current = items;
-              }}
-              className="rounded-b-xl overflow-hidden"
-              style={{ listStyle: "none", padding: 0, margin: 0 }}
-            >
-              {gastosItems.map((cat) => (
-                <SortableCategoryRow
-                  key={cat._id}
-                  cat={cat}
-                  onEdit={() => openEdit(cat)}
-                  onArchive={() => setArchivingCat(cat)}
-                  onDragEnd={() => handleSectionDragEnd(gastosRef)}
-                />
-              ))}
-            </Reorder.Group>
-          </section>
-
-          <Separator />
-
-          {/* Ingresos */}
-          <section className="rounded-xl bg-card border border-border">
-            <div className="px-4 py-2.5 bg-muted/50 border-b border-border rounded-t-xl">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Ingresos ({ingresosItems.length})
-              </h2>
-            </div>
-            <Reorder.Group
-              as="ul"
-              axis="y"
-              values={ingresosItems}
-              onReorder={(items) => {
-                setIngresosItems(items);
-                ingresosRef.current = items;
-              }}
-              className="rounded-b-xl overflow-hidden"
-              style={{ listStyle: "none", padding: 0, margin: 0 }}
-            >
-              {ingresosItems.map((cat) => (
-                <SortableCategoryRow
-                  key={cat._id}
-                  cat={cat}
-                  onEdit={() => openEdit(cat)}
-                  onArchive={() => setArchivingCat(cat)}
-                  onDragEnd={() => handleSectionDragEnd(ingresosRef)}
-                />
-              ))}
-            </Reorder.Group>
-          </section>
-
-          {/* Toggle archivadas */}
+        <div className="flex shrink-0 items-center gap-2">
+          <AnimatePresence initial={false}>
+            {(editing || canReorder) && (
+              <motion.button
+                type="button"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                onClick={() => { haptic(); setOpenRowId(null); setEditing((v) => !v); }}
+                aria-pressed={editing}
+                className={cn(
+                  "touch-hit flex h-9 items-center gap-1 rounded-full px-3.5 text-sm font-semibold transition-colors",
+                  editing ? "bg-foreground text-background" : "bg-muted/80 text-foreground hover:bg-muted",
+                )}
+              >
+                {editing ? <><Check className="h-4 w-4" aria-hidden="true" /> Listo</> : "Ordenar"}
+              </motion.button>
+            )}
+          </AnimatePresence>
           <button
             type="button"
-            onClick={() => setShowArchived((v) => !v)}
-            className="flex w-full items-center gap-2 px-1 py-1.5 pointer-coarse:min-h-11 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            onClick={openCreate}
+            aria-label="Nueva categoría"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_8px_20px_-8px_rgb(16_185_129/0.9)] transition-transform active:scale-90"
           >
-            {showArchived ? (
-              <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-            )}
-            <span className="font-medium">
-              Archivadas
-              {archivedCategories !== undefined && ` (${archivedCategories.length})`}
-            </span>
+            <Plus className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
           </button>
+        </div>
+      </header>
 
-          {/* Sección archivadas */}
-          {showArchived && (
-            <section className="rounded-xl bg-card border border-border">
-              {archivedCategories === undefined ? (
-                <div className="p-4 space-y-2">
-                  {[1, 2].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+      {/* Pestañas con indicador que se desliza; fijas bajo el header al hacer scroll */}
+      <div className="sticky top-[calc(64px+env(safe-area-inset-top))] z-30 lg:top-4">
+        <div
+          role="tablist"
+          aria-label="Tipo de categoría"
+          className={cn("flex rounded-[18px] p-1", GLASS_SURFACE, "md:bg-[color-mix(in_oklch,var(--card)_85%,transparent)] md:backdrop-blur-xl")}
+        >
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                id={`cat-tab-${t.key}`}
+                aria-selected={active}
+                aria-controls="cat-panel"
+                onClick={() => switchTab(t.key)}
+                className={cn(
+                  "touch-hit relative flex flex-1 items-center justify-center gap-1.5 rounded-[14px] py-2 text-sm transition-colors",
+                  active ? "font-bold text-foreground" : "font-semibold text-muted-foreground",
+                )}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="cat-tab-pill"
+                    className="absolute inset-0 rounded-[14px] bg-[var(--surface)] shadow-[0_2px_10px_-4px_rgb(0_0_0/0.25)] dark:bg-white/10"
+                    transition={SPRING}
+                  />
+                )}
+                <span className="relative">{t.label}</span>
+                <span
+                  className={cn(
+                    "relative rounded-full px-1.5 text-[11px] font-bold tabular-nums transition-colors",
+                    active
+                      ? t.key === "gasto" ? "bg-[var(--os-magenta)]/15 text-[var(--os-magenta)]" : "bg-[var(--os-lime)]/20 text-lime-text"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {tabCounts[t.key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div id="cat-panel" role="tabpanel" aria-labelledby={`cat-tab-${tab}`} className="relative space-y-3">
+        {isLoading ? (
+          <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-14 rounded-[16px]" />)}
+          </div>
+        ) : (
+          <AnimatePresence mode="popLayout" initial={false}>
+            {/* Gastos entra y sale por la izquierda, Ingresos por la derecha */}
+            <motion.div
+              key={tab}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, x: tabIndex === 0 ? -28 : 28 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, x: tabIndex === 0 ? -28 : 28 }}
+              transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+              className="space-y-3"
+            >
+              {/* Resumen del mes */}
+              {items.length > 0 && (
+                <div className="flex items-baseline justify-between px-1">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                    {editing ? "Arrastra para ordenar" : tab === "gasto" ? "Gastado este mes" : "Recibido este mes"}
+                  </p>
+                  {!editing && (
+                    <div className="font-mono-num text-sm font-bold tabular-nums text-foreground">
+                      {monthStats === undefined
+                        ? <Skeleton className="h-4 w-20" />
+                        : <>
+                            {formatCents(tabTotal, monthStats.currency)}
+                            <span className="ml-1 font-sans text-xs font-medium text-muted-foreground">
+                              en {tabCount} {tabCount === 1 ? "categoría" : "categorías"}
+                            </span>
+                          </>}
+                    </div>
+                  )}
                 </div>
-              ) : archivedCategories.length === 0 ? (
-                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  No hay categorías archivadas
-                </p>
-              ) : (
-                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                  {archivedCategories.map((cat) => (
-                    <ArchivedCategoryRow
-                      key={cat._id}
-                      cat={cat}
-                      onDelete={() => setDeletingCat(cat)}
-                    />
-                  ))}
-                </ul>
               )}
-            </section>
-          )}
-        </>
-      )}
 
-      {/* Diálogo de confirmación de archivo */}
-      <AlertDialog open={archivingCat !== null} onOpenChange={(open) => { if (!open) setArchivingCat(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archivar categoría</AlertDialogTitle>
-            <AlertDialogDescription>
-              {archivingCat?.isDefault
-                ? "Esta categoría dejará de aparecer en los selectores."
-                : `¿Archivar "${archivingCat?.name}"?`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel />
-            <AlertDialogAction onClick={executeArchive}>
-              Archivar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              {/* Buscador */}
+              <AnimatePresence initial={false}>
+                {showSearch && !editing && (
+                  <motion.label
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="relative block overflow-hidden"
+                  >
+                    <span className="sr-only">Buscar categoría</span>
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Buscar"
+                      enterKeyHint="search"
+                      className="h-10 w-full rounded-[14px] border-0 bg-muted/70 pl-10 pr-9 text-[15px] text-foreground outline-none ring-ring/50 placeholder:text-muted-foreground focus-visible:ring-2 [&::-webkit-search-cancel-button]:hidden"
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => setQuery("")}
+                        aria-label="Limpiar búsqueda"
+                        className="touch-hit absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-muted-foreground/30 text-background"
+                      >
+                        <X className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
+                      </button>
+                    )}
+                  </motion.label>
+                )}
+              </AnimatePresence>
 
-      {/* Flujo de eliminación */}
+              {visible.length === 0 ? (
+                <EmptyState
+                  tab={tab}
+                  query={query.trim()}
+                  seeding={seeding}
+                  onSeed={handleSeed}
+                  onCreate={openCreate}
+                />
+              ) : (
+                <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                  <Reorder.Group
+                    as="ul"
+                    axis="y"
+                    values={visible}
+                    onReorder={(next: Category[]) => {
+                      // Solo se reordena sin búsqueda activa, así que `visible` es la lista completa
+                      setItems(next);
+                      itemsRef.current = next;
+                    }}
+                    className="space-y-0.5"
+                  >
+                    <AnimatePresence initial={false}>
+                      {visible.map((cat, i) => (
+                        <CategoryRow
+                          key={cat._id}
+                          cat={cat}
+                          index={i}
+                          stats={rowStats.get(cat._id)}
+                          currency={monthStats?.currency ?? "COP"}
+                          editing={editing}
+                          openId={openRowId}
+                          setOpenId={setOpenRowId}
+                          onEdit={() => openEdit(cat)}
+                          onArchive={() => handleArchive(cat)}
+                          onLocked={() => toast.info("Las categorías del sistema no se pueden editar")}
+                          onDragEnd={handleReorderEnd}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </Reorder.Group>
+                </div>
+              )}
+
+              {visible.length > 0 && !editing && (
+                <p className="px-1 text-center text-xs text-muted-foreground/80">
+                  Desliza una categoría hacia la izquierda para editarla o archivarla.
+                </p>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        )}
+      </div>
+
+      <ArchivedSection
+        open={showArchived}
+        onToggle={() => setShowArchived((v) => !v)}
+        archived={archivedCategories}
+        onRestore={handleRestore}
+        onDelete={setDeletingCat}
+      />
+
+      <CategorySheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        category={editingCat}
+        defaultType={tab}
+        existingNames={existingNames}
+        onArchive={handleArchive}
+      />
+
       <DeleteCategoryFlow
         deletingCat={deletingCat}
         txCount={txCount}

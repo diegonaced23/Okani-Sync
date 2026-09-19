@@ -4,6 +4,9 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
+import { assertValidMonth } from "./lib/utils";
+import { getUserRateMap, convertAmount } from "./lib/money";
+import { DEFAULT_CATEGORIES } from "../src/lib/constants";
 
 export const list = query({
   args: {
@@ -112,12 +115,43 @@ export const reorder = mutation({
   handler: async (ctx, { categoryIds }) => {
     const user = await getCurrentUser(ctx);
     const now = Date.now();
-    for (let i = 0; i < categoryIds.length; i++) {
-      const cat = await ctx.db.get(categoryIds[i]);
-      if (!cat || cat.userId !== user.clerkId) {
-        throw new Error("Categoría no encontrada");
-      }
-      await ctx.db.patch(categoryIds[i], { order: i, updatedAt: now });
+    // Las categorías "ambos" aparecen en las pestañas de gastos y de ingresos, y
+    // cada pestaña manda solo sus ids. Numerar desde 0 pisaría el orden de la otra
+    // pestaña (dos filas con el mismo `order`). En su lugar se reparten entre estas
+    // filas los mismos valores que ya ocupaban: la otra pestaña no se entera.
+    const active = await ctx.db
+      .query("categories")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", user.clerkId).eq("archived", false)
+      )
+      .take(500);
+    const byId = new Map(active.map((c) => [c._id as string, c]));
+    for (const id of categoryIds) {
+      if (!byId.has(id)) throw new Error("Categoría no encontrada");
+    }
+
+    // Con órdenes faltantes o repetidos no hay "huecos" fiables que repartir:
+    // primero se normaliza todo el listado a 0..N-1 conservando el orden visible.
+    const orders = active.map((c) => c.order);
+    const clean =
+      orders.every((o) => o !== undefined) && new Set(orders).size === orders.length;
+    const orderOf = new Map<string, number>();
+    if (clean) {
+      for (const c of active) orderOf.set(c._id, c.order!);
+    } else {
+      const sorted = [...active].sort(
+        (a, b) =>
+          (a.order ?? Infinity) - (b.order ?? Infinity) || a._creationTime - b._creationTime
+      );
+      sorted.forEach((c, i) => orderOf.set(c._id, i));
+    }
+
+    const slots = categoryIds.map((id) => orderOf.get(id)!).sort((a, b) => a - b);
+    categoryIds.forEach((id, i) => orderOf.set(id, slots[i]));
+
+    for (const c of active) {
+      const order = orderOf.get(c._id)!;
+      if (c.order !== order) await ctx.db.patch(c._id, { order, updatedAt: now });
     }
   },
 });
@@ -133,6 +167,132 @@ export const listArchived = query({
       )
       .collect();
     return results;
+  },
+});
+
+/** Devuelve una categoría archivada a la lista activa. */
+export const unarchive = mutation({
+  args: { categoryId: v.id("categories") },
+  handler: async (ctx, { categoryId }) => {
+    const user = await getCurrentUser(ctx);
+    const cat = await ctx.db.get(categoryId);
+    if (!cat || cat.userId !== user.clerkId) {
+      throw new Error("Categoría no encontrada");
+    }
+    if (!cat.archived) return;
+    const active = await ctx.db
+      .query("categories")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", user.clerkId).eq("archived", false)
+      )
+      .take(500);
+    // Si su posición sigue libre (p. ej. "Deshacer" justo después de archivar)
+    // vuelve a su lugar; si otra fila la ocupó, va al final.
+    const taken = cat.order === undefined || active.some((c) => c.order === cat.order);
+    const maxOrder = active.reduce((max, c) => Math.max(max, c.order ?? -1), -1);
+    await ctx.db.patch(categoryId, {
+      archived: false,
+      order: taken ? maxOrder + 1 : cat.order,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Agrega las categorías por defecto de un tipo que el usuario no tenga activas. Idempotente:
+ * compara por nombre sin distinguir mayúsculas, y si una está archivada la restaura
+ * en vez de duplicarla. Las del sistema no se tocan (se crean con el usuario).
+ */
+export const seedDefaults = mutation({
+  args: { type: v.union(v.literal("gasto"), v.literal("ingreso")) },
+  handler: async (ctx, { type }) => {
+    const user = await getCurrentUser(ctx);
+    const now = Date.now();
+    const all = await ctx.db
+      .query("categories")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .take(1000);
+    // Si hay una activa y otra archivada con el mismo nombre, manda la activa
+    const byName = new Map<string, (typeof all)[number]>();
+    for (const c of all) {
+      const key = c.name.trim().toLowerCase();
+      const prev = byName.get(key);
+      if (!prev || (prev.archived && !c.archived)) byName.set(key, c);
+    }
+    let order = all
+      .filter((c) => !c.archived)
+      .reduce((max, c) => Math.max(max, c.order ?? -1), -1);
+
+    let added = 0;
+    for (const def of DEFAULT_CATEGORIES) {
+      if (def.type !== type) continue;
+      const existing = byName.get(def.name.toLowerCase());
+      if (existing && !existing.archived) continue;
+      order += 1;
+      added += 1;
+      if (existing) {
+        await ctx.db.patch(existing._id, { archived: false, order, updatedAt: now });
+      } else {
+        await ctx.db.insert("categories", {
+          userId: user.clerkId,
+          name: def.name,
+          type: def.type,
+          color: def.color,
+          icon: def.icon,
+          isDefault: true,
+          archived: false,
+          order,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+    return { added };
+  },
+});
+
+/**
+ * Total y cantidad de movimientos del mes por categoría, en la moneda preferida.
+ * Gastos en base devengo (gasto + gasto_tarjeta), igual que spendingByCategory,
+ * e ingresos aparte.
+ */
+export const monthStats = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    assertValidMonth(month);
+    const user = await getCurrentUser(ctx);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+
+    const byType = (type: "gasto" | "gasto_tarjeta" | "ingreso") =>
+      ctx.db
+        .query("transactions")
+        .withIndex("by_user_type_month", (q) =>
+          q.eq("userId", user.clerkId).eq("type", type).eq("month", month)
+        )
+        .take(2000);
+    const [gastos, gastosTarjeta, ingresos] = await Promise.all([
+      byType("gasto"),
+      byType("gasto_tarjeta"),
+      byType("ingreso"),
+    ]);
+
+    // Gasto e ingreso por separado: una categoría "ambos" muestra en cada pestaña su lado
+    type Entry = { expense: number; income: number; count: number };
+    const stats: Record<Id<"categories">, Entry> = {};
+    const add = (txs: typeof gastos, side: "expense" | "income") => {
+      for (const tx of txs) {
+        if (!tx.categoryId) continue;
+        // Sin tasa disponible se excluye del monto en vez de sumarlo sin convertir
+        const { converted, hasRate } = convertAmount(tx.amount, tx.currency, preferredCurrency, rateMap);
+        const entry = (stats[tx.categoryId] ??= { expense: 0, income: 0, count: 0 });
+        entry[side] += hasRate ? converted : 0;
+        entry.count += 1;
+      }
+    };
+    add(gastos, "expense");
+    add(gastosTarjeta, "expense");
+    add(ingresos, "income");
+    return { currency: preferredCurrency, stats };
   },
 });
 
