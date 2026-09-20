@@ -1,469 +1,510 @@
 "use client";
 
-import { Suspense } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
-import type { Id, Doc } from "../../../../convex/_generated/dataModel";
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { AppSheet } from "@/components/ui/app-sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { PillTabs } from "@/components/ui/pill-tabs";
-import { BudgetCard } from "@/components/budgets/BudgetCard";
-import { BudgetForm } from "@/components/budgets/BudgetForm";
-import { GoalCard } from "@/components/goals/GoalCard";
-import { GoalForm } from "@/components/goals/GoalForm";
-import { AddFundsForm } from "@/components/goals/AddFundsForm";
-import { currentMonth, formatMonth, formatCents } from "@/lib/money";
+import { use, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../../../../convex/_generated/api";
+import { PageContainer } from "@/components/layout/PageContainer";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
   AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PageContainer } from "@/components/layout/PageContainer";
+import { BudgetDetailSheet } from "@/components/budgets/BudgetDetailSheet";
+import { BudgetOverviewCard } from "@/components/budgets/BudgetOverviewCard";
+import { BudgetRow } from "@/components/budgets/BudgetRow";
+import { BudgetSheet } from "@/components/budgets/BudgetSheet";
+import { EmptyState as BudgetsEmptyState } from "@/components/budgets/EmptyState";
+import { MonthStepper } from "@/components/budgets/MonthStepper";
+import { byUsage, stateOf, type Budget } from "@/components/budgets/shared";
+import { AddFundsSheet } from "@/components/goals/AddFundsSheet";
+import { EmptyState as GoalsEmptyState } from "@/components/goals/EmptyState";
+import { GoalRow } from "@/components/goals/GoalRow";
+import { GoalSheet } from "@/components/goals/GoalSheet";
+import { GoalsOverviewCard } from "@/components/goals/GoalsOverviewCard";
+import { byProgress, viewOf, type Goal } from "@/components/goals/shared";
+import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
+import { currentMonth, formatMonth } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+type Tab = "presupuestos" | "metas";
 
-type PageTab = "presupuestos" | "metas";
-
-const TABS: { key: PageTab; label: string }[] = [
+const TABS: { key: Tab; label: string }[] = [
   { key: "presupuestos", label: "Presupuestos" },
-  { key: "metas",        label: "Metas" },
+  { key: "metas", label: "Metas" },
 ];
 
-type BudgetWithCategory = {
-  _id: string;
-  categoryId: string;
-  categoryName?: string;
-  categoryColor?: string;
-  amount: number;
-  spent: number;
-  currency: string;
-  alertThreshold?: number;
-  recurring?: boolean;
-};
+export default function PresupuestosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const params = use(searchParams);
+  const router = useRouter();
+  const reduce = useReducedMotion();
 
-// ─── Utilidades ───────────────────────────────────────────────────────────────
+  const [tab, setTab] = useState<Tab>(params.tab === "metas" ? "metas" : "presupuestos");
+  const [month, setMonth] = useState(() => currentMonth());
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  // Se fija al montar: Date.now() en el render rompería la pureza del componente
+  const [nowMs] = useState(() => Date.now());
 
-function shiftMonth(m: string, delta: number) {
-  const [y, mo] = m.split("-").map(Number);
-  const d = new Date(y, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-// ─── Contenido principal (necesita Suspense por useSearchParams) ───────────────
-
-function PresupuestosContent() {
-  const searchParams = useSearchParams();
-  const initialTab = (searchParams.get("tab") as PageTab) ?? "presupuestos";
-
-  // Un único useState para evitar hydration mismatch con useSearchParams
-  const [activeTab, setActiveTab] = useState<PageTab>(initialTab);
-
-  // ── Estado presupuestos ──────────────────────────────────────────────────
-  const [month, setMonth]               = useState(() => currentMonth());
-  const [createBudgetOpen, setCreateBudgetOpen] = useState(false);
-  const [editingBudget, setEditingBudget]       = useState<BudgetWithCategory | null>(null);
-  const [deletingBudgetId, setDeletingBudgetId] = useState<Id<"budgets"> | null>(null);
-
-  const budgets     = useQuery(api.budgets.listByMonthWithCategory, { month });
+  // ── Presupuestos ─────────────────────────────────────────────────────────
+  const budgets = useQuery(api.budgets.listByMonthWithCategory, { month });
+  const budgetsOverview = useQuery(api.budgets.overview, { month });
   const removeBudget = useMutation(api.budgets.remove);
 
-  const totalBudgeted = (budgets ?? []).reduce((s, b) => s + b.amount, 0);
-  const totalSpent    = (budgets ?? []).reduce((s, b) => s + b.spent, 0);
-  const overBudget    = (budgets ?? []).filter((b) => b.spent > b.amount);
+  const [budgetSheet, setBudgetSheet] = useState<{ open: boolean; budget: Budget | null }>({ open: false, budget: null });
+  const [detailBudget, setDetailBudget] = useState<Budget | null>(null);
+  const [deletingBudget, setDeletingBudget] = useState<Budget | null>(null);
 
-  async function executeDeleteBudget() {
-    if (!deletingBudgetId) return;
+  const budgetGroups = useMemo(() => {
+    const list = (budgets ?? []) as Budget[];
+    return {
+      over: list.filter((b) => stateOf(b) === "over").sort(byUsage),
+      warn: list.filter((b) => stateOf(b) === "warn").sort(byUsage),
+      ok: list.filter((b) => stateOf(b) === "ok").sort(byUsage),
+    };
+  }, [budgets]);
+
+  // ── Metas ────────────────────────────────────────────────────────────────
+  const goals = useQuery(api.goals.list);
+  const goalsOverview = useQuery(api.goals.overview);
+  const removeGoal = useMutation(api.goals.remove);
+  const reactivateGoal = useMutation(api.goals.reactivate);
+
+  const [goalSheet, setGoalSheet] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null });
+  const [fundingGoal, setFundingGoal] = useState<Goal | null>(null);
+  const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  const goalGroups = useMemo(() => {
+    const list = (goals ?? []) as Goal[];
+    return {
+      active: list.filter((g) => !viewOf(g).completed).sort(byProgress),
+      completed: list.filter((g) => viewOf(g).completed),
+    };
+  }, [goals]);
+
+  const counts = {
+    presupuestos: budgetGroups.over.length + budgetGroups.warn.length,
+    metas: goalGroups.active.length,
+  };
+
+  function switchTab(next: Tab) {
+    if (next === tab) return;
+    haptic();
+    setTab(next);
+    setOpenRowId(null);
+    setShowCompleted(false);
+    // En la URL para que el enlace del dashboard y el botón atrás coincidan
+    router.replace(next === "metas" ? "/presupuestos?tab=metas" : "/presupuestos", { scroll: false });
+  }
+
+  async function confirmDeleteBudget() {
+    if (!deletingBudget) return;
+    const name = deletingBudget.categoryName ?? "El presupuesto";
     try {
-      await removeBudget({ budgetId: deletingBudgetId });
-      toast.success("Presupuesto eliminado");
-      setDeletingBudgetId(null);
+      await removeBudget({ budgetId: deletingBudget._id });
+      setDeletingBudget(null);
+      setDetailBudget(null);
+      toast.success(`Presupuesto de «${name}» eliminado`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
     }
   }
 
-  // ── Estado metas ─────────────────────────────────────────────────────────
-  // nowMs se calcula una vez al montar para evitar el error de purity
-  const [nowMs] = useState<number>(() => Date.now());
-
-  const [createGoalOpen, setCreateGoalOpen]     = useState(false);
-  const [editingGoal, setEditingGoal]           = useState<Doc<"goals"> | null>(null);
-  const [addFundsGoal, setAddFundsGoal]         = useState<Doc<"goals"> | null>(null);
-  const [deletingGoalId, setDeletingGoalId]     = useState<Id<"goals"> | null>(null);
-
-  const goals       = useQuery(api.goals.list);
-  const accounts    = useQuery(api.accounts.list);
-  const removeGoal  = useMutation(api.goals.remove);
-
-  const accountMap = Object.fromEntries(
-    (accounts ?? []).map((a) => [a._id, a])
-  );
-
-  const activeGoals    = (goals ?? []).filter((g) => g.status === "activa");
-  const completedGoals = (goals ?? []).filter((g) => g.status === "completada");
-
-  async function executeDeleteGoal() {
-    if (!deletingGoalId) return;
+  async function confirmDeleteGoal() {
+    if (!deletingGoal) return;
+    const name = deletingGoal.name;
     try {
-      await removeGoal({ goalId: deletingGoalId });
-      toast.success("Meta eliminada");
-      setDeletingGoalId(null);
+      await removeGoal({ goalId: deletingGoal._id });
+      setDeletingGoal(null);
+      toast.success(`Meta «${name}» eliminada`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+    }
+  }
+
+  async function handleReactivate(goal: Goal) {
+    haptic(15);
+    try {
+      await reactivateGoal({ goalId: goal._id });
+      toast.success(`«${goal.name}» volvió a estar en progreso`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo reactivar");
     }
   }
 
   const isLoadingBudgets = budgets === undefined;
-  const isLoadingGoals   = goals === undefined;
+  const isLoadingGoals = goals === undefined;
+  const budgetsTab = tab === "presupuestos";
+
+  function onCreate() {
+    haptic();
+    if (budgetsTab) setBudgetSheet({ open: true, budget: null });
+    else setGoalSheet({ open: true, goal: null });
+  }
+
+  let rowIndex = 0;
+  function renderBudgets(list: Budget[]) {
+    return (
+      <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+        <ul className="space-y-0.5">
+          <AnimatePresence initial={false}>
+            {list.map((b) => (
+              <BudgetRow
+                key={b._id}
+                budget={b}
+                index={rowIndex++}
+                openId={openRowId}
+                setOpenId={setOpenRowId}
+                onOpen={() => setDetailBudget(b)}
+                onEdit={() => setBudgetSheet({ open: true, budget: b })}
+                onDelete={() => setDeletingBudget(b)}
+              />
+            ))}
+          </AnimatePresence>
+        </ul>
+      </div>
+    );
+  }
+
+  let goalIndex = 0;
+  function renderGoals(list: Goal[]) {
+    return (
+      <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+        <ul className="space-y-0.5">
+          <AnimatePresence initial={false}>
+            {list.map((g) => (
+              <GoalRow
+                key={g._id}
+                goal={g}
+                index={goalIndex++}
+                nowMs={nowMs}
+                openId={openRowId}
+                setOpenId={setOpenRowId}
+                onAddFunds={() => setFundingGoal(g)}
+                onEdit={() => setGoalSheet({ open: true, goal: g })}
+                onDelete={() => setDeletingGoal(g)}
+                onReactivate={() => handleReactivate(g)}
+              />
+            ))}
+          </AnimatePresence>
+        </ul>
+      </div>
+    );
+  }
 
   return (
     <PageContainer className="space-y-5">
+      <header className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-foreground">
+            Presupuestos y metas
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {budgetsTab ? "Cuánto puedes gastar y cómo vas" : "Lo que estás ahorrando para lograrlo"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onCreate}
+          aria-label={budgetsTab ? "Nuevo presupuesto" : "Nueva meta"}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_8px_20px_-8px_rgb(16_185_129/0.9)] transition-transform active:scale-90"
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
+        </button>
+      </header>
 
-      {/* ── Header ────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Presupuestos y metas</h1>
-
-        {/* Botón desktop — cambia según tab */}
-        {activeTab === "presupuestos" ? (
-          <Button
-            size="sm"
-            onClick={() => setCreateBudgetOpen(true)}
-            className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
-          >
-            <Plus className="h-4 w-4" /> Nuevo presupuesto
-          </Button>
-        ) : (
-          <AppSheet
-            open={createGoalOpen}
-            onOpenChange={setCreateGoalOpen}
-            title="Nueva meta"
-            trigger={
-              <Button
-                size="sm"
-                className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+      {/* Pestañas con la píldora que se desliza */}
+      <div className="sticky top-[calc(64px+env(safe-area-inset-top))] z-30 lg:top-4">
+        <div
+          role="tablist"
+          aria-label="Presupuestos o metas"
+          className={cn("flex rounded-[18px] p-1", GLASS_SURFACE, "md:bg-[color-mix(in_oklch,var(--card)_85%,transparent)] md:backdrop-blur-xl")}
+        >
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                id={`tab-${t.key}`}
+                aria-selected={active}
+                aria-controls="module-panel"
+                onClick={() => switchTab(t.key)}
+                className={cn(
+                  "touch-hit relative flex flex-1 items-center justify-center gap-1.5 rounded-[14px] py-2 text-sm transition-colors",
+                  active ? "font-bold text-foreground" : "font-semibold text-muted-foreground",
+                )}
               >
-                <Plus className="h-4 w-4" /> Nueva meta
-              </Button>
-            }
-          >
-            <GoalForm onSuccess={() => setCreateGoalOpen(false)} />
-          </AppSheet>
-        )}
+                {active && (
+                  <motion.span
+                    layoutId="module-tab-pill"
+                    className="absolute inset-0 rounded-[14px] bg-[var(--surface)] shadow-[0_2px_10px_-4px_rgb(0_0_0/0.25)] dark:bg-white/10"
+                    transition={SPRING}
+                  />
+                )}
+                <span className="relative">{t.label}</span>
+                {counts[t.key] > 0 && (
+                  <span
+                    className={cn(
+                      "relative rounded-full px-1.5 text-[11px] font-bold tabular-nums",
+                      active
+                        ? t.key === "presupuestos"
+                          ? "bg-[var(--os-orange)]/18 text-[var(--os-orange-text)]"
+                          : "bg-[var(--os-lime)]/20 text-lime-text"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {counts[t.key]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── Tabs ──────────────────────────────────────────────────────────── */}
-      <PillTabs
-        tabs={TABS}
-        active={activeTab}
-        onChange={setActiveTab}
-        ariaLabel="Seleccionar sección"
+      <div id="module-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="relative">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={tab}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, x: budgetsTab ? -28 : 28 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, x: budgetsTab ? -28 : 28 }}
+            transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+            className="space-y-5"
+          >
+            {budgetsTab ? (
+              <>
+                <MonthStepper month={month} onChange={(m) => { setMonth(m); setOpenRowId(null); }} />
+
+                {isLoadingBudgets ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-[196px] rounded-[28px]" />
+                    <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+                      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-[74px] rounded-[18px]" />)}
+                    </div>
+                  </div>
+                ) : (budgets ?? []).length === 0 ? (
+                  <BudgetsEmptyState
+                    month={formatMonth(month).toLowerCase()}
+                    isCurrentMonth={month === currentMonth()}
+                    onCreate={() => setBudgetSheet({ open: true, budget: null })}
+                  />
+                ) : (
+                  <>
+                    <BudgetOverviewCard data={budgetsOverview} month={month} nowMs={nowMs} />
+
+                    {budgetGroups.over.length > 0 && (
+                      <Group title="Excedidos" danger>{renderBudgets(budgetGroups.over)}</Group>
+                    )}
+                    {budgetGroups.warn.length > 0 && (
+                      <Group title="En riesgo" warn>{renderBudgets(budgetGroups.warn)}</Group>
+                    )}
+                    {budgetGroups.ok.length > 0 && (
+                      <Group title="Al día">{renderBudgets(budgetGroups.ok)}</Group>
+                    )}
+
+                    <p className="px-1 text-center text-xs text-muted-foreground/80">
+                      Toca un presupuesto para ver en qué se fue. Desliza para editar o eliminar.
+                    </p>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {isLoadingGoals ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-[152px] rounded-[28px]" />
+                    <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+                      {[1, 2].map((i) => <Skeleton key={i} className="h-16 rounded-[18px]" />)}
+                    </div>
+                  </div>
+                ) : (goals ?? []).length === 0 ? (
+                  <GoalsEmptyState onCreate={() => setGoalSheet({ open: true, goal: null })} />
+                ) : (
+                  <>
+                    <GoalsOverviewCard data={goalsOverview} />
+
+                    {goalGroups.active.length > 0 ? (
+                      <Group title="En progreso">{renderGoals(goalGroups.active)}</Group>
+                    ) : (
+                      <p className={cn("rounded-[24px] px-6 py-6 text-center text-sm font-semibold text-foreground", GLASS_SURFACE)}>
+                        Cumpliste todas tus metas 🎉
+                      </p>
+                    )}
+
+                    {goalGroups.completed.length > 0 && (
+                      <Collapsible
+                        title="Cumplidas"
+                        count={goalGroups.completed.length}
+                        open={showCompleted}
+                        onToggle={() => setShowCompleted((v) => !v)}
+                      >
+                        {renderGoals(goalGroups.completed)}
+                      </Collapsible>
+                    )}
+
+                    <p className="px-1 text-center text-xs text-muted-foreground/80">
+                      Toca una meta para abonar. Desliza para editarla o eliminarla.
+                    </p>
+                  </>
+                )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* ── Hojas ────────────────────────────────────────────────────────── */}
+      <BudgetSheet
+        open={budgetSheet.open}
+        onOpenChange={(open) => setBudgetSheet((s) => ({ ...s, open }))}
+        budget={budgetSheet.budget}
+        month={month}
       />
 
-      {/* ══════════════════════════════════════════════════════════════════
-          TAB: PRESUPUESTOS
-      ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "presupuestos" && (
-        <div
-          className="space-y-5"
-          role="tabpanel"
-          id="panel-presupuestos"
-          aria-labelledby="tab-presupuestos"
-        >
-          {/* Sheet crear presupuesto */}
-          <AppSheet
-            open={createBudgetOpen}
-            onOpenChange={setCreateBudgetOpen}
-            title="Nuevo presupuesto"
-          >
-            <BudgetForm defaultMonth={month} onSuccess={() => setCreateBudgetOpen(false)} />
-          </AppSheet>
+      <BudgetDetailSheet
+        budget={detailBudget}
+        open={detailBudget !== null}
+        onOpenChange={(open) => { if (!open) setDetailBudget(null); }}
+        nowMs={nowMs}
+        onEdit={() => {
+          const b = detailBudget;
+          setDetailBudget(null);
+          if (b) setBudgetSheet({ open: true, budget: b });
+        }}
+        onDeleted={() => setDetailBudget(null)}
+      />
 
-          {/* Sheet editar presupuesto */}
-          <AppSheet
-            open={!!editingBudget}
-            onOpenChange={(open) => { if (!open) setEditingBudget(null); }}
-            title="Editar presupuesto"
-          >
-            {editingBudget && (
-              <BudgetForm
-                editBudget={editingBudget}
-                onSuccess={() => setEditingBudget(null)}
-              />
-            )}
-          </AppSheet>
+      <GoalSheet
+        open={goalSheet.open}
+        onOpenChange={(open) => setGoalSheet((s) => ({ ...s, open }))}
+        goal={goalSheet.goal}
+      />
 
-          {/* Selector de mes */}
-          <div className="flex items-center justify-between rounded-xl bg-card border border-border px-4 py-2">
-            <button type="button" onClick={() => setMonth((m) => shiftMonth(m, -1))}
-              className="touch-hit p-1 rounded hover:bg-muted transition-colors" aria-label="Mes anterior">
-              <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <span className="text-sm font-medium capitalize">{formatMonth(month)}</span>
-            <button type="button" onClick={() => setMonth((m) => shiftMonth(m, 1))}
-              disabled={month >= currentMonth()}
-              className="touch-hit p-1 rounded hover:bg-muted transition-colors disabled:opacity-30" aria-label="Mes siguiente">
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </div>
+      <AddFundsSheet
+        goal={fundingGoal}
+        open={fundingGoal !== null}
+        onOpenChange={(open) => { if (!open) setFundingGoal(null); }}
+      />
 
-          {/* Resumen del mes */}
-          {!isLoadingBudgets && (budgets ?? []).length > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl bg-card border border-border p-3 text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Presupuestado</p>
-                <p className="text-sm font-bold text-foreground mt-0.5">{formatCents(totalBudgeted, "COP")}</p>
-              </div>
-              <div className="rounded-xl bg-card border border-border p-3 text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Gastado</p>
-                <p className={`text-sm font-bold mt-0.5 ${totalSpent > totalBudgeted ? "text-danger" : "text-foreground"}`}>
-                  {formatCents(totalSpent, "COP")}
-                </p>
-              </div>
-              <div className="rounded-xl bg-card border border-border p-3 text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Disponible</p>
-                <p className={`text-sm font-bold mt-0.5 ${totalSpent > totalBudgeted ? "text-danger" : "text-accent"}`}>
-                  {formatCents(Math.max(0, totalBudgeted - totalSpent), "COP")}
-                </p>
-              </div>
-            </div>
-          )}
+      {/* ── Confirmaciones de borrado ────────────────────────────────────── */}
+      <AlertDialog open={deletingBudget !== null} onOpenChange={(open) => { if (!open) setDeletingBudget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Eliminar el presupuesto de «{deletingBudget?.categoryName ?? "esta categoría"}»
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borra solo el límite del mes: tus movimientos de la categoría no se tocan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={confirmDeleteBudget}>Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-          {/* Alerta excedidos */}
-          {overBudget.length > 0 && (
-            <div className="rounded-xl bg-danger/10 border border-danger/20 p-3">
-              <p className="text-sm font-semibold text-danger">
-                {overBudget.length} presupuesto{overBudget.length > 1 ? "s" : ""} excedido
-                {overBudget.length > 1 ? "s" : ""}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {overBudget.map((b) => b.categoryName).join(", ")}
-              </p>
-            </div>
-          )}
-
-          {/* Lista de presupuestos */}
-          {isLoadingBudgets ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
-            </div>
-          ) : (budgets ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground py-14 text-center">
-              No hay presupuestos para {formatMonth(month).toLowerCase()}.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {budgets!
-                .sort((a, b) => (b.spent / b.amount) - (a.spent / a.amount))
-                .map((budget) => (
-                  <BudgetCard
-                    key={budget._id}
-                    budget={budget}
-                    onEdit={() => setEditingBudget(budget as BudgetWithCategory)}
-                    onDelete={() => setDeletingBudgetId(budget._id as Id<"budgets">)}
-                  />
-                ))}
-            </div>
-          )}
-
-          {/* Botón mobile */}
-          {!isLoadingBudgets && (
-            <div className="md:hidden">
-              <Button
-                onClick={() => setCreateBudgetOpen(true)}
-                className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold"
-              >
-                <Plus className="h-5 w-5" /> Agregar presupuesto
-              </Button>
-            </div>
-          )}
-
-          {/* Diálogo eliminar presupuesto */}
-          <AlertDialog open={deletingBudgetId !== null} onOpenChange={(open) => { if (!open) setDeletingBudgetId(null); }}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Eliminar presupuesto</AlertDialogTitle>
-                <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel />
-                <AlertDialogAction onClick={executeDeleteBudget}>Eliminar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════
-          TAB: METAS
-      ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "metas" && (
-        <div
-          className="space-y-5"
-          role="tabpanel"
-          id="panel-metas"
-          aria-labelledby="tab-metas"
-        >
-          {/* Sheets de metas */}
-          <AppSheet
-            open={!!editingGoal}
-            onOpenChange={(open) => { if (!open) setEditingGoal(null); }}
-            title="Editar meta"
-          >
-            {editingGoal && (
-              <GoalForm
-                editGoal={editingGoal}
-                onSuccess={() => setEditingGoal(null)}
-              />
-            )}
-          </AppSheet>
-
-          <AppSheet
-            open={!!addFundsGoal}
-            onOpenChange={(open) => { if (!open) setAddFundsGoal(null); }}
-            title="Abonar a la meta"
-          >
-            {addFundsGoal && (
-              <AddFundsForm
-                goal={addFundsGoal}
-                onSuccess={() => setAddFundsGoal(null)}
-              />
-            )}
-          </AppSheet>
-
-          {/* Stats rápidas */}
-          {!isLoadingGoals && (goals ?? []).length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-card border border-border p-3 text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">En progreso</p>
-                <p className="text-2xl font-bold text-foreground mt-0.5">{activeGoals.length}</p>
-              </div>
-              <div className="rounded-xl bg-card border border-border p-3 text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completadas</p>
-                <p className="text-2xl font-bold mt-0.5" style={{ color: "var(--os-lime)" }}>
-                  {completedGoals.length}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Lista de metas activas */}
-          {isLoadingGoals ? (
-            <div className="space-y-3">
-              {[1, 2].map((i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
-            </div>
-          ) : (goals ?? []).length === 0 ? (
-            <div className="py-16 text-center space-y-2">
-              <p className="text-4xl">🎯</p>
-              <p className="text-sm font-medium text-foreground">Aún no tienes metas</p>
-              <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                Define tus objetivos financieros: la laptop, el viaje o el fondo de emergencia que tanto quieres lograr.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {activeGoals.length > 0 && (
-                <section className="space-y-3">
-                  {activeGoals.length < (goals ?? []).length && (
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      En progreso
-                    </h2>
-                  )}
-                  {activeGoals.map((goal) => {
-                    const linkedAcc = goal.linkedAccountId ? accountMap[goal.linkedAccountId] : undefined;
-                    return (
-                      <GoalCard
-                        key={goal._id}
-                        goal={goal}
-                        linkedAccount={linkedAcc ? { name: linkedAcc.name, balance: linkedAcc.balance, currency: linkedAcc.currency, color: linkedAcc.color } : undefined}
-                        nowMs={nowMs}
-                        onEdit={() => setEditingGoal(goal)}
-                        onDelete={() => setDeletingGoalId(goal._id as Id<"goals">)}
-                        onAddFunds={() => setAddFundsGoal(goal)}
-                      />
-                    );
-                  })}
-                </section>
-              )}
-
-              {completedGoals.length > 0 && (
-                <section className="space-y-3">
-                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Completadas
-                  </h2>
-                  {completedGoals.map((goal) => {
-                    const linkedAcc = goal.linkedAccountId ? accountMap[goal.linkedAccountId] : undefined;
-                    return (
-                      <GoalCard
-                        key={goal._id}
-                        goal={goal}
-                        linkedAccount={linkedAcc ? { name: linkedAcc.name, balance: linkedAcc.balance, currency: linkedAcc.currency, color: linkedAcc.color } : undefined}
-                        nowMs={nowMs}
-                        onEdit={() => setEditingGoal(goal)}
-                        onDelete={() => setDeletingGoalId(goal._id as Id<"goals">)}
-                        onAddFunds={() => setAddFundsGoal(goal)}
-                      />
-                    );
-                  })}
-                </section>
-              )}
-            </div>
-          )}
-
-          {/* Botón mobile */}
-          {!isLoadingGoals && (
-            <div className="md:hidden">
-              <AppSheet
-                open={createGoalOpen}
-                onOpenChange={setCreateGoalOpen}
-                title="Nueva meta"
-                trigger={
-                  <Button className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold">
-                    <Plus className="h-5 w-5" /> Crear meta
-                  </Button>
-                }
-              >
-                <GoalForm onSuccess={() => setCreateGoalOpen(false)} />
-              </AppSheet>
-            </div>
-          )}
-
-          {/* Diálogo eliminar meta */}
-          <AlertDialog open={deletingGoalId !== null} onOpenChange={(open) => { if (!open) setDeletingGoalId(null); }}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Eliminar meta</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Se perderá el progreso acumulado. Esta acción no se puede deshacer.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel />
-                <AlertDialogAction onClick={executeDeleteGoal}>Eliminar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      )}
+      <AlertDialog open={deletingGoal !== null} onOpenChange={(open) => { if (!open) setDeletingGoal(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar «{deletingGoal?.name}»</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se perderá el progreso acumulado de la meta. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel />
+            <AlertDialogAction onClick={confirmDeleteGoal}>Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageContainer>
   );
 }
 
-// ─── Page wrapper con Suspense (requerido por useSearchParams) ────────────────
+// ─── Piezas de la lista ───────────────────────────────────────────────────────
 
-export default function PresupuestosPage() {
+function Group({
+  title,
+  danger,
+  warn,
+  children,
+}: {
+  title: string;
+  danger?: boolean;
+  warn?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <Suspense>
-      <PresupuestosContent />
-    </Suspense>
+    <section className="space-y-2" aria-label={title}>
+      <h2
+        className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground"
+        style={danger ? { color: "var(--os-magenta)" } : warn ? { color: "var(--os-orange-text)" } : undefined}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Collapsible({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <section className="space-y-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-1 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground pointer-coarse:min-h-11"
+      >
+        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2 }} className="flex">
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </motion.span>
+        {title}
+        <span className="rounded-full bg-muted px-1.5 text-[11px] font-bold tabular-nums">{count}</span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            animate={reduce ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+            exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.32, ease: EASE_OUT_EXPO }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }

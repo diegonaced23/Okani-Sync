@@ -2,6 +2,55 @@ import { query, mutation, internalQuery, internalMutation } from "./_generated/s
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
+import { getUserRateMap, convertAmount } from "./lib/money";
+
+/**
+ * Resumen del mes en la moneda preferida del usuario. Existe porque los totales
+ * son la suma de presupuestos que pueden estar en monedas distintas: sumarlos en
+ * crudo y pintarlos con una moneda fija da una cifra que no significa nada.
+ * Los presupuestos cuya moneda no tiene tasa quedan fuera y se avisa con
+ * `missingRate`, igual que en `debts.overview`.
+ */
+export const overview = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    const user = await getCurrentUser(ctx);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    let missingRate = false;
+    const conv = (amount: number, currency: string) => {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      if (!hasRate) missingRate = true;
+      return hasRate ? converted : 0;
+    };
+
+    const budgets = await ctx.db
+      .query("budgets")
+      .withIndex("by_user_month", (q) => q.eq("userId", user.clerkId).eq("month", month))
+      .take(300);
+
+    let budgeted = 0;
+    let spent = 0;
+    let overCount = 0;
+    let warnCount = 0;
+    for (const b of budgets) {
+      budgeted += conv(b.amount, b.currency);
+      spent += conv(b.spent, b.currency);
+      if (b.amount <= 0) continue;
+      const pct = b.spent / b.amount;
+      if (pct > 1) overCount += 1;
+      else if (pct >= (b.alertThreshold ?? 80) / 100) warnCount += 1;
+    }
+
+    return {
+      currency: preferredCurrency,
+      budgeted,
+      spent,
+      overCount,
+      warnCount,
+      missingRate,
+    };
+  },
+});
 
 /**
  * Comparación histórica de presupuesto vs. real por categoría.
@@ -111,7 +160,12 @@ export const listByMonthWithCategory = query({
 
     return budgets.map((b) => {
       const category = catMap.get(b.categoryId.toString());
-      return { ...b, categoryName: category?.name, categoryColor: category?.color };
+      return {
+        ...b,
+        categoryName: category?.name,
+        categoryColor: category?.color,
+        categoryIcon: category?.icon,
+      };
     });
   },
 });

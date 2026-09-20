@@ -74,6 +74,26 @@ export const listByAccountMonth = query({
   },
 });
 
+/**
+ * Movimientos de una categoría en un mes, para el detalle de un presupuesto.
+ * Existe como query propia en vez de filtrar `listByMonth` en el cliente: el
+ * índice ya está y así la hoja no arrastra los 300 movimientos del mes.
+ */
+export const listByCategoryMonth = query({
+  args: { categoryId: v.id("categories"), month: v.string() },
+  handler: async (ctx, { categoryId, month }) => {
+    assertValidMonth(month);
+    const clerkId = await getCurrentUserId(ctx);
+    return await ctx.db
+      .query("transactions")
+      .withIndex("by_user_category_month", (q) =>
+        q.eq("userId", clerkId).eq("categoryId", categoryId).eq("month", month)
+      )
+      .order("desc")
+      .take(100);
+  },
+});
+
 export const listRecent = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit = 10 }) => {

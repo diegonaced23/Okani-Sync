@@ -2,6 +2,7 @@ import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 import { getCurrentUser } from "./lib/auth";
+import { getUserRateMap, convertAmount } from "./lib/money";
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,51 @@ export const list = query({
         };
       })
     );
+  },
+});
+
+/**
+ * Resumen de las metas activas en la moneda preferida. Las metas pueden estar en
+ * monedas distintas, así que sumar los montos en crudo daría un total sin
+ * sentido; las que no tienen tasa quedan fuera y se avisa con `missingRate`.
+ * El avance de una meta vinculada es el saldo de su cuenta, no `currentAmount`.
+ */
+export const overview = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    let missingRate = false;
+    const conv = (amount: number, currency: string) => {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      if (!hasRate) missingRate = true;
+      return hasRate ? converted : 0;
+    };
+
+    const goals = await ctx.db
+      .query("goals")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .take(200);
+
+    let saved = 0;
+    let target = 0;
+    let active = 0;
+    let completed = 0;
+    for (const goal of goals) {
+      const account = goal.linkedAccountId ? await ctx.db.get(goal.linkedAccountId) : null;
+      const amount = account ? account.balance : goal.currentAmount;
+      const currency = account ? account.currency : goal.currency;
+      const done = goal.status === "completada" || amount >= goal.targetAmount;
+      if (done) {
+        completed += 1;
+        continue;
+      }
+      active += 1;
+      saved += conv(Math.max(0, amount), currency);
+      target += conv(goal.targetAmount, goal.currency);
+    }
+
+    return { currency: preferredCurrency, saved, target, active, completed, missingRate };
   },
 });
 
@@ -88,9 +134,10 @@ export const update = mutation({
     icon: v.optional(v.string()),
     color: v.optional(v.string()),
     notes: v.optional(v.string()),
-    linkedAccountId: v.optional(v.id("accounts")),
+    /** null desvincula la cuenta; omitirlo deja el vínculo como está. */
+    linkedAccountId: v.optional(v.union(v.id("accounts"), v.null())),
   },
-  handler: async (ctx, { goalId, ...fields }) => {
+  handler: async (ctx, { goalId, linkedAccountId, ...fields }) => {
     if (fields.name !== undefined && !fields.name.trim()) throw new Error("El nombre no puede estar vacío");
     if (fields.targetAmount !== undefined && fields.targetAmount <= 0) throw new Error("El monto objetivo debe ser mayor que cero");
 
@@ -102,6 +149,9 @@ export const update = mutation({
     for (const [k, v] of Object.entries(fields)) {
       if (v !== undefined) patch[k] = typeof v === "string" ? v.trim() || undefined : v;
     }
+    // `null` llega desde la UI al elegir «progreso manual»: en Convex, poner el
+    // campo en undefined es lo que lo borra del documento.
+    if (linkedAccountId !== undefined) patch.linkedAccountId = linkedAccountId ?? undefined;
 
     // Si el nuevo objetivo baja por debajo del acumulado, marcar como completada
     const newTarget = (fields.targetAmount ?? goal.targetAmount);
