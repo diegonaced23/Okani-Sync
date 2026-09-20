@@ -131,6 +131,7 @@ export async function getUserRateMap(
  * Si el día de origen no existe en el mes destino (ej: 31-ene + 1 mes),
  * se clampea al último día del mes destino (28 feb, no 3 mar).
  */
+/** Espejo en cliente: `addMonthsClamped` en src/lib/money.ts — mantener ambos iguales. */
 export function addMonths(timestamp: number, months: number): number {
   const d = new Date(timestamp);
   const originalDay = d.getDate();

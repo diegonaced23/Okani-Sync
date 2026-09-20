@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { Label } from "@/components/ui/label";
 import { todayStr } from "@/lib/money";
 import { AccountCardSelect } from "./AccountCardSelect";
 import { AccountTransactionFields } from "./AccountTransactionFields";
@@ -20,10 +21,16 @@ interface TransactionFormProps {
 
 export function TransactionForm({ defaultType = "gasto", initialSourceId, onSuccess }: TransactionFormProps) {
   const { accountList, cardList } = useAppData();
+  const me = useQuery(api.users.getMe);
 
   const [type]    = useState<TxType>(defaultType);
-  // Estado compartido que sobrevive al cambio entre fuente de cuenta y tarjeta
-  const [sourceId, setSourceId]       = useState<string>(initialSourceId ?? "");
+  // Estado compartido que sobrevive al cambio entre fuente de cuenta y tarjeta.
+  // Una tarjeta nunca es origen de un ingreso: si llega preseleccionada, se descarta.
+  const [sourceId, setSourceId]       = useState<string>(
+    initialSourceId && !(defaultType === "ingreso" && initialSourceId.startsWith("card:"))
+      ? initialSourceId
+      : ""
+  );
   const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate]               = useState(todayStr);
@@ -36,20 +43,24 @@ export function TransactionForm({ defaultType = "gasto", initialSourceId, onSucc
   const selectedCard = sourceKind === "card"
     ? cardList.find((c) => c._id === sourceRawId)
     : undefined;
-  const currency = selectedAccount?.currency ?? selectedCard?.currency ?? "COP";
+  // Sin fuente elegida manda la moneda preferida, no un "COP" fijo: esta es la moneda
+  // con la que se crea el movimiento, no solo la de la etiqueta.
+  const currency = selectedAccount?.currency ?? selectedCard?.currency ?? me?.currency ?? "COP";
 
-  const isCard = sourceKind === "card" && !!selectedCard;
+  // El tipo también decide: una compra a cuotas solo existe como gasto
+  const isCard = type === "gasto" && sourceKind === "card" && !!selectedCard;
 
   return (
     <div className="space-y-4">
 
       {/* ── Origen del pago — compartido entre ambos sub-formularios ──────── */}
       <div>
-        <Label htmlFor="tx-source" className="text-[12px] font-semibold text-foreground mb-2 block">
+        <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           {type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
-        </Label>
+        </span>
         <AccountCardSelect
           id="tx-source"
+          ariaLabel={type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
           value={sourceId}
           onValueChange={(v) => setSourceId(v ?? "")}
           accounts={accountList}

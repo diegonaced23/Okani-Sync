@@ -217,6 +217,9 @@ export const updatePurchase = mutation({
     categoryId: v.optional(v.id("categories")),
     clearCategory: v.optional(v.boolean()),
     notes: v.optional(v.string()),
+    /** true deja la compra sin nota. Igual que `clearCategory`: en un patch parcial,
+     *  omitir el campo significa «no tocar», así que vaciar el textarea no borraba nada. */
+    clearNotes: v.optional(v.boolean()),
     // Financieros — solo cuando paidInstallments === 0
     totalAmount: v.optional(v.number()),
     totalInstallments: v.optional(v.number()),
@@ -225,7 +228,10 @@ export const updatePurchase = mutation({
     purchaseDate: v.optional(v.number()),
     firstInstallmentDate: v.optional(v.number()),
   },
-  handler: async (ctx, { purchaseId, clearCategory, ...fields }) => {
+  handler: async (ctx, { purchaseId, clearCategory, clearNotes, ...fields }) => {
+    if (clearNotes && fields.notes !== undefined) {
+      throw new Error("No se puede escribir y borrar la nota a la vez");
+    }
     const user = await getCurrentUser(ctx);
 
     const purchase = await ctx.db.get(purchaseId);
@@ -362,7 +368,7 @@ export const updatePurchase = mutation({
       await ctx.db.patch(purchaseId, {
         description: fields.description?.trim() ?? purchase.description,
         categoryId: finalCategoryId,
-        notes: fields.notes !== undefined ? fields.notes : purchase.notes,
+        notes: clearNotes ? undefined : fields.notes !== undefined ? fields.notes : purchase.notes,
         totalAmount,
         totalWithInterest: result.totalWithInterest,
         totalInstallments,
@@ -380,7 +386,9 @@ export const updatePurchase = mutation({
       if (fields.description !== undefined) patch.description = fields.description.trim();
       if (clearCategory) patch.categoryId = undefined;
       else if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
-      if (fields.notes !== undefined) patch.notes = fields.notes;
+      // undefined en un patch de Convex borra el campo
+      if (clearNotes) patch.notes = undefined;
+      else if (fields.notes !== undefined) patch.notes = fields.notes;
       await ctx.db.patch(purchaseId, patch);
 
       // Si cambió la categoría, rotar el presupuesto a la nueva y actualizar txs

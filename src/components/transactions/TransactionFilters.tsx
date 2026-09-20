@@ -1,12 +1,14 @@
 "use client";
 
 import { useId, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Search, SlidersHorizontal, X } from "lucide-react";
-import { formatDateShort } from "@/lib/utils";
 import { useAppData } from "@/contexts/app-data";
-import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { FIELD_LABEL } from "@/lib/ios";
+import { cn, formatDateShort } from "@/lib/utils";
+import { EASE_OUT_EXPO, GLASS_SURFACE, haptic, tint } from "./shared";
 
 interface TransactionFiltersProps {
   searchText: string;
@@ -37,239 +39,200 @@ export function TransactionFilters({
   hasActiveFilters,
   onClearAll,
 }: TransactionFiltersProps) {
+  const reduce = useReducedMotion();
   const { accounts, categories } = useAppData();
   const [advanced, setAdvanced] = useState(false);
   const panelId = useId();
-  const gastoCategories = (categories ?? []).filter((c) => c.type === "gasto" || c.type === "ambos");
 
-  // Número de filtros avanzados activos (excluye búsqueda por texto, que tiene su propio X)
-  const advancedFilterCount = [fromDate, toDate, accountId, categoryId].filter(Boolean).length;
+  // Todas las categorías, no solo las de gasto: si el selector se limitaba a gasto y
+  // «ambos», buscar un ingreso por su categoría era imposible.
+  const allCategories = categories ?? [];
 
-  // Nombres resueltos para los chips (solo se buscan cuando el valor existe)
-  const selectedAccountName  = accountId  ? ((accounts  ?? []).find((a) => a._id === accountId)?.name  ?? null) : null;
-  const selectedCategoryName = categoryId ? ((categories ?? []).find((c) => c._id === categoryId)?.name ?? null) : null;
+  // Filtros avanzados activos; la búsqueda por texto no cuenta, tiene su propia X
+  const advancedCount = [fromDate, toDate, accountId, categoryId].filter(Boolean).length;
 
-  // Convierte "YYYY-MM-DD" a texto legible usando el formateador del proyecto
+  const accountName = accountId ? ((accounts ?? []).find((a) => a._id === accountId)?.name ?? null) : null;
+  const categoryName = categoryId ? (allCategories.find((c) => c._id === categoryId)?.name ?? null) : null;
+
+  /** "YYYY-MM-DD" → texto legible con el formateador del proyecto. */
   function chipDate(d: string) {
-    return formatDateShort(new Date(d + "T12:00:00").getTime());
+    return formatDateShort(new Date(`${d}T12:00:00`).getTime());
   }
 
+  const chips = [
+    fromDate && { key: "from", label: `Desde ${chipDate(fromDate)}`, clear: () => onFromDateChange("") },
+    toDate && { key: "to", label: `Hasta ${chipDate(toDate)}`, clear: () => onToDateChange("") },
+    accountName && { key: "acc", label: accountName, clear: () => onAccountIdChange("") },
+    categoryName && { key: "cat", label: categoryName, clear: () => onCategoryIdChange("") },
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+
   return (
-    <div className="space-y-2 pb-2">
-      {/* Barra de búsqueda */}
+    <div className="space-y-2">
+      {/* Búsqueda y accesos a los filtros */}
       <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search
-            size={14}
-            aria-hidden="true"
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
-          />
+        <div className={cn("flex min-w-0 flex-1 items-center gap-2 rounded-[16px] px-3", GLASS_SURFACE)}>
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <input
             type="search"
-            aria-label="Buscar transacciones por descripción"
-            placeholder="Buscar por descripción…"
+            aria-label="Buscar movimientos por descripción"
+            placeholder="Buscar por descripción"
             value={searchText}
             onChange={(e) => onSearchTextChange(e.target.value)}
-            className="w-full pointer-coarse:min-h-11 rounded-xl border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow"
+            className="h-11 min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/70 [&::-webkit-search-cancel-button]:hidden"
           />
           {searchText && (
             <button
               type="button"
               onClick={() => onSearchTextChange("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               aria-label="Limpiar búsqueda"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-transform active:scale-90"
             >
-              <X size={13} />
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
 
-        {/* Botón de filtros avanzados — badge numérico cuando hay filtros activos */}
         <button
           type="button"
-          onClick={() => setAdvanced((v) => !v)}
-          className="flex items-center justify-center gap-1.5 pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-          style={advanced ? { borderColor: "var(--os-lime)", color: "var(--os-lime-text)", background: "color-mix(in oklch, var(--os-lime) 10%, var(--card))" } : {}}
+          onClick={() => { haptic(); setAdvanced((v) => !v); }}
           aria-expanded={advanced}
           aria-controls={panelId}
+          aria-label="Filtros avanzados"
+          className={cn(
+            "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] transition-[background-color,color,transform] active:scale-90",
+            advanced ? "text-foreground" : cn("text-muted-foreground", GLASS_SURFACE),
+          )}
+          style={advanced ? { background: tint("var(--os-lime)", 16), color: "var(--os-lime-text)" } : undefined}
         >
-          <SlidersHorizontal size={14} aria-hidden="true" />
-          <span className="hidden sm:inline">Filtros</span>
-          {advancedFilterCount > 0 && !advanced && (
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+          {advancedCount > 0 && !advanced && (
             <span
-              className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold leading-none"
-              style={{ background: "var(--os-lime)", color: "var(--background)" }}
-              aria-label={`${advancedFilterCount} filtro${advancedFilterCount > 1 ? "s" : ""} activo${advancedFilterCount > 1 ? "s" : ""}`}
+              className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold leading-none text-white"
+              style={{ background: "var(--os-lime-ring)" }}
+              aria-label={`${advancedCount} filtro${advancedCount > 1 ? "s" : ""} activo${advancedCount > 1 ? "s" : ""}`}
             >
-              {advancedFilterCount}
+              {advancedCount}
             </span>
           )}
         </button>
 
-        {/* Botón limpiar todo */}
         {hasActiveFilters && (
           <button
             type="button"
-            onClick={onClearAll}
-            className="flex items-center justify-center gap-1 pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            onClick={() => { haptic(); onClearAll(); }}
             aria-label="Limpiar todos los filtros"
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] text-muted-foreground transition-transform active:scale-90",
+              GLASS_SURFACE,
+            )}
           >
-            <X size={14} />
-            <span className="hidden sm:inline">Limpiar</span>
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         )}
       </div>
 
-      {/* Chips de filtros activos — visibles solo cuando el panel está cerrado */}
-      {advancedFilterCount > 0 && !advanced && (
-        <div className="flex flex-wrap gap-1.5" role="list" aria-label="Filtros activos">
-          {fromDate && (
-            <span
-              role="listitem"
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-              style={{
-                background: "color-mix(in oklch, var(--os-cyan) 10%, var(--card))",
-                border: "1px solid color-mix(in oklch, var(--os-cyan) 22%, var(--border))",
-                color: "var(--foreground)",
-              }}
-            >
-              Desde: {chipDate(fromDate)}
-              <button
-                type="button"
-                onClick={() => onFromDateChange("")}
-                className="ml-0.5 hover:opacity-70 transition-opacity"
-                aria-label="Quitar filtro de fecha desde"
-              >
-                <X size={11} aria-hidden="true" />
-              </button>
-            </span>
-          )}
-          {toDate && (
-            <span
-              role="listitem"
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-              style={{
-                background: "color-mix(in oklch, var(--os-cyan) 10%, var(--card))",
-                border: "1px solid color-mix(in oklch, var(--os-cyan) 22%, var(--border))",
-                color: "var(--foreground)",
-              }}
-            >
-              Hasta: {chipDate(toDate)}
-              <button
-                type="button"
-                onClick={() => onToDateChange("")}
-                className="ml-0.5 hover:opacity-70 transition-opacity"
-                aria-label="Quitar filtro de fecha hasta"
-              >
-                <X size={11} aria-hidden="true" />
-              </button>
-            </span>
-          )}
-          {selectedAccountName && (
-            <span
-              role="listitem"
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-              style={{
-                background: "color-mix(in oklch, var(--os-cyan) 10%, var(--card))",
-                border: "1px solid color-mix(in oklch, var(--os-cyan) 22%, var(--border))",
-                color: "var(--foreground)",
-              }}
-            >
-              {selectedAccountName}
-              <button
-                type="button"
-                onClick={() => onAccountIdChange("")}
-                className="ml-0.5 hover:opacity-70 transition-opacity"
-                aria-label={`Quitar filtro de cuenta: ${selectedAccountName}`}
-              >
-                <X size={11} aria-hidden="true" />
-              </button>
-            </span>
-          )}
-          {selectedCategoryName && (
-            <span
-              role="listitem"
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-              style={{
-                background: "color-mix(in oklch, var(--os-cyan) 10%, var(--card))",
-                border: "1px solid color-mix(in oklch, var(--os-cyan) 22%, var(--border))",
-                color: "var(--foreground)",
-              }}
-            >
-              {selectedCategoryName}
-              <button
-                type="button"
-                onClick={() => onCategoryIdChange("")}
-                className="ml-0.5 hover:opacity-70 transition-opacity"
-                aria-label={`Quitar filtro de categoría: ${selectedCategoryName}`}
-              >
-                <X size={11} aria-hidden="true" />
-              </button>
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Panel de filtros avanzados */}
-      {advanced && (
-        <div id={panelId} className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card p-3">
-          {/* Fecha desde */}
-          <div className="space-y-1">
-            <Label htmlFor="filter-from-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Desde
-            </Label>
-            <DatePicker id="filter-from-date" value={fromDate} onChange={onFromDateChange} />
-          </div>
-
-          {/* Fecha hasta */}
-          <div className="space-y-1">
-            <Label htmlFor="filter-to-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Hasta
-            </Label>
-            <DatePicker id="filter-to-date" value={toDate} onChange={onToDateChange} />
-          </div>
-
-          {/* Cuenta */}
-          <div className="space-y-1">
-            <Label htmlFor="filter-account" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Cuenta
-            </Label>
-            <Select value={accountId} onValueChange={(v) => onAccountIdChange(v ?? "")}>
-              <SelectTrigger id="filter-account" className="w-full">
-                <span className="flex-1 text-left text-sm truncate">
-                  {accountId ? ((accounts ?? []).find((a) => a._id === accountId)?.name ?? "Todas") : "Todas"}
+      {/* Lo que está filtrando ahora mismo, cuando el panel está cerrado */}
+      <AnimatePresence initial={false}>
+        {chips.length > 0 && !advanced && (
+          <motion.ul
+            initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, height: "auto" }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={{ duration: 0.24, ease: EASE_OUT_EXPO }}
+            className="flex flex-wrap gap-1.5 overflow-hidden"
+            aria-label="Filtros activos"
+          >
+            {chips.map((chip) => (
+              <li key={chip.key}>
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
+                  style={{ background: tint("var(--os-cyan)", 14), color: "var(--os-cyan-text)" }}
+                >
+                  {chip.label}
+                  <button
+                    type="button"
+                    onClick={() => { haptic(); chip.clear(); }}
+                    aria-label={`Quitar filtro: ${chip.label}`}
+                    className="ml-0.5 transition-opacity hover:opacity-70"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
                 </span>
-              </SelectTrigger>
-              <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
-                <SelectItem value="">Todas</SelectItem>
-                {(accounts ?? []).map((a) => (
-                  <SelectItem key={a._id} value={a._id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              </li>
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
 
-          {/* Categoría */}
-          <div className="space-y-1">
-            <Label htmlFor="filter-category" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Categoría
-            </Label>
-            <Select value={categoryId} onValueChange={(v) => onCategoryIdChange(v ?? "")}>
-              <SelectTrigger id="filter-category" className="w-full">
-                <span className="flex-1 text-left text-sm truncate">
-                  {categoryId ? (gastoCategories.find((c) => c._id === categoryId)?.name ?? "Todas") : "Todas"}
-                </span>
-              </SelectTrigger>
-              <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
-                <SelectItem value="">Todas</SelectItem>
-                {gastoCategories.map((c) => (
-                  <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
+      {/* Panel avanzado */}
+      <AnimatePresence initial={false}>
+        {advanced && (
+          <motion.div
+            id={panelId}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, height: "auto" }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+            className="overflow-hidden"
+          >
+            <div className={cn("grid grid-cols-2 gap-3 rounded-[20px] p-4", GLASS_SURFACE)}>
+              <div className="space-y-2">
+                <label htmlFor="filter-from-date" className={FIELD_LABEL}>Desde</label>
+                <DatePicker
+                  id="filter-from-date"
+                  value={fromDate}
+                  onChange={onFromDateChange}
+                  className="h-11 rounded-[14px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="filter-to-date" className={FIELD_LABEL}>Hasta</label>
+                <DatePicker
+                  id="filter-to-date"
+                  value={toDate}
+                  onChange={onToDateChange}
+                  className="h-11 rounded-[14px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="filter-account" className={FIELD_LABEL}>Cuenta</label>
+                <Select value={accountId} onValueChange={(v) => onAccountIdChange(v ?? "")}>
+                  <SelectTrigger id="filter-account" className="h-11 w-full rounded-[14px]">
+                    <span className="flex-1 truncate text-left text-sm">
+                      {accountName ?? "Todas"}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
+                    <SelectItem value="">Todas</SelectItem>
+                    {(accounts ?? []).map((a) => (
+                      <SelectItem key={a._id} value={a._id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="filter-category" className={FIELD_LABEL}>Categoría</label>
+                <Select value={categoryId} onValueChange={(v) => onCategoryIdChange(v ?? "")}>
+                  <SelectTrigger id="filter-category" className="h-11 w-full rounded-[14px]">
+                    <span className="flex-1 truncate text-left text-sm">
+                      {categoryName ?? "Todas"}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent side="bottom" alignItemWithTrigger={false} className="max-h-[30vh]">
+                    <SelectItem value="">Todas</SelectItem>
+                    {allCategories.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

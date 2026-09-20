@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { TX_TYPE_CONFIG as TYPE_CONFIG } from "./tx-type-config";
 import { useAppData } from "@/contexts/app-data";
+import { canDeleteTx, canEditTx } from "./shared";
 
-// Tipos con edición habilitada en el detalle
-const EDITABLE_TYPES = new Set(["ingreso", "gasto", "transferencia", "gasto_tarjeta"]);
+// La regla vive en ./shared: la comparten el detalle y las acciones de la lista
 
 interface TransactionDetailProps {
   tx: Doc<"transactions">;
@@ -23,7 +23,7 @@ interface TransactionDetailProps {
 }
 
 export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: TransactionDetailProps) {
-  const { accounts, cards, categories } = useAppData();
+  const { accounts, cards, categories, goals } = useAppData();
 
   // Maps calculados una vez por cambio de listas, no en cada render
   const accountMap = useMemo(
@@ -39,11 +39,16 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
 
   const config = TYPE_CONFIG[tx.type] ?? TYPE_CONFIG.gasto;
   const Icon = config.icon;
-  const canEdit = EDITABLE_TYPES.has(tx.type);
+  const canEdit = canEditTx(tx);
+  // Una reasignación de saldo no se puede borrar: el backend lo rechaza siempre. El
+  // botón estaba ahí y el usuario confirmaba un diálogo destructivo para recibir un error.
+  const canDelete = canDeleteTx(tx);
 
   const fullCat = tx.categoryId ? (categories ?? []).find((c) => c._id === tx.categoryId) : undefined;
   const catIconBg    = fullCat ? `color-mix(in oklch, ${fullCat.color} 18%, transparent)` : config.iconBg;
   const catIconColor = fullCat ? fullCat.color : config.iconColor;
+
+  const linkedGoal = tx.goalId ? (goals ?? []).find((g) => g._id === tx.goalId) : undefined;
 
   const sourceAccount = tx.accountId ? accountMap[tx.accountId] : undefined;
   const sourceCard    = tx.cardId    ? cardMap[tx.cardId]        : undefined;
@@ -55,7 +60,7 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
       <div className="flex items-center gap-4 pb-1">
         <span
           className="flex shrink-0 items-center justify-center"
-          style={{ width: 52, height: 52, borderRadius: 16, background: catIconBg, color: catIconColor }}
+          style={{ width: 52, height: 52, borderRadius: 18, background: catIconBg, color: catIconColor }}
         >
           {fullCat
             ? <CategoryIcon name={fullCat.icon} className="h-[22px] w-[22px]" aria-hidden="true" />
@@ -97,10 +102,7 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
                 ? accountMap[tx.accountId]
                 : accountMap[tx.toAccountId];
               return (
-                <div
-                  className="rounded-xl p-3"
-                  style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-                >
+                <div className="rounded-[20px] bg-[var(--surface-2)] p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                     Desde → Hacia
                   </p>
@@ -115,10 +117,7 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
           </div>
         )}
 
-        <dl
-          className="rounded-xl divide-y"
-          style={{ background: "var(--surface-2)", border: "1px solid var(--border)", overflow: "hidden" }}
-        >
+        <dl className="divide-y divide-border/60 overflow-hidden rounded-[20px] bg-[var(--surface-2)]">
           <DetailRow label="Descripción" value={tx.description} />
           <DetailRow label="Fecha" value={formatDate(tx.date)} />
 
@@ -162,15 +161,36 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
             <DetailRow label="Tarjeta" value={`${sourceCard.name} ···${sourceCard.lastFourDigits}`} />
           )}
 
-          <DetailRow
-            label="Estado"
-            value={
-              tx.status === "completada" ? "Completada"
-              : tx.status === "pendiente" ? "Pendiente"
-              : "Cancelada"
-            }
-          />
           <DetailRow label="Moneda" value={tx.currency} />
+
+          {/* Cambio de divisa: `createTransfer` guarda la tasa y el monto convertido en
+              las dos piernas, y la UI los tiraba. Sin esto, una transferencia USD→COP
+              se veía como dos movimientos con importes que no cuadraban entre sí. */}
+          {tx.exchangeRate !== undefined && tx.exchangeRate > 0 && tx.toCurrency && (
+            <DetailRow
+              label="Tasa de cambio"
+              // En la pierna de entrada se guarda la tasa inversa, y «1 COP = 0,00025 USD»
+              // no se lee: por debajo de 1 se enuncia al revés.
+              value={
+                tx.exchangeRate >= 1
+                  ? `1 ${tx.currency} = ${formatRate(tx.exchangeRate)} ${tx.toCurrency}`
+                  : `1 ${tx.toCurrency} = ${formatRate(1 / tx.exchangeRate)} ${tx.currency}`
+              }
+            />
+          )}
+          {tx.toAmount !== undefined && tx.toCurrency && (
+            <DetailRow label="Equivale a" value={formatCents(tx.toAmount, tx.toCurrency)} />
+          )}
+
+          {/* Meta vinculada: se guardaba al crear el gasto y no se mostraba en ninguna parte */}
+          {linkedGoal && (
+            <DetailRow label="Ahorro para">
+              <span className="flex items-center justify-end gap-1.5">
+                <span aria-hidden="true">{linkedGoal.icon}</span>
+                <span>{linkedGoal.name}</span>
+              </span>
+            </DetailRow>
+          )}
 
           {tx.isRecurring && <DetailRow label="Recurrente" value="Sí" />}
 
@@ -195,29 +215,40 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
       </div>
 
       {/* ── Acciones ─────────────────────────────────────────────────────── */}
-      <div className="flex gap-2 pt-1">
-        {canEdit && (
-          <Button
-            type="button"
-            ref={editButtonRef}
-            variant="outline"
-            className="flex-1 gap-2 font-semibold"
-            onClick={onEdit}
-          >
-            <Pencil className="h-4 w-4" />
-            Editar
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="destructive"
-          className={`gap-2 font-semibold ${canEdit ? "" : "flex-1"}`}
-          onClick={onDelete}
-        >
-          <Trash2 className="h-4 w-4" />
-          Eliminar
-        </Button>
-      </div>
+      {(canEdit || canDelete) && (
+        <div className="flex gap-2 pt-1">
+          {canEdit && (
+            <Button
+              type="button"
+              ref={editButtonRef}
+              variant="outline"
+              className="flex-1 gap-2 font-semibold"
+              onClick={onEdit}
+            >
+              <Pencil className="h-4 w-4" />
+              Editar
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              type="button"
+              variant="destructive"
+              className={`gap-2 font-semibold ${canEdit ? "" : "flex-1"}`}
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+              Eliminar
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Una reasignación no se borra: se corrige creando otra */}
+      {!canDelete && (
+        <p className="pt-1 text-center text-xs text-muted-foreground">
+          Una reasignación de saldo no se elimina. Si el saldo quedó mal, ajústalo de nuevo desde la cuenta.
+        </p>
+      )}
 
     </div>
   );
@@ -234,4 +265,9 @@ function DetailRow({ label, value, children }: { label: string; value?: string; 
       </dd>
     </div>
   );
+}
+
+/** Tasa legible: hasta 4 decimales, sin ceros de relleno. */
+function formatRate(rate: number): string {
+  return rate.toLocaleString("es-CO", { maximumFractionDigits: 4 });
 }

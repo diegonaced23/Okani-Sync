@@ -577,11 +577,24 @@ export const update = mutation({
     accountId:     v.optional(v.id("accounts")),
     cardId:        v.optional(v.id("cards")),
     categoryId:    v.optional(v.id("categories")),
+    /** true deja el movimiento sin categoría. Omitir `categoryId` no la borra: en un
+     *  patch parcial «sin valor» significa «no tocar», así que hacía falta decirlo
+     *  aparte — mismo criterio que `cardPurchases.updatePurchase`. */
+    clearCategory: v.optional(v.boolean()),
     notes:         v.optional(v.string()),
+    /** true deja el movimiento sin nota. Sin esto, mandar "" para vaciar el campo
+     *  guardaba una cadena vacía en vez de borrarlo. */
+    clearNotes:    v.optional(v.boolean()),
     tags:          v.optional(v.array(v.string())),
     date:          v.optional(v.number()),
   },
-  handler: async (ctx, { transactionId, ...fields }) => {
+  handler: async (ctx, { transactionId, clearCategory, clearNotes, ...fields }) => {
+    if (clearCategory && fields.categoryId !== undefined) {
+      throw new Error("No se puede asignar y quitar la categoría a la vez");
+    }
+    if (clearNotes && fields.notes !== undefined) {
+      throw new Error("No se puede escribir y borrar la nota a la vez");
+    }
     if (fields.description !== undefined && (fields.description.length === 0 || fields.description.length > 200)) {
       throw new Error("La descripción debe tener entre 1 y 200 caracteres");
     }
@@ -620,7 +633,8 @@ export const update = mutation({
       }
       const patch: Record<string, unknown> = { updatedAt: Date.now() };
       if (fields.description !== undefined) patch.description = fields.description;
-      if (fields.notes !== undefined) patch.notes = fields.notes;
+      if (clearNotes) patch.notes = undefined;
+      else if (fields.notes !== undefined) patch.notes = fields.notes;
       await ctx.db.patch(transactionId, patch);
       // Si hay pierna hermana, actualizarla también
       if (tx.transferGroupId) {
@@ -632,7 +646,8 @@ export const update = mutation({
           if (sibling._id !== transactionId) {
             const siblingPatch: Record<string, unknown> = { updatedAt: Date.now() };
             if (fields.description !== undefined) siblingPatch.description = fields.description;
-            if (fields.notes !== undefined) siblingPatch.notes = fields.notes;
+            if (clearNotes) siblingPatch.notes = undefined;
+            else if (fields.notes !== undefined) siblingPatch.notes = fields.notes;
             await ctx.db.patch(sibling._id, siblingPatch);
           }
         }
@@ -686,12 +701,19 @@ export const update = mutation({
 
     const newAmount   = fields.amount      ?? tx.amount;
     const newMonth    = fields.date        ? toMonthString(fields.date) : tx.month;
-    const newCategory = fields.categoryId !== undefined ? fields.categoryId : tx.categoryId;
+    const newCategory = clearCategory
+      ? undefined
+      : fields.categoryId !== undefined
+        ? fields.categoryId
+        : tx.categoryId;
 
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     if (fields.description !== undefined) patch.description = fields.description;
-    if (fields.categoryId  !== undefined) patch.categoryId  = fields.categoryId;
-    if (fields.notes       !== undefined) patch.notes       = fields.notes;
+    // undefined en un patch de Convex borra el campo
+    if (clearCategory) patch.categoryId = undefined;
+    else if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
+    if (clearNotes) patch.notes = undefined;
+    else if (fields.notes !== undefined) patch.notes = fields.notes;
     if (fields.tags        !== undefined) patch.tags        = fields.tags;
     if (fields.amount      !== undefined) patch.amount      = fields.amount;
     if (fields.date        !== undefined) { patch.date = fields.date; patch.month = newMonth; }

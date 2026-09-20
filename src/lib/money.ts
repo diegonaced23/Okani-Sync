@@ -327,3 +327,30 @@ export function formatMonth(yearMonth: string): string {
   const date = new Date(year, month - 1, 1);
   return date.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
 }
+
+/**
+ * Suma meses a un timestamp recortando al último día del mes destino: 31-ene + 1 mes
+ * da 28-feb, no 3-mar. Espejo de `addMonths` en convex/lib/money.ts.
+ *
+ * Existe porque el cliente hacía `setMonth(getMonth() + 1)` a mano para calcular la
+ * fecha de la primera cuota, y eso desborda con los días 29 a 31: una compra del 31
+ * de enero generaba el cronograma a partir del 3 de marzo, y todas las cuotas
+ * quedaban corridas.
+ */
+export function addMonthsClamped(timestamp: number, months: number): number {
+  const d = new Date(timestamp);
+  const originalDay = d.getDate();
+  const rawMonth = d.getMonth() + months;
+  const targetYear = d.getFullYear() + Math.floor(rawMonth / 12);
+  const targetMonth = ((rawMonth % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(
+    targetYear,
+    targetMonth,
+    Math.min(originalDay, lastDay),
+    d.getHours(),
+    d.getMinutes(),
+    d.getSeconds(),
+    d.getMilliseconds(),
+  ).getTime();
+}

@@ -7,6 +7,7 @@ import {
   calculateInstallment,
   toMonthString,
   currentMonth,
+  addMonthsClamped,
 } from "../money";
 
 // ─── toCents / fromCents ─────────────────────────────────────────────────────
@@ -143,5 +144,42 @@ describe("currentMonth", () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     expect(result).toBe(expected);
+  });
+});
+
+describe("addMonthsClamped", () => {
+  const ymd = (ts: number) => {
+    const d = new Date(ts);
+    return [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+  };
+
+  it("no desborda el mes: 31 de enero + 1 mes es el 28 de febrero", () => {
+    expect(ymd(addMonthsClamped(new Date(2026, 0, 31, 12).getTime(), 1))).toEqual([2026, 2, 28]);
+  });
+
+  it("recorta al 29 en un año bisiesto", () => {
+    expect(ymd(addMonthsClamped(new Date(2028, 0, 31, 12).getTime(), 1))).toEqual([2028, 2, 29]);
+  });
+
+  it("31 de marzo + 1 mes es el 30 de abril", () => {
+    expect(ymd(addMonthsClamped(new Date(2026, 2, 31, 12).getTime(), 1))).toEqual([2026, 4, 30]);
+  });
+
+  it("cruza el año", () => {
+    expect(ymd(addMonthsClamped(new Date(2026, 11, 15, 12).getTime(), 1))).toEqual([2027, 1, 15]);
+  });
+
+  it("conserva el día cuando cabe", () => {
+    expect(ymd(addMonthsClamped(new Date(2026, 0, 15, 12).getTime(), 3))).toEqual([2026, 4, 15]);
+  });
+
+  it("conserva la hora", () => {
+    const d = new Date(addMonthsClamped(new Date(2026, 0, 31, 12, 0, 0).getTime(), 1));
+    expect([d.getHours(), d.getMinutes()]).toEqual([12, 0]);
+  });
+
+  it("con 0 meses devuelve el mismo instante", () => {
+    const ts = new Date(2026, 5, 10, 12).getTime();
+    expect(addMonthsClamped(ts, 0)).toBe(ts);
   });
 });

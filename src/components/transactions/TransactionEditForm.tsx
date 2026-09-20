@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyAmountField } from "./MoneyAmountField";
@@ -37,6 +38,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
   // tsToDateStr usa hora local para evitar el desfase UTC al mostrar la fecha
   const [date, setDate]             = useState(tsToDateStr(tx.date));
   const [categoryId, setCategoryId] = useState(tx.categoryId ?? "");
+  const [notes, setNotes]           = useState(tx.notes ?? "");
   const [loading, setLoading]       = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -72,7 +74,13 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
     if (tx.type === "transferencia") {
       setLoading(true);
       try {
-        await updateTx({ transactionId: tx._id, description: desc.trim() });
+        // El backend propaga descripción y notas a la otra pierna de la transferencia
+        await updateTx({
+          transactionId: tx._id,
+          description: desc.trim(),
+          notes: notes.trim() || undefined,
+          clearNotes: !!tx.notes && !notes.trim(),
+        });
         toast.success("Transferencia actualizada");
         onSuccess();
       } catch (err) {
@@ -107,7 +115,14 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         amount:      toCents(amountNum),
         description: desc.trim(),
         date:        dateStrToTs(date),
+        // Sin `clearCategory`, mandar categoryId undefined no borraba nada: el patch
+        // interpreta «sin valor» como «no tocar», y el toast decía que sí se guardó.
         categoryId:  categoryId ? (categoryId as Id<"categories">) : undefined,
+        clearCategory: !categoryId,
+        // `|| undefined` + clearNotes: mandar "" guardaría una cadena vacía en cada
+        // guardado de un movimiento que nunca tuvo nota
+        notes: notes.trim() || undefined,
+        clearNotes: !!tx.notes && !notes.trim(),
         accountId:   sourceKind === "account" && sourceRawId ? (sourceRawId as Id<"accounts">) : undefined,
         cardId:      sourceKind === "card"    && sourceRawId ? (sourceRawId as Id<"cards">)    : undefined,
       });
@@ -164,23 +179,30 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       {/* Cuenta o tarjeta — oculto para transferencias y gasto_tarjeta con cuota */}
       {tx.type !== "transferencia" && !isLockedCardExpense && (
         <div>
-          <Label htmlFor="edit-source" className="text-[12px] font-semibold text-foreground mb-2 block">
-            {tx.type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
-          </Label>
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            {tx.type === "ingreso" ? "Cuenta destino" : "Cuenta"}
+          </span>
           <AccountCardSelect
             id="edit-source"
+            ariaLabel={tx.type === "ingreso" ? "Cuenta destino" : "Cuenta"}
             value={sourceId}
             onValueChange={(v) => setSourceId(v ?? "")}
             accounts={accountList}
             cards={cardList}
-            showCards={tx.type === "gasto"}
+            // Sin tarjetas: un gasto con tarjeta de crédito se registra como compra a
+            // cuotas (lo exige `transactions.create`), así que moverlo aquí creaba un
+            // cargo sin cuota detrás y subía la deuda sin respaldo.
+            showCards={false}
+            // El origen se cambia, no se quita: quitarlo dejaría el movimiento sin
+            // saldo que revertir y `update` no contempla ese caso.
+            allowEmpty={false}
           />
         </div>
       )}
 
       {/* Descripción */}
       <div>
-        <Label htmlFor="edit-desc" className="text-[12px] font-semibold text-foreground mb-2 block">
+        <Label htmlFor="edit-desc" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           Descripción <span aria-hidden="true" className="text-danger">*</span>
         </Label>
         <Input
@@ -207,7 +229,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       {/* Fecha — oculta para transferencias y gasto_tarjeta con cuota */}
       {tx.type !== "transferencia" && !isLockedCardExpense && (
         <div>
-          <Label htmlFor="edit-date" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <Label htmlFor="edit-date" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Fecha
           </Label>
           <DatePicker id="edit-date" value={date} onChange={setDate} required style={{ background: "var(--surface-2)" }} />
@@ -217,14 +239,32 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       {/* Categoría — oculta para transferencias y gasto_tarjeta con cuota */}
       {tx.type !== "transferencia" && !isLockedCardExpense && filteredCategories.length > 0 && (
         <div>
-          <Label htmlFor="edit-category" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Categoría
-          </Label>
+          </span>
           <CategorySelect
             id="edit-category"
             value={categoryId}
             onValueChange={setCategoryId}
             categories={filteredCategories}
+          />
+        </div>
+      )}
+
+      {/* Notas — el backend las soporta desde siempre; solo faltaba el campo */}
+      {!isLockedCardExpense && (
+        <div>
+          <Label htmlFor="edit-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Nota
+          </Label>
+          <Textarea
+            id="edit-notes"
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={500}
+            placeholder="Opcional"
+            style={{ background: "var(--surface-2)" }}
           />
         </div>
       )}
@@ -235,16 +275,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
           type="button"
           onClick={handleSave}
           disabled={loading}
-          className="flex-1 flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60"
-          style={{
-            padding: "13px 16px",
-            fontSize: 14,
-            background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
-            color: "var(--primary-foreground)",
-            border: "none",
-            cursor: loading ? "not-allowed" : "pointer",
-            boxShadow: "0 6px 16px -4px color-mix(in oklch, var(--os-lime) 55%, transparent)",
-          }}
+          className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
           {loading ? "Guardando…" : "Guardar cambios"}

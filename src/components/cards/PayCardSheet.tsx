@@ -24,6 +24,10 @@ import { EASE_OUT_EXPO, haptic, tint, usageOf, usageTone, type Card } from "./sh
  * `minimumPayment` y `totalPayment` llegan por props desde la página: el detalle ya
  * los calculó y así la hoja no puede contradecirlo — antes se resuscribía a
  * `getPaymentSummary`, que define el pago mínimo sobre otro ciclo.
+ *
+ * Son opcionales porque la hoja también se abre desde el detalle de una compra, que
+ * no tiene el ciclo de la tarjeta cargado: ahí no se ofrecen esos atajos en vez de
+ * calcularlos por otro camino y arriesgarse a mostrar una cifra distinta.
  */
 export function PayCardSheet({
   card,
@@ -33,8 +37,8 @@ export function PayCardSheet({
   onOpenChange,
 }: {
   card: Card;
-  minimumPayment: number;
-  totalPayment: number;
+  minimumPayment?: number;
+  totalPayment?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -71,8 +75,8 @@ function PayFields({
   onDone,
 }: {
   card: Card;
-  minimumPayment: number;
-  totalPayment: number;
+  minimumPayment?: number;
+  totalPayment?: number;
   onDone: () => void;
 }) {
   const formId = useId();
@@ -113,8 +117,10 @@ function PayFields({
   }, [allInstallments, card.currentBalance, applied]);
 
   const quick = [
-    ...(minimumPayment > 0 ? [{ label: "Mínimo", value: minimumPayment }] : []),
-    ...(totalPayment > 0 && totalPayment !== minimumPayment
+    ...(minimumPayment !== undefined && minimumPayment > 0
+      ? [{ label: "Mínimo", value: minimumPayment }]
+      : []),
+    ...(totalPayment !== undefined && totalPayment > 0 && totalPayment !== minimumPayment
       ? [{ label: "Pago total", value: totalPayment }]
       : []),
     ...(card.currentBalance > 0 ? [{ label: "Todo el saldo", value: card.currentBalance }] : []),

@@ -7,12 +7,13 @@ import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import { toast } from "sonner";
-import { toCents, dateStrToTs, parseMoneyInput } from "@/lib/money";
+import { addMonthsClamped, toCents, dateStrToTs, parseMoneyInput } from "@/lib/money";
 import { Check, Loader2 } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
 
@@ -45,6 +46,7 @@ export function CardPurchaseFields({
   const [installments, setInstallments]       = useState("1");
   const [hasInterest, setHasInterest]         = useState(false);
   const [interestRatePct, setInterestRatePct] = useState("");
+  const [notes, setNotes]                     = useState("");
   const [loading, setLoading]                 = useState(false);
   const [fieldErrors, setFieldErrors]         = useState<Record<string, string>>({});
 
@@ -71,9 +73,10 @@ export function CardPurchaseFields({
     }
     setFieldErrors({});
 
-    // Primera cuota: un mes después de la fecha de compra (mediodía local para evitar desfase UTC)
-    const firstInstallmentDate = new Date(date + "T12:00:00");
-    firstInstallmentDate.setMonth(firstInstallmentDate.getMonth() + 1);
+    // Primera cuota: un mes después de la fecha de compra. Con `setMonth` a pelo, una
+    // compra del 31 de enero daba el 3 de marzo y todo el cronograma quedaba corrido;
+    // `addMonthsClamped` recorta al último día real del mes destino.
+    const firstInstallmentDate = addMonthsClamped(dateStrToTs(date), 1);
 
     setLoading(true);
     try {
@@ -86,7 +89,9 @@ export function CardPurchaseFields({
         hasInterest,
         interestRate: hasInterest ? rate : undefined,
         purchaseDate: dateStrToTs(date),
-        firstInstallmentDate: firstInstallmentDate.getTime(),
+        firstInstallmentDate,
+        // `createPurchase` acepta notas y el formulario de edición ya las tenía
+        notes: notes.trim() || undefined,
       });
       toast.success("Compra registrada y cronograma generado");
       onSuccess?.();
@@ -115,7 +120,7 @@ export function CardPurchaseFields({
 
       {/* ── Descripción ───────────────────────────────────────────────────── */}
       <div>
-        <Label htmlFor="tx-desc" className="text-[12px] font-semibold text-foreground mb-2 block">
+        <Label htmlFor="tx-desc" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           Descripción <span aria-hidden="true" className="text-danger">*</span>
         </Label>
         <Input
@@ -142,7 +147,7 @@ export function CardPurchaseFields({
       {/* ── Campos de tarjeta de crédito ─────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label htmlFor="tx-installments" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <Label htmlFor="tx-installments" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Cuotas <span aria-hidden="true" className="text-danger">*</span>
           </Label>
           <Input
@@ -193,7 +198,7 @@ export function CardPurchaseFields({
 
       {hasInterest && (
         <div>
-          <Label htmlFor="tx-interest" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <Label htmlFor="tx-interest" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Tasa mensual % <span className="text-muted-foreground font-normal">(m.v.)</span>{" "}
             <span aria-hidden="true" className="text-danger">*</span>
           </Label>
@@ -224,7 +229,7 @@ export function CardPurchaseFields({
 
       {/* ── Fecha ─────────────────────────────────────────────────────────── */}
       <div>
-        <Label htmlFor="tx-date" className="text-[12px] font-semibold text-foreground mb-2 block">
+        <Label htmlFor="tx-date" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           Fecha de compra
         </Label>
         <DatePicker id="tx-date" value={date} onChange={onDateChange} required style={{ background: "var(--surface-2)" }} />
@@ -233,9 +238,9 @@ export function CardPurchaseFields({
       {/* ── Categoría ─────────────────────────────────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
-          <Label htmlFor="tx-category" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Categoría
-          </Label>
+          </span>
           <CategorySelect
             id="tx-category"
             value={categoryId}
@@ -245,20 +250,27 @@ export function CardPurchaseFields({
         </div>
       )}
 
+      {/* ── Nota ──────────────────────────────────────────────────────────── */}
+      <div>
+        <Label htmlFor="cpf-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Nota
+        </Label>
+        <Textarea
+          id="cpf-notes"
+          rows={2}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          maxLength={500}
+          placeholder="Opcional"
+          style={{ background: "var(--surface-2)" }}
+        />
+      </div>
+
       {/* ── Botón guardar ─────────────────────────────────────────────────── */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
-        style={{
-          padding: "15px 18px",
-          fontSize: 15,
-          background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
-          color: "var(--primary-foreground)",
-          border: "none",
-          cursor: loading ? "not-allowed" : "pointer",
-          boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-lime) 55%, transparent)",
-        }}
+        className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
         {loading ? "Guardando…" : "Registrar compra"}

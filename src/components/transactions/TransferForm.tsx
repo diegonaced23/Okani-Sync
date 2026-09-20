@@ -13,13 +13,9 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MoneyAmountField } from "./MoneyAmountField";
+import { SourceChip } from "@/components/ui/source-chip";
+import { OVERFLOW_ROW, haptic } from "./shared";
 import { DatePicker } from "@/components/ui/date-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
 import { toast } from "sonner";
 import { toCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
 import { ArrowDown, Check, Loader2 } from "lucide-react";
@@ -56,7 +52,11 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
   const needsRate =
     fromAccount && toAccount && fromAccount.currency !== toAccount.currency;
   const amountNum = parseFloat(amount) || 0;
-  const rateNum = parseFloat(exchangeRate) || 1;
+  // Sin `|| 1`: ese valor por defecto hacía que la guarda de abajo nunca saltara y,
+  // con el campo vacío, se habría enviado una conversión 1:1 como si fuera la tasa real.
+  const parsedRate = parseFloat(exchangeRate);
+  const hasRate = Number.isFinite(parsedRate) && parsedRate > 0;
+  const rateNum = hasRate ? parsedRate : 1;
   const toAmount = needsRate ? Math.round(amountNum * rateNum * 100) / 100 : amountNum;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -70,7 +70,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
       errors.accounts = "Las cuentas deben ser distintas";
     }
     if (amountNum <= 0) errors.amount = "El monto debe ser mayor que cero";
-    if (needsRate && !rateNum) errors.exchangeRate = "Ingresa la tasa de cambio";
+    if (needsRate && !hasRate) errors.exchangeRate = "Ingresa la tasa de cambio";
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -102,27 +102,25 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Cuentas — apiladas verticalmente con flecha de ilusión de transferencia */}
       <div className="space-y-1">
-        <div>
-          <Label htmlFor="tf-from-account" className="text-[12px] font-semibold text-foreground mb-2 block">Origen</Label>
-          <Select
-            value={fromAccountId}
-            onValueChange={(v) => { if (v) { setFromAccountId(v); if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" })); } }}
-          >
-            <SelectTrigger id="tf-from-account" className="w-full">
-              <span className="flex-1 text-left text-sm truncate">
-                {fromAccount
-                  ? `${fromAccount.name} (${fromAccount.currency})`
-                  : <span className="text-muted-foreground">Seleccionar cuenta</span>}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {allAccounts.map((a) => (
-                <SelectItem key={a._id} value={a._id}>
-                  {a.name} ({a.currency})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="space-y-2">
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Origen</span>
+          {/* Fichas, como en el resto del módulo: cada cuenta con su color y su saldo */}
+          <div role="radiogroup" aria-label="Cuenta de origen" className={OVERFLOW_ROW}>
+            {allAccounts.map((a) => (
+              <SourceChip
+                key={a._id}
+                selected={fromAccountId === a._id}
+                onSelect={() => {
+                  haptic();
+                  setFromAccountId(a._id);
+                  if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" }));
+                }}
+                color={a.color}
+                name={a.name}
+                detail={formatCents(a.balance, a.currency)}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Flecha hacia abajo — ilusión de flujo de transferencia */}
@@ -139,29 +137,26 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
           </span>
         </div>
 
-        <div>
-          <Label htmlFor="tf-to-account" className="text-[12px] font-semibold text-foreground mb-2 block">Destino</Label>
-          <Select
-            value={toAccountId}
-            onValueChange={(v) => { if (v) { setToAccountId(v); if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" })); } }}
-          >
-            <SelectTrigger id="tf-to-account" className="w-full">
-              <span className="flex-1 text-left text-sm truncate">
-                {toAccount
-                  ? `${toAccount.name} (${toAccount.currency})`
-                  : <span className="text-muted-foreground">Seleccionar cuenta</span>}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {allAccounts
-                .filter((a) => a._id !== fromAccountId)
-                .map((a) => (
-                  <SelectItem key={a._id} value={a._id}>
-                    {a.name} ({a.currency})
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
+        <div className="space-y-2">
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Destino</span>
+          <div role="radiogroup" aria-label="Cuenta de destino" className={OVERFLOW_ROW}>
+            {allAccounts
+              .filter((a) => a._id !== fromAccountId)
+              .map((a) => (
+                <SourceChip
+                  key={a._id}
+                  selected={toAccountId === a._id}
+                  onSelect={() => {
+                    haptic();
+                    setToAccountId(a._id);
+                    if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" }));
+                  }}
+                  color={a.color}
+                  name={a.name}
+                  detail={formatCents(a.balance, a.currency)}
+                />
+              ))}
+          </div>
         </div>
         {fieldErrors.accounts && (
           <p id="tf-accounts-error" role="alert" className="text-xs text-destructive mt-1.5">
@@ -254,7 +249,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
+        className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
         style={{
           padding: "15px 18px",
           fontSize: 15,

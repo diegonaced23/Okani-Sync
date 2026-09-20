@@ -30,35 +30,31 @@ export const CardPurchaseItem = memo(function CardPurchaseItem({ purchase, cardN
     <button
       type="button"
       onClick={onPress ? () => onPress(purchase) : undefined}
-      className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-muted/50"
-      style={{ background: "transparent" }}
+      className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left transition-colors hover:bg-muted/50 active:bg-muted/70"
     >
       <span
-        className="flex shrink-0 items-center justify-center rounded-2xl"
-        style={{ width: 44, height: 44, background: iconBg, color: iconColor }}
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px]"
+        style={{ background: iconBg, color: iconColor }}
       >
-        <ShoppingCart className="h-[20px] w-[20px]" strokeWidth={1.8} aria-hidden />
+        <ShoppingCart className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden />
       </span>
 
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate leading-tight">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold leading-tight text-foreground">
           {purchase.description}
         </p>
-        <p className="text-xs text-muted-foreground truncate mt-0.5 leading-tight">
+        <p className="mt-0.5 truncate text-xs leading-tight text-muted-foreground">
           {subtitleParts.join(" · ")}
         </p>
       </div>
 
-      <div className="flex flex-col items-end gap-1 shrink-0">
-        <span
-          className="font-mono-num font-bold text-sm leading-tight"
-          style={{ color: "var(--foreground)" }}
-        >
-          -{formatCents(purchase.totalWithInterest, purchase.currency)}
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span className="font-mono-num text-sm font-bold leading-tight tabular-nums text-foreground">
+          −{formatCents(purchase.totalWithInterest, purchase.currency)}
         </span>
         <span
-          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
-          style={{ background: iconBg, color: iconColor, letterSpacing: "0.03em" }}
+          className="inline-flex items-center rounded-full px-2 py-px text-[11px] font-semibold"
+          style={{ background: iconBg, color: iconColor }}
         >
           Compra
         </span>

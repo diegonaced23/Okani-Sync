@@ -14,8 +14,10 @@ import { Button } from "@/components/ui/button";
 import { formatCents } from "@/lib/money";
 import { formatDateShort, formatMonthLong } from "@/lib/utils";
 import { toast } from "sonner";
-import { Check, Clock, CalendarDays, CreditCard, Pencil, Trash2 } from "lucide-react";
-import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
+import { CalendarDays, CreditCard, Pencil, Trash2 } from "lucide-react";
+import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
+import { PayCardSheet } from "@/components/cards/PayCardSheet";
+import { ProgressRing } from "@/components/ui/progress-ring";
 import { CardPurchaseEditForm } from "./CardPurchaseEditForm";
 
 interface CardPurchaseDetailSheetProps {
@@ -29,7 +31,7 @@ export function CardPurchaseDetailSheet({
   open,
   onOpenChange,
 }: CardPurchaseDetailSheetProps) {
-  const { openWithCard } = useNewTransactionModal();
+  const [payOpen, setPayOpen] = useState(false);
   const deletePurchase = useMutation(api.cardPurchases.deletePurchase);
   const data = useQuery(
     api.cardPurchases.getWithInstallments,
@@ -101,16 +103,22 @@ export function CardPurchaseDetailSheet({
       onOpenChange={(o) => { if (!o) setEditing(false); onOpenChange(o); }}
       title={editing ? "Editar compra" : "Detalle de compra"}
     >
-      {!purchase ? (
+      {data === undefined ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div
               key={i}
-              className="h-14 rounded-xl animate-pulse"
+              className="h-14 animate-pulse rounded-[18px]"
               style={{ background: "var(--surface-2)" }}
             />
           ))}
         </div>
+      ) : !purchase ? (
+        // `getWithInstallments` devuelve null si la compra ya no existe. Antes esto se
+        // trataba igual que «cargando» y el esqueleto pulsaba para siempre.
+        <p className="rounded-[20px] bg-[var(--surface-2)] px-6 py-12 text-center text-sm text-muted-foreground">
+          Esta compra ya no existe.
+        </p>
       ) : editing ? (
         <CardPurchaseEditForm
           purchase={purchase}
@@ -121,10 +129,7 @@ export function CardPurchaseDetailSheet({
         <div className="space-y-5">
 
           {/* ── Cabecera ── */}
-          <div
-            className="rounded-2xl p-4 space-y-1"
-            style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-          >
+          <div className="space-y-1 rounded-[22px] bg-[var(--surface-2)] p-4">
             <p className="font-semibold text-foreground text-base leading-tight">
               {purchase.description}
             </p>
@@ -145,119 +150,80 @@ export function CardPurchaseDetailSheet({
             <p className="text-xs text-muted-foreground">
               Compra del {formatDateShort(purchase.purchaseDate)}
             </p>
-          </div>
 
-          {/* ── Barra de progreso ── */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-baseline">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Progreso
-              </span>
-              <span className="text-xs font-bold text-foreground">
-                {paidCount} de {totalCount} cuotas
-              </span>
-            </div>
-
-            <div
-              role="progressbar"
-              aria-valuenow={Math.round(progress)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`${paidCount} de ${totalCount} cuotas pagadas`}
-              className="h-2 rounded-full overflow-hidden"
-              style={{ background: "var(--muted)" }}
-            >
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${progress}%`,
-                  background: progress >= 100
-                    ? "var(--os-lime)"
-                    : "linear-gradient(90deg, var(--os-cyan), var(--os-lime))",
-                }}
-              />
-            </div>
-
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Pagado: {formatCents(amountPaid, purchase.currency)}</span>
-              {amountPending > 0 && (
-                <span>Pendiente: {formatCents(amountPending, purchase.currency)}</span>
+            {/* Base sin interés y cuota mensual: los guardaba el backend y no se veían */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1.5 text-xs text-muted-foreground">
+              {purchase.totalWithInterest !== purchase.totalAmount && (
+                <span>
+                  Sin interés{" "}
+                  <strong className="font-mono-num tabular-nums text-foreground">
+                    {formatCents(purchase.totalAmount, purchase.currency)}
+                  </strong>
+                </span>
               )}
+              <span>
+                Cuota{" "}
+                <strong className="font-mono-num tabular-nums text-foreground">
+                  {formatCents(purchase.amountPerInstallment, purchase.currency)}
+                </strong>
+                {totalCount > 1 ? ` × ${totalCount}` : ""}
+              </span>
             </div>
 
-            {currentInstallment && amountPending > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Próxima cuota en {formatMonthLong(currentInstallment.dueDate)}
-              </p>
+            {purchase.notes && (
+              <p className="pt-1.5 text-xs text-foreground">{purchase.notes}</p>
             )}
           </div>
 
-          {/* ── Cronograma ── */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          {/* ── Progreso ── */}
+          <div className="flex items-center gap-4 rounded-[22px] bg-[var(--surface-2)] p-4">
+            <ProgressRing
+              value={totalCount > 0 ? paidCount / totalCount : 0}
+              color={progress >= 100 ? "var(--os-lime)" : "var(--os-cyan)"}
+              size={64}
+              stroke={7}
+              label={`${paidCount} de ${totalCount} cuotas pagadas`}
+            >
+              <span className="flex flex-col items-center leading-none">
+                <span className="font-mono-num text-sm font-extrabold tabular-nums text-foreground">
+                  {paidCount}/{totalCount}
+                </span>
+                <span className="mt-0.5 text-[9px] font-semibold uppercase text-muted-foreground">
+                  cuotas
+                </span>
+              </span>
+            </ProgressRing>
+
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-xs text-muted-foreground">
+                Pagado{" "}
+                <strong className="font-mono-num tabular-nums text-foreground">
+                  {formatCents(amountPaid, purchase.currency)}
+                </strong>
+              </p>
+              {amountPending > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Pendiente{" "}
+                  <strong className="font-mono-num tabular-nums text-foreground">
+                    {formatCents(amountPending, purchase.currency)}
+                  </strong>
+                </p>
+              )}
+              {currentInstallment && amountPending > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Próxima cuota en {formatMonthLong(currentInstallment.dueDate)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* ── Cronograma: el mismo componente que el detalle de la tarjeta, que
+                 además pinta el capital, el interés y el saldo que falta por amortizar ── */}
+          <div className="space-y-2">
+            <p className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
               Cronograma
             </p>
-            <div
-              className="rounded-xl overflow-hidden divide-y"
-              style={{ border: "1px solid var(--border)" }}
-            >
-              {(installments ?? []).map((inst, idx, arr) => {
-                const isCurrent = !inst.paid && (idx === 0 || arr[idx - 1].paid);
-                return (
-                  <div
-                    key={inst._id}
-                    className="flex items-center gap-3 px-4 py-3"
-                    style={{
-                      background: isCurrent
-                        ? "color-mix(in oklch, var(--os-cyan) 8%, var(--surface-2))"
-                        : "var(--surface-2)",
-                    }}
-                  >
-                    <span
-                      className="flex-shrink-0 flex items-center justify-center rounded-full"
-                      aria-label={inst.paid ? "Pagada" : isCurrent ? "Cuota actual" : "Pendiente"}
-                      style={{
-                        width: 28, height: 28,
-                        background: inst.paid
-                          ? "color-mix(in oklch, var(--os-lime) 18%, transparent)"
-                          : isCurrent
-                            ? "color-mix(in oklch, var(--os-cyan) 18%, transparent)"
-                            : "var(--muted)",
-                        color: inst.paid
-                          ? "var(--os-lime)"
-                          : isCurrent
-                            ? "var(--os-cyan)"
-                            : "var(--muted-foreground)",
-                      }}
-                    >
-                      {inst.paid
-                        ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />
-                        : <Clock className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
-                      }
-                    </span>
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground">
-                        Cuota {inst.installmentNumber}/{totalCount}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDateShort(inst.dueDate)}
-                      </p>
-                    </div>
-
-                    <span
-                      className="font-mono-num text-sm font-bold shrink-0"
-                      style={{
-                        color: inst.paid ? "var(--muted-foreground)" : "var(--foreground)",
-                        textDecoration: inst.paid ? "line-through" : "none",
-                      }}
-                    >
-                      {formatCents(inst.amount, purchase.currency)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <InstallmentSchedule installments={installments ?? []} currency={purchase.currency} />
           </div>
 
           {/* ── Info de interés ── */}
@@ -277,14 +243,14 @@ export function CardPurchaseDetailSheet({
             </div>
           )}
 
-          {/* ── CTA: registrar pago — solo visible mientras haya cuotas pendientes ── */}
+          {/* ── CTA: pagar la tarjeta — solo mientras haya cuotas pendientes ──
+              Antes esto abría el modal de nueva transacción con la tarjeta
+              preseleccionada, que registra OTRA COMPRA: el botón para pagar subía la
+              deuda. Ahora abre la hoja de pago real (cards.payCard). */}
           {amountPending > 0 && card && (
             <button
               type="button"
-              onClick={() => {
-                openWithCard(card._id);
-                onOpenChange(false);
-              }}
+              onClick={() => setPayOpen(true)}
               className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold transition-opacity active:opacity-70"
               style={{
                 background: "linear-gradient(135deg, var(--os-cyan), var(--os-lime))",
@@ -292,7 +258,7 @@ export function CardPurchaseDetailSheet({
               }}
             >
               <CreditCard className="h-4 w-4" aria-hidden="true" />
-              Registrar pago
+              Pagar tarjeta
             </button>
           )}
 
@@ -329,6 +295,13 @@ export function CardPurchaseDetailSheet({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    {/* Hoja de pago de la tarjeta. Sin los montos sugeridos: el ciclo lo calcula la
+        página de la tarjeta y aquí no está cargado, así que se ofrece el saldo y el
+        monto libre en vez de arriesgar una cifra que no coincida. */}
+    {card && (
+      <PayCardSheet card={card} open={payOpen} onOpenChange={setPayOpen} />
+    )}
     </>
   );
 }

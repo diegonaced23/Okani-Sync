@@ -41,9 +41,19 @@ export function NewTransactionModalProvider({ children }: { children: React.Reac
     setInitialSourceId(null);
   }
 
+  /**
+   * Cambiar de pestaña suelta la fuente preseleccionada salvo en «gasto»: una tarjeta
+   * de crédito no puede ser el origen de un ingreso, y al arrastrarse entre pestañas
+   * hacía que la pestaña Ingreso pintara el formulario de compra a cuotas.
+   */
+  function changeTab(tab: TxTab) {
+    if (tab !== "gasto") setInitialSourceId(null);
+    setTxTab(tab);
+  }
+
   return (
     <NewTransactionModalContext.Provider
-      value={{ open, txTab, initialSourceId, openModal, openWithCard, closeModal, setTxTab }}
+      value={{ open, txTab, initialSourceId, openModal, openWithCard, closeModal, setTxTab: changeTab }}
     >
       {children}
     </NewTransactionModalContext.Provider>

@@ -95,20 +95,13 @@ export const TransactionItem = memo(function TransactionItem({
     <button
       type="button"
       onClick={onPress ? () => onPress(tx) : undefined}
-      className="w-full flex items-center gap-3 px-4 py-3 transition-colors text-left"
-      style={{ background: "none" }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--muted)"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "none"; }}
+      // El hover va por CSS: antes se escribía el fondo a mano en dos handlers de ratón
+      className="flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left transition-colors hover:bg-muted/50 active:bg-muted/70"
     >
       {/* Icono */}
       <span
-        className="flex shrink-0 items-center justify-center"
-        style={{
-          width: 40, height: 40,
-          borderRadius: 13,
-          background: iconBg,
-          color: iconColor,
-        }}
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px]"
+        style={{ background: iconBg, color: iconColor }}
       >
         {hasCategory
           ? <CategoryIcon name={category.icon} className="h-[18px] w-[18px]" aria-hidden="true" />
@@ -116,15 +109,15 @@ export const TransactionItem = memo(function TransactionItem({
       </span>
 
       {/* Texto */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
-        <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold leading-tight text-foreground">{tx.description}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitle}</p>
       </div>
 
       {/* Monto */}
       <p
-        className="text-sm font-bold tabular shrink-0"
-        style={{ color: amountColor, letterSpacing: "-0.02em" }}
+        className="shrink-0 font-mono-num text-sm font-bold tabular-nums"
+        style={{ color: amountColor }}
       >
         {sign}{formatCents(tx.amount, tx.currency)}
       </p>

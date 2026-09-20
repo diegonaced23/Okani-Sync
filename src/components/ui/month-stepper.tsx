@@ -21,13 +21,21 @@ export function shiftMonth(month: string, delta: number): string {
 export function MonthStepper({
   month,
   onChange,
+  /** Mes más antiguo al que se puede retroceder, "YYYY-MM". Sin él no hay tope. */
+  minMonth,
+  /** Muestra un atajo al mes en curso cuando no se está en él. */
+  showToday,
 }: {
   month: string;
   onChange: (month: string) => void;
+  minMonth?: string;
+  showToday?: boolean;
 }) {
   const reduce = useReducedMotion();
   const [dir, setDir] = useState(1);
-  const atCurrent = month >= currentMonth();
+  const today = currentMonth();
+  const atCurrent = month >= today;
+  const atOldest = minMonth !== undefined && month <= minMonth;
 
   function step(delta: number) {
     haptic();
@@ -37,7 +45,7 @@ export function MonthStepper({
 
   return (
     <div className={cn("flex items-center gap-1 rounded-[18px] p-1.5", GLASS_SURFACE)}>
-      <Arrow label="Mes anterior" onClick={() => step(-1)}>
+      <Arrow label="Mes anterior" onClick={() => step(-1)} disabled={atOldest}>
         <ChevronLeft className="h-4.5 w-4.5" strokeWidth={2.5} aria-hidden="true" />
       </Arrow>
 
@@ -57,6 +65,20 @@ export function MonthStepper({
           </motion.p>
         </AnimatePresence>
       </div>
+
+      {showToday && !atCurrent && (
+        <button
+          type="button"
+          onClick={() => { haptic(); setDir(1); onChange(today); }}
+          className="mr-0.5 shrink-0 rounded-full px-2.5 py-1 text-xs font-bold transition-transform active:scale-95"
+          style={{
+            background: "color-mix(in oklch, var(--os-cyan) 15%, transparent)",
+            color: "var(--os-cyan-text)",
+          }}
+        >
+          Hoy
+        </button>
+      )}
 
       <Arrow label="Mes siguiente" onClick={() => step(1)} disabled={atCurrent}>
         <ChevronRight className="h-4.5 w-4.5" strokeWidth={2.5} aria-hidden="true" />

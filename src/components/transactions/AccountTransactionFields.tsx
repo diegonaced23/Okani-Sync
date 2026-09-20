@@ -6,6 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
@@ -51,6 +52,7 @@ export function AccountTransactionFields({
 
   const [categoryId, setCategoryId]   = useState("");
   const [goalId, setGoalId]           = useState("");
+  const [notes, setNotes]             = useState("");
   const [loading, setLoading]         = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -89,6 +91,8 @@ export function AccountTransactionFields({
         accountId,
         categoryId: categoryId ? (categoryId as Id<"categories">) : undefined,
         goalId: type === "gasto" && goalId ? (goalId as Id<"goals">) : undefined,
+        // `create` acepta notas desde siempre; solo faltaba el campo
+        notes: notes.trim() || undefined,
       });
       toast.success(type === "ingreso" ? "Ingreso registrado" : "Gasto registrado");
       onSuccess?.();
@@ -125,7 +129,7 @@ export function AccountTransactionFields({
 
       {/* ── Descripción ───────────────────────────────────────────────────── */}
       <div>
-        <Label htmlFor="tx-desc" className="text-[12px] font-semibold text-foreground mb-2 block">
+        <Label htmlFor="tx-desc" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           Descripción <span aria-hidden="true" className="text-danger">*</span>
         </Label>
         <Input
@@ -151,7 +155,7 @@ export function AccountTransactionFields({
 
       {/* ── Fecha ─────────────────────────────────────────────────────────── */}
       <div>
-        <Label htmlFor="tx-date" className="text-[12px] font-semibold text-foreground mb-2 block">
+        <Label htmlFor="tx-date" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           Fecha
         </Label>
         <DatePicker id="tx-date" value={date} onChange={onDateChange} required style={{ background: "var(--surface-2)" }} />
@@ -160,9 +164,9 @@ export function AccountTransactionFields({
       {/* ── Categoría ─────────────────────────────────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
-          <Label htmlFor="tx-category" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Categoría
-          </Label>
+          </span>
           <CategorySelect
             id="tx-category"
             value={categoryId}
@@ -207,20 +211,27 @@ export function AccountTransactionFields({
         </div>
       )}
 
+      {/* ── Nota ──────────────────────────────────────────────────────────── */}
+      <div>
+        <Label htmlFor="tx-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Nota
+        </Label>
+        <Textarea
+          id="tx-notes"
+          rows={2}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          maxLength={500}
+          placeholder="Opcional"
+          style={{ background: "var(--surface-2)" }}
+        />
+      </div>
+
       {/* ── Botón guardar ─────────────────────────────────────────────────── */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
-        style={{
-          padding: "15px 18px",
-          fontSize: 15,
-          background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
-          color: "var(--primary-foreground)",
-          border: "none",
-          cursor: loading ? "not-allowed" : "pointer",
-          boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-lime) 55%, transparent)",
-        }}
+        className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
         {loading ? "Guardando…" : "Guardar movimiento"}

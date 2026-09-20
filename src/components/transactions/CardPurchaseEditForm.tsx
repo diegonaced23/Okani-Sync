@@ -14,7 +14,7 @@ import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
+import { addMonthsClamped, fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
 import { Check, Loader2, X } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
 
@@ -40,6 +40,11 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
   const [interestRatePct, setInterestRatePct] = useState(
     purchase.interestRate ? (purchase.interestRate * 100).toFixed(2) : ""
   );
+  // El campo muestra la tasa redondeada a dos decimales. Reenviarla sin que nadie la
+  // haya tocado difiere de la guardada (0,02567 → 0,0257), el backend lo lee como un
+  // cambio financiero y regenera TODAS las cuotas con otros montos. Solo se manda si
+  // de verdad se editó, o si se acaba de activar el interés.
+  const [rateTouched, setRateTouched] = useState(false);
   const [purchaseDate, setPurchaseDate]       = useState(tsToDateStr(purchase.purchaseDate));
   const [loading, setLoading]                 = useState(false);
   const [fieldErrors, setFieldErrors]         = useState<Record<string, string>>({});
@@ -59,6 +64,8 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
       amountNum = parseMoneyInput(amount);
       nInstallments = parseInt(installments) || 0;
       rate = hasInterest ? (parseFloat(interestRatePct) || 0) / 100 : 0;
+      // Si el interés ya estaba activo y nadie tocó la tasa, la válida es la guardada
+      if (hasInterest && !rateTouched && purchase.hasInterest) rate = purchase.interestRate ?? rate;
       if (!amountNum || amountNum <= 0) errors.amount = "El monto debe ser mayor que cero";
       if (nInstallments < 1) errors.installments = "Debe ser al menos 1 cuota";
       if (hasInterest && rate <= 0) errors.interest = "Ingresa la tasa de interés";
@@ -72,19 +79,36 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
 
     setLoading(true);
     try {
+      // Solo se envían los campos financieros que de verdad cambiaron: el backend
+      // trata cualquiera de ellos como motivo para rehacer el cronograma completo.
+      const newAmount = toCents(amountNum);
+      const newDate = dateStrToTs(purchaseDate);
+      const interestToggled = hasInterest !== purchase.hasInterest;
+
       await updatePurchase({
         purchaseId: purchase._id,
         description: description.trim(),
         categoryId: categoryId ? (categoryId as Id<"categories">) : undefined,
         clearCategory: !!purchase.categoryId && !categoryId,
         notes: notes.trim() || undefined,
+        // Vaciar el textarea no borraba la nota: omitir el campo significa «no tocar»
+        clearNotes: !!purchase.notes && !notes.trim(),
         ...(canEditFinancials
           ? {
-              totalAmount: toCents(amountNum),
-              totalInstallments: nInstallments,
-              hasInterest,
-              interestRate: hasInterest ? rate : undefined,
-              purchaseDate: dateStrToTs(purchaseDate),
+              ...(newAmount !== purchase.totalAmount ? { totalAmount: newAmount } : {}),
+              ...(nInstallments !== purchase.totalInstallments
+                ? { totalInstallments: nInstallments }
+                : {}),
+              ...(interestToggled ? { hasInterest } : {}),
+              ...((rateTouched || interestToggled) && hasInterest ? { interestRate: rate } : {}),
+              ...(newDate !== purchase.purchaseDate
+                ? {
+                    purchaseDate: newDate,
+                    // La primera cuota cae un mes después de la compra, igual que al
+                    // crearla. Sin esto, mover la fecha dejaba el cronograma donde estaba.
+                    firstInstallmentDate: addMonthsClamped(newDate, 1),
+                  }
+                : {}),
             }
           : {}),
       });
@@ -200,7 +224,7 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
                 min={0.001}
                 max={100}
                 value={interestRatePct}
-                onChange={(v) => { setInterestRatePct(v); if (fieldErrors.interest) setFieldErrors((fe) => ({ ...fe, interest: "" })); }}
+                onChange={(v) => { setInterestRatePct(v); setRateTouched(true); if (fieldErrors.interest) setFieldErrors((fe) => ({ ...fe, interest: "" })); }}
                 required
                 aria-required="true"
                 aria-invalid={!!fieldErrors.interest}
@@ -225,9 +249,9 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
       {/* Categoría */}
       {filteredCategories.length > 0 && (
         <div>
-          <Label htmlFor="cp-category" className="text-[12px] font-semibold text-foreground mb-2 block">
+          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Categoría
-          </Label>
+          </span>
           <CategorySelect
             id="cp-category"
             value={categoryId}
