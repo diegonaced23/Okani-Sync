@@ -1,238 +1,649 @@
 "use client";
 
-import { Suspense } from "react";
-import { useQuery } from "convex/react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { AnimatePresence, Reorder, motion, useReducedMotion } from "framer-motion";
+import { ArrowUpDown, Check, ChevronRight, Plus, Search, TriangleAlert, X } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "../../../../convex/_generated/api";
-import { useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { AppSheet } from "@/components/ui/app-sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { PillTabs } from "@/components/ui/pill-tabs";
-import { AccountCard } from "@/components/accounts/AccountCard";
-import { AccountForm } from "@/components/accounts/AccountForm";
-import { CardSummary } from "@/components/cards/CardSummary";
-import { CardForm, CARD_SHEET_CLASS } from "@/components/cards/CardForm";
-import { formatCents } from "@/lib/money";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AccountSheet } from "@/components/accounts/AccountSheet";
+import { AccountRow } from "@/components/accounts/AccountRow";
+import { AccountsOverviewCard } from "@/components/accounts/AccountsOverviewCard";
+import { EmptyState as AccountsEmptyState } from "@/components/accounts/EmptyState";
+import {
+  GROUP_LABELS,
+  GROUP_ORDER,
+  matchesQuery as accountMatches,
+  type Account,
+} from "@/components/accounts/shared";
+import { CardSheet } from "@/components/cards/CardSheet";
+import { CardRow } from "@/components/cards/CardRow";
+import { CardsOverviewCard } from "@/components/cards/CardsOverviewCard";
+import { EmptyState as CardsEmptyState } from "@/components/cards/EmptyState";
+import { dueOf, matchesQuery as cardMatches, type Card } from "@/components/cards/shared";
+import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
+import { cn } from "@/lib/utils";
 
-type TabKey = "cuentas" | "tarjetas";
+type Tab = "cuentas" | "tarjetas";
 
-const TABS = [
-  { key: "cuentas" as TabKey, label: "Cuentas" },
-  { key: "tarjetas" as TabKey, label: "Tarjetas de crédito" },
+const TABS: { key: Tab; label: string }[] = [
+  { key: "cuentas", label: "Cuentas" },
+  { key: "tarjetas", label: "Tarjetas" },
 ];
 
-function ProductosContent() {
-  const searchParams = useSearchParams();
+export default function ProductosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const params = use(searchParams);
   const router = useRouter();
+  const reduce = useReducedMotion();
 
-  const initialTab = (searchParams.get("tab") as TabKey) ?? "cuentas";
-  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+  const [tab, setTab] = useState<Tab>(params.tab === "tarjetas" ? "tarjetas" : "cuentas");
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  // Se fija al montar: Date.now() en el render rompería la pureza del componente
+  const [nowMs] = useState(() => Date.now());
 
-  const [openAccount, setOpenAccount] = useState(false);
-  const [openCard, setOpenCard] = useState(false);
-
+  // ── Cuentas ──────────────────────────────────────────────────────────────
   const accounts = useQuery(api.accounts.list);
+  const accountsOverview = useQuery(api.accounts.overview);
   const sharedAccounts = useQuery(api.accounts.listSharedWithMe);
+  const setAccountArchived = useMutation(api.accounts.setArchived);
+  const toggleInclude = useMutation(api.accounts.toggleBalanceInclusion);
+  const reorderAccounts = useMutation(api.accounts.reorder);
+
+  const [accountSheet, setAccountSheet] = useState<{ open: boolean; account: Account | null }>({ open: false, account: null });
+  const [showArchivedAccounts, setShowArchivedAccounts] = useState(false);
+  const archivedAccounts = useQuery(api.accounts.listArchived, showArchivedAccounts ? {} : "skip");
+
+  // ── Tarjetas ─────────────────────────────────────────────────────────────
   const cards = useQuery(api.cards.list);
+  const cardsOverview = useQuery(api.cards.overview);
+  const setCardArchived = useMutation(api.cards.setArchived);
+  const reorderCards = useMutation(api.cards.reorder);
 
-  const totalCOP = (accounts ?? [])
-    .filter((a) => a.currency === "COP")
-    .reduce((sum, a) => sum + a.balance, 0);
+  const [cardSheet, setCardSheet] = useState<{ open: boolean; card: Card | null }>({ open: false, card: null });
+  const [showArchivedCards, setShowArchivedCards] = useState(false);
+  const archivedCards = useQuery(api.cards.listArchived, showArchivedCards ? {} : "skip");
 
-  const totalDebt = (cards ?? []).reduce((s, c) => s + c.currentBalance, 0);
+  // ── Orden local optimista ────────────────────────────────────────────────
+  // El arrastre necesita reordenar al instante; la query llega después con el
+  // orden ya guardado. Mismo patrón que la lista de categorías.
+  const [accountItems, setAccountItems] = useState<Account[]>([]);
+  const accountItemsRef = useRef<Account[]>([]);
+  const [cardItems, setCardItems] = useState<Card[]>([]);
+  const cardItemsRef = useRef<Card[]>([]);
+  const [prevSource, setPrevSource] = useState<{ accounts: typeof accounts; cards: typeof cards }>();
+  if (prevSource?.accounts !== accounts || prevSource?.cards !== cards) {
+    setPrevSource({ accounts, cards });
+    if (accounts !== undefined) setAccountItems(accounts);
+    if (cards !== undefined) setCardItems(cards);
+  }
+  useEffect(() => { accountItemsRef.current = accountItems; }, [accountItems]);
+  useEffect(() => { cardItemsRef.current = cardItems; }, [cardItems]);
+
+  // Con un filtro activo la lista visible no es la real: arrastrar guardaría un
+  // orden calculado sobre un subconjunto. Se sale del modo reordenar.
+  const filtering = query.trim().length > 0;
+  const reordering = editing && !filtering;
+
+  const visibleAccounts = accountItems.filter((a) => accountMatches(a, query));
+  const visibleCards = cardItems.filter((c) => cardMatches(c, query));
+  const visibleShared = (sharedAccounts ?? []).filter(
+    (a): a is NonNullable<typeof a> => a !== null && accountMatches(a, query)
+  );
+
+  const accountGroups = useMemo(
+    () => GROUP_ORDER.map((type) => ({ type, items: visibleAccounts.filter((a) => a.type === type) }))
+      .filter((g) => g.items.length > 0),
+    // visibleAccounts se recalcula en cada render; la dependencia real es su contenido
+    [accountItems, query] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  /** Tarjetas que ya vencieron o vencen esta semana: el aviso de arriba. */
+  const urgentCards = useMemo(
+    () => visibleCards.filter((c) => c.currentBalance > 0 && dueOf(c, nowMs).urgent),
+    [cardItems, query, nowMs] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const counts = { cuentas: accountItems.length, tarjetas: cardItems.length };
+
+  function switchTab(next: Tab) {
+    if (next === tab) return;
+    haptic();
+    setTab(next);
+    setOpenRowId(null);
+    setEditing(false);
+    setQuery("");
+    // En la URL: los detalles y los redirects /cuentas y /tarjetas dependen de este contrato
+    router.replace(next === "tarjetas" ? "/productos?tab=tarjetas" : "/productos?tab=cuentas", { scroll: false });
+  }
+
+  function onCreate() {
+    haptic();
+    if (tab === "cuentas") setAccountSheet({ open: true, account: null });
+    else setCardSheet({ open: true, card: null });
+  }
+
+  // ── Acciones de cuenta ───────────────────────────────────────────────────
+  async function toggleAccountArchive(account: Account) {
+    const archived = !account.archived;
+    haptic(15);
+    if (archived) setAccountItems((prev) => prev.filter((a) => a._id !== account._id));
+    try {
+      await setAccountArchived({ accountId: account._id, archived });
+      toast(`«${account.name}» ${archived ? "archivada" : "restaurada"}`, {
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            setAccountArchived({ accountId: account._id, archived: !archived }).catch(() =>
+              toast.error("No se pudo deshacer")
+            );
+          },
+        },
+      });
+    } catch (err) {
+      if (accounts) setAccountItems(accounts);
+      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+    }
+  }
+
+  async function toggleAccountInclude(account: Account) {
+    const include = account.includeInBalance === false;
+    haptic();
+    try {
+      await toggleInclude({ accountId: account._id, include });
+      toast.success(
+        include ? `«${account.name}» vuelve a sumar al total` : `«${account.name}» ya no suma al total`
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo cambiar");
+    }
+  }
+
+  function saveAccountOrder(groupIds: string[]) {
+    haptic(8);
+    reorderAccounts({ accountIds: groupIds as Account["_id"][] }).catch(() =>
+      toast.error("No se pudo guardar el orden")
+    );
+  }
+
+  /**
+   * Devuelve la lista completa con el grupo reordenado en su sitio: se camina el
+   * array y, al encontrar un miembro del grupo, se toma el siguiente del nuevo
+   * orden. Así los demás grupos no se mueven.
+   */
+  function mergeGroup<T extends { _id: string }>(all: T[], group: T[], next: T[]): T[] {
+    const ids = new Set(group.map((g) => g._id));
+    let i = 0;
+    return all.map((item) => (ids.has(item._id) ? next[i++] : item));
+  }
+
+  // ── Acciones de tarjeta ──────────────────────────────────────────────────
+  async function toggleCardArchive(card: Card) {
+    const archived = !card.archived;
+    haptic(15);
+    if (archived) setCardItems((prev) => prev.filter((c) => c._id !== card._id));
+    try {
+      await setCardArchived({ cardId: card._id, archived });
+      toast(`«${card.name}» ${archived ? "archivada" : "restaurada"}`, {
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            setCardArchived({ cardId: card._id, archived: !archived }).catch(() =>
+              toast.error("No se pudo deshacer")
+            );
+          },
+        },
+      });
+    } catch (err) {
+      if (cards) setCardItems(cards);
+      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+    }
+  }
+
+  const isLoadingAccounts = accounts === undefined;
+  const isLoadingCards = cards === undefined;
+  const isAccounts = tab === "cuentas";
+  // Con un filtro activo no se ofrece reordenar: el orden se calcularía sobre un
+  // subconjunto de la lista.
+  const canReorder = !filtering && (isAccounts ? accountItems.length > 1 : cardItems.length > 1);
 
   return (
-    <PageContainer className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Mis productos</h1>
-          {activeTab === "cuentas" && accounts !== undefined && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Total COP: {formatCents(totalCOP, "COP")}
-            </p>
-          )}
-          {activeTab === "tarjetas" && cards !== undefined && cards.length > 0 && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Deuda total: {formatCents(totalDebt, "COP")}
-            </p>
-          )}
+    <PageContainer className="space-y-5">
+      <header className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-foreground">
+            Mis productos
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isAccounts ? "Dónde tienes tu dinero" : "Tus tarjetas de crédito y su cupo"}
+          </p>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {canReorder && (
+            <button
+              type="button"
+              onClick={() => { haptic(); setEditing((v) => !v); setOpenRowId(null); }}
+              aria-pressed={editing}
+              aria-label={editing ? "Terminar de reordenar" : "Reordenar"}
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full transition-[background-color,transform] active:scale-90",
+                editing ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {editing ? <Check className="h-4.5 w-4.5" strokeWidth={2.5} /> : <ArrowUpDown className="h-4.5 w-4.5" />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCreate}
+            aria-label={isAccounts ? "Nueva cuenta" : "Nueva tarjeta"}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_8px_20px_-8px_rgb(16_185_129/0.9)] transition-transform active:scale-90"
+          >
+            <Plus className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
 
-        {/* Botón desktop — cambia según el tab activo */}
-        {activeTab === "cuentas" ? (
-          <AppSheet
-            open={openAccount}
-            onOpenChange={setOpenAccount}
-            title="Nueva cuenta"
-            trigger={
-              <Button
-                size="sm"
-                className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
+      {/* Pestañas con la píldora que se desliza */}
+      <div className="sticky top-[calc(64px+env(safe-area-inset-top))] z-30 lg:top-4">
+        <div
+          role="tablist"
+          aria-label="Cuentas o tarjetas"
+          className={cn("flex rounded-[18px] p-1", GLASS_SURFACE, "md:bg-[color-mix(in_oklch,var(--card)_85%,transparent)] md:backdrop-blur-xl")}
+        >
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                id={`tab-${t.key}`}
+                aria-selected={active}
+                aria-controls="products-panel"
+                onClick={() => switchTab(t.key)}
+                className={cn(
+                  "touch-hit relative flex flex-1 items-center justify-center gap-1.5 rounded-[14px] py-2 text-sm transition-colors",
+                  active ? "font-bold text-foreground" : "font-semibold text-muted-foreground",
+                )}
               >
-                <Plus className="h-4 w-4" /> Nueva cuenta
-              </Button>
-            }
-          >
-            <AccountForm onSuccess={() => setOpenAccount(false)} />
-          </AppSheet>
-        ) : (
-          <AppSheet
-            open={openCard}
-            onOpenChange={setOpenCard}
-            title="Nueva tarjeta de crédito"
-            footer
-            contentClassName={CARD_SHEET_CLASS}
-            trigger={
-              <Button
-                size="sm"
-                className="hidden md:flex gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-md"
-              >
-                <Plus className="h-4 w-4" /> Nueva tarjeta
-              </Button>
-            }
-          >
-            <CardForm onSuccess={() => setOpenCard(false)} />
-          </AppSheet>
-        )}
+                {active && (
+                  <motion.span
+                    layoutId="products-tab-pill"
+                    className="absolute inset-0 rounded-[14px] bg-[var(--surface)] shadow-[0_2px_10px_-4px_rgb(0_0_0/0.25)] dark:bg-white/10"
+                    transition={SPRING}
+                  />
+                )}
+                <span className="relative">{t.label}</span>
+                {counts[t.key] > 0 && (
+                  <span
+                    className={cn(
+                      "relative rounded-full px-1.5 text-[11px] font-bold tabular-nums",
+                      active ? "bg-[var(--os-cyan)]/18 text-[var(--os-cyan-text)]" : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {counts[t.key]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Selector de tabs */}
-      <PillTabs
-        tabs={TABS}
-        active={activeTab}
-        onChange={setActiveTab}
-        ariaLabel="Seleccionar tipo de producto"
+      {/* Buscador: aparece cuando hay suficientes productos para perderse */}
+      {((isAccounts && accountItems.length > 3) || (!isAccounts && cardItems.length > 3)) && (
+        <div className={cn("flex items-center gap-2 rounded-[16px] px-3", GLASS_SURFACE)}>
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={isAccounts ? "Buscar por nombre o banco" : "Buscar por nombre, banco o últimos 4"}
+            aria-label="Buscar producto"
+            className="h-11 min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/70 [&::-webkit-search-cancel-button]:hidden"
+          />
+          {filtering && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Borrar búsqueda"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-transform active:scale-90"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+
+      <div id="products-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="relative">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={tab}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, x: isAccounts ? -28 : 28 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, x: isAccounts ? -28 : 28 }}
+            transition={{ duration: 0.3, ease: EASE_OUT_EXPO }}
+            className="space-y-5"
+          >
+            {isAccounts ? (
+              isLoadingAccounts ? (
+                <ListSkeleton rows={4} />
+              ) : accountItems.length === 0 && visibleShared.length === 0 ? (
+                <AccountsEmptyState onCreate={() => setAccountSheet({ open: true, account: null })} />
+              ) : (
+                <>
+                  {!filtering && <AccountsOverviewCard data={accountsOverview} />}
+
+                  {filtering && visibleAccounts.length === 0 && visibleShared.length === 0 && (
+                    <NoResults query={query} />
+                  )}
+
+                  {accountGroups.map((group) => (
+                    <Group key={group.type} title={GROUP_LABELS[group.type]} count={group.items.length}>
+                      <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                        <Reorder.Group
+                          axis="y"
+                          values={group.items}
+                          onReorder={(next) => {
+                            setAccountItems((prev) => mergeGroup(prev, group.items, next));
+                            accountItemsRef.current = mergeGroup(accountItemsRef.current, group.items, next);
+                          }}
+                          className="space-y-0.5"
+                        >
+                          <AnimatePresence initial={false}>
+                            {group.items.map((account, i) => (
+                              <AccountRow
+                                key={account._id}
+                                account={account}
+                                index={i}
+                                editing={reordering}
+                                openId={openRowId}
+                                setOpenId={setOpenRowId}
+                                onOpen={() => router.push(`/cuentas/${account._id}`)}
+                                onEdit={() => setAccountSheet({ open: true, account })}
+                                onToggleArchive={() => toggleAccountArchive(account)}
+                                onToggleInclude={() => toggleAccountInclude(account)}
+                                onDragEnd={() =>
+                                  saveAccountOrder(
+                                    accountItemsRef.current
+                                      .filter((a) => a.type === group.type)
+                                      .map((a) => a._id)
+                                  )
+                                }
+                              />
+                            ))}
+                          </AnimatePresence>
+                        </Reorder.Group>
+                      </div>
+                    </Group>
+                  ))}
+
+                  {visibleShared.length > 0 && (
+                    <Group title="Compartidas conmigo" count={visibleShared.length}>
+                      <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                        <Reorder.Group axis="y" values={visibleShared} onReorder={() => {}} className="space-y-0.5">
+                          {visibleShared.map((account, i) => (
+                            <AccountRow
+                              key={account._id}
+                              account={account}
+                              index={i}
+                              isShared
+                              openId={openRowId}
+                              setOpenId={setOpenRowId}
+                              onOpen={() => router.push(`/cuentas/${account._id}`)}
+                              onEdit={() => {}}
+                              onToggleArchive={() => {}}
+                              onToggleInclude={() => {}}
+                              onDragEnd={() => {}}
+                            />
+                          ))}
+                        </Reorder.Group>
+                      </div>
+                    </Group>
+                  )}
+
+                  <ArchivedSection
+                    title="Archivadas"
+                    open={showArchivedAccounts}
+                    onToggle={() => setShowArchivedAccounts((v) => !v)}
+                    count={archivedAccounts?.length}
+                  >
+                    {(archivedAccounts ?? []).length === 0 ? (
+                      <p className={cn("rounded-[20px] px-4 py-4 text-center text-sm text-muted-foreground", GLASS_SURFACE)}>
+                        No tienes cuentas archivadas.
+                      </p>
+                    ) : (
+                      <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                        <Reorder.Group axis="y" values={archivedAccounts ?? []} onReorder={() => {}} className="space-y-0.5">
+                          {(archivedAccounts ?? []).map((account, i) => (
+                            <AccountRow
+                              key={account._id}
+                              account={account}
+                              index={i}
+                              archived
+                              openId={openRowId}
+                              setOpenId={setOpenRowId}
+                              onOpen={() => router.push(`/cuentas/${account._id}`)}
+                              onEdit={() => setAccountSheet({ open: true, account })}
+                              onToggleArchive={() => toggleAccountArchive(account)}
+                              onToggleInclude={() => toggleAccountInclude(account)}
+                              onDragEnd={() => {}}
+                            />
+                          ))}
+                        </Reorder.Group>
+                      </div>
+                    )}
+                  </ArchivedSection>
+
+                  {!filtering && (
+                    <p className="px-1 text-center text-xs text-muted-foreground/80">
+                      Desliza una cuenta para editarla, sacarla del total o archivarla.
+                    </p>
+                  )}
+                </>
+              )
+            ) : isLoadingCards ? (
+              <ListSkeleton rows={2} tall />
+            ) : cardItems.length === 0 ? (
+              <CardsEmptyState onCreate={() => setCardSheet({ open: true, card: null })} />
+            ) : (
+              <>
+                {!filtering && <CardsOverviewCard data={cardsOverview} />}
+
+                {!filtering && urgentCards.length > 0 && (
+                  <motion.p
+                    initial={reduce ? false : { opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+                    className="flex items-center gap-2 rounded-[18px] bg-[color-mix(in_oklch,var(--os-orange)_12%,transparent)] px-4 py-3 text-sm font-semibold text-foreground"
+                  >
+                    <TriangleAlert className="h-4 w-4 shrink-0" style={{ color: "var(--os-orange-text)" }} aria-hidden="true" />
+                    {urgentCards.length === 1
+                      ? `«${urgentCards[0].name}» ${dueOf(urgentCards[0], nowMs).text.toLowerCase()}`
+                      : `${urgentCards.length} tarjetas por pagar esta semana`}
+                  </motion.p>
+                )}
+
+                {filtering && visibleCards.length === 0 && <NoResults query={query} />}
+
+                <Reorder.Group
+                  axis="y"
+                  values={visibleCards}
+                  onReorder={(next) => {
+                    setCardItems((prev) => mergeGroup(prev, visibleCards, next));
+                    cardItemsRef.current = mergeGroup(cardItemsRef.current, visibleCards, next);
+                  }}
+                  className="space-y-3"
+                >
+                  <AnimatePresence initial={false}>
+                    {visibleCards.map((card, i) => (
+                      <CardRow
+                        key={card._id}
+                        card={card}
+                        index={i}
+                        editing={reordering}
+                        nowMs={nowMs}
+                        openId={openRowId}
+                        setOpenId={setOpenRowId}
+                        onOpen={() => router.push(`/tarjetas/${card._id}`)}
+                        onEdit={() => setCardSheet({ open: true, card })}
+                        onToggleArchive={() => toggleCardArchive(card)}
+                        onDragEnd={() => {
+                          haptic(8);
+                          reorderCards({ cardIds: cardItemsRef.current.map((c) => c._id) }).catch(() =>
+                            toast.error("No se pudo guardar el orden")
+                          );
+                        }}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </Reorder.Group>
+
+                <ArchivedSection
+                  title="Archivadas"
+                  open={showArchivedCards}
+                  onToggle={() => setShowArchivedCards((v) => !v)}
+                  count={archivedCards?.length}
+                >
+                  {(archivedCards ?? []).length === 0 ? (
+                    <p className={cn("rounded-[20px] px-4 py-4 text-center text-sm text-muted-foreground", GLASS_SURFACE)}>
+                      No tienes tarjetas archivadas.
+                    </p>
+                  ) : (
+                    <Reorder.Group axis="y" values={archivedCards ?? []} onReorder={() => {}} className="space-y-3">
+                      {(archivedCards ?? []).map((card, i) => (
+                        <CardRow
+                          key={card._id}
+                          card={card}
+                          index={i}
+                          archived
+                          nowMs={nowMs}
+                          openId={openRowId}
+                          setOpenId={setOpenRowId}
+                          onOpen={() => router.push(`/tarjetas/${card._id}`)}
+                          onEdit={() => setCardSheet({ open: true, card })}
+                          onToggleArchive={() => toggleCardArchive(card)}
+                          onDragEnd={() => {}}
+                        />
+                      ))}
+                    </Reorder.Group>
+                  )}
+                </ArchivedSection>
+
+                {!filtering && (
+                  <p className="px-1 text-center text-xs text-muted-foreground/80">
+                    Desliza una tarjeta para editarla o archivarla.
+                  </p>
+                )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* ── Hojas ────────────────────────────────────────────────────────── */}
+      <AccountSheet
+        open={accountSheet.open}
+        onOpenChange={(open) => setAccountSheet((s) => ({ ...s, open }))}
+        account={accountSheet.account}
       />
 
-      {/* Panel: Cuentas */}
-      {activeTab === "cuentas" && (
-        <div
-          className="space-y-6"
-          role="tabpanel"
-          id="panel-cuentas"
-          aria-labelledby="tab-cuentas"
-        >
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Mis cuentas
-            </h2>
-            {accounts === undefined ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-[120px] rounded-[20px]" />
-                ))}
-              </div>
-            ) : accounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">
-                No tienes cuentas registradas aún.
-              </p>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {accounts.map((account) => (
-                  <AccountCard
-                    key={account._id}
-                    account={account}
-                    onClick={() => router.push(`/cuentas/${account._id}`)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {(sharedAccounts ?? []).length > 0 && (
-            <>
-              <Separator />
-              <section className="space-y-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                  Compartidas conmigo
-                </h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {sharedAccounts!.map((account) =>
-                    account ? (
-                      <AccountCard
-                        key={account._id}
-                        account={account}
-                        isShared
-                        onClick={() => router.push(`/cuentas/${account._id}`)}
-                      />
-                    ) : null
-                  )}
-                </div>
-              </section>
-            </>
-          )}
-
-          {/* Botón mobile — abre la misma hoja del botón de desktop (ver tarjetas) */}
-          <div className="md:hidden">
-            <Button
-              onClick={() => setOpenAccount(true)}
-              className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold"
-            >
-              <Plus className="h-5 w-5" /> Agregar cuenta
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Panel: Tarjetas */}
-      {activeTab === "tarjetas" && (
-        <div
-          className="space-y-6"
-          role="tabpanel"
-          id="panel-tarjetas"
-          aria-labelledby="tab-tarjetas"
-        >
-          {cards === undefined ? (
-            <div className="space-y-3">
-              {[1, 2].map((i) => (
-                <Skeleton key={i} className="h-32 rounded-xl" />
-              ))}
-            </div>
-          ) : cards.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-center">
-              <p className="text-muted-foreground text-sm">
-                No tienes tarjetas registradas.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {cards.map((card) => (
-                <CardSummary
-                  key={card._id}
-                  card={card}
-                  onClick={() => router.push(`/tarjetas/${card._id}`)}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Botón mobile — abre la misma hoja del botón de desktop: una segunda
-              AppSheet con el mismo `open` montaría dos formularios a la vez */}
-          {cards !== undefined && (
-            <div className="md:hidden">
-              <Button
-                onClick={() => setOpenCard(true)}
-                className="w-full gap-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white border-0 shadow-lg rounded-xl h-12 text-base font-semibold"
-              >
-                <Plus className="h-5 w-5" /> Agregar tarjeta
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+      <CardSheet
+        open={cardSheet.open}
+        onOpenChange={(open) => setCardSheet((s) => ({ ...s, open }))}
+        card={cardSheet.card}
+      />
     </PageContainer>
   );
 }
 
-export default function ProductosPage() {
+// ─── Piezas de la lista ───────────────────────────────────────────────────────
+
+function Group({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
-    <Suspense>
-      <ProductosContent />
-    </Suspense>
+    <section className="space-y-2" aria-label={title}>
+      <h2 className="flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        {title}
+        <span className="rounded-full bg-muted px-1.5 text-[10px] font-bold tabular-nums">{count}</span>
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function NoResults({ query }: { query: string }) {
+  return (
+    <p className={cn("rounded-[24px] px-6 py-8 text-center text-sm text-muted-foreground", GLASS_SURFACE)}>
+      Nada coincide con «{query.trim()}».
+    </p>
+  );
+}
+
+function ListSkeleton({ rows, tall }: { rows: number; tall?: boolean }) {
+  return (
+    <div className="space-y-4">
+      <Skeleton className={cn("rounded-[28px]", tall ? "h-[152px]" : "h-[168px]")} />
+      <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+        {Array.from({ length: rows }, (_, i) => (
+          <Skeleton key={i} className={cn("rounded-[18px]", tall ? "h-[188px]" : "h-16")} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ArchivedSection({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number | undefined;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <section className="space-y-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-1 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground pointer-coarse:min-h-11"
+      >
+        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2 }} className="flex">
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </motion.span>
+        {title}
+        {count !== undefined && count > 0 && (
+          <span className="rounded-full bg-muted px-1.5 text-[11px] font-bold tabular-nums">{count}</span>
+        )}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            animate={reduce ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+            exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.32, ease: EASE_OUT_EXPO }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }

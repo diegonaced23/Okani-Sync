@@ -177,12 +177,85 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const clerkId = await getCurrentUserId(ctx);
-    return await ctx.db
+    const accounts = await ctx.db
       .query("accounts")
       .withIndex("by_owner_archived", (q) =>
         q.eq("ownerId", clerkId).eq("archived", false)
       )
       .collect();
+    // `displayOrder` lo fija el usuario arrastrando en /productos; las cuentas que
+    // nunca se han movido van al final, en su orden de creación.
+    return accounts.sort(
+      (a, b) =>
+        (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
+        a._creationTime - b._creationTime
+    );
+  },
+});
+
+/** Cuentas archivadas: salieron del listado pero se pueden restaurar. */
+export const listArchived = query({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getCurrentUserId(ctx);
+    return await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) =>
+        q.eq("ownerId", clerkId).eq("archived", true)
+      )
+      .take(200);
+  },
+});
+
+/**
+ * Resumen del listado de cuentas: el consolidado ya lo calcula
+ * `consolidatedBalance` (y lo lee el dashboard), así que esta query añade lo que
+ * solo necesita /productos — el desglose por tipo y cuántas cuentas quedan fuera
+ * del saldo consolidado, un ajuste que hasta ahora no se veía en ninguna parte.
+ */
+export const overview = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    let missingRate = false;
+    const conv = (amount: number, currency: string) => {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      if (!hasRate) missingRate = true;
+      return hasRate ? converted : 0;
+    };
+
+    const accounts = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) =>
+        q.eq("ownerId", user.clerkId).eq("archived", false)
+      )
+      .take(200);
+
+    const byType: Record<string, number> = {};
+    let total = 0;
+    let excludedCount = 0;
+    let negativeCount = 0;
+    for (const a of accounts) {
+      if (a.includeInBalance === false) {
+        excludedCount += 1;
+        continue;
+      }
+      const value = conv(a.balance, a.currency);
+      total += value;
+      byType[a.type] = (byType[a.type] ?? 0) + value;
+      if (a.balance < 0) negativeCount += 1;
+    }
+
+    return {
+      currency: preferredCurrency,
+      total,
+      byType,
+      count: accounts.length,
+      excludedCount,
+      negativeCount,
+      missingRate,
+    };
   },
 });
 
@@ -686,6 +759,79 @@ export const archive = mutation({
       throw new Error("No se puede archivar la cuenta por defecto");
     }
     await ctx.db.patch(accountId, { archived: true, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Archiva o restaura. `archive` no tenía vuelta: una cuenta archivada salía del
+ * listado y no había forma de recuperarla desde la app.
+ */
+export const setArchived = mutation({
+  args: { accountId: v.id("accounts"), archived: v.boolean() },
+  handler: async (ctx, { accountId, archived }) => {
+    const user = await getCurrentUser(ctx);
+    const account = await ctx.db.get(accountId);
+    if (!account || account.ownerId !== user.clerkId) {
+      throw new Error("Cuenta no encontrada");
+    }
+    if (archived && account.isDefault) {
+      throw new Error("No se puede archivar la cuenta por defecto");
+    }
+    if (account.archived === archived) return;
+    await ctx.db.patch(accountId, { archived, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Reordena las cuentas propias. Recibe solo el grupo visible (las cuentas se
+ * agrupan por tipo en /productos), así que en vez de numerar desde 0 —lo que
+ * pisaría el orden de los otros grupos— reparte entre esas filas los mismos
+ * puestos que ya ocupaban. Mismo criterio que `categories.reorder`.
+ */
+export const reorder = mutation({
+  args: { accountIds: v.array(v.id("accounts")) },
+  handler: async (ctx, { accountIds }) => {
+    const user = await getCurrentUser(ctx);
+    const now = Date.now();
+
+    const active = await ctx.db
+      .query("accounts")
+      .withIndex("by_owner_archived", (q) =>
+        q.eq("ownerId", user.clerkId).eq("archived", false)
+      )
+      .take(200);
+    const byId = new Map(active.map((a) => [a._id as string, a]));
+    for (const id of accountIds) {
+      if (!byId.has(id)) throw new Error("Cuenta no encontrada");
+    }
+
+    // Con puestos repetidos o sin asignar no hay huecos fiables que repartir:
+    // primero se normaliza todo el listado a 0..N−1 conservando el orden visible.
+    const orders = active.map((a) => a.displayOrder);
+    const clean =
+      orders.every((o) => o !== undefined) && new Set(orders).size === orders.length;
+    const orderOf = new Map<string, number>();
+    if (clean) {
+      for (const a of active) orderOf.set(a._id, a.displayOrder!);
+    } else {
+      [...active]
+        .sort(
+          (a, b) =>
+            (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
+            a._creationTime - b._creationTime
+        )
+        .forEach((a, i) => orderOf.set(a._id, i));
+    }
+
+    const slots = accountIds.map((id) => orderOf.get(id)!).sort((a, b) => a - b);
+    accountIds.forEach((id, i) => orderOf.set(id, slots[i]));
+
+    for (const a of active) {
+      const displayOrder = orderOf.get(a._id)!;
+      if (a.displayOrder !== displayOrder) {
+        await ctx.db.patch(a._id, { displayOrder, updatedAt: now });
+      }
+    }
   },
 });
 

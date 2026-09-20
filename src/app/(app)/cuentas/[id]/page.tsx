@@ -1,43 +1,36 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { use, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowLeft, Receipt, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { use, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import {
-  ArrowLeft, Share2, UserMinus, Archive, ChevronLeft, ChevronRight,
-  Pencil, Trash2, Scale,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { PageContainer } from "@/components/layout/PageContainer";
+import { MonthStepper } from "@/components/ui/month-stepper";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { AppSheet } from "@/components/ui/app-sheet";
 import {
   AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
   AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ShareAccountDialog } from "@/components/accounts/ShareAccountDialog";
-import { AccountForm } from "@/components/accounts/AccountForm";
-import { ACCOUNT_TYPE_META, debitCardLabel } from "@/components/accounts/accountTypes";
-import { BalanceReassignForm } from "@/components/accounts/BalanceReassignForm";
+import { AccountHero } from "@/components/accounts/AccountHero";
+import { AccountSheet } from "@/components/accounts/AccountSheet";
+import { BalanceSheet } from "@/components/accounts/BalanceSheet";
+import { ShareSheet } from "@/components/accounts/ShareSheet";
+import { SharesList, type Share } from "@/components/accounts/SharesList";
+import { EASE_OUT_EXPO, GLASS_SURFACE, haptic } from "@/components/accounts/shared";
 import { TransactionItem } from "@/components/transactions/TransactionItem";
-import { formatCents, currentMonth, formatMonth } from "@/lib/money";
-import { toast } from "sonner";
-import { PageContainer } from "@/components/layout/PageContainer";
-
-function shiftMonth(m: string, delta: number) {
-  const [y, mo] = m.split("-").map(Number);
-  const d = new Date(y, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+import { TX_TYPE_CONFIG } from "@/components/transactions/tx-type-config";
+import { currentMonth, formatCents, formatMonth } from "@/lib/money";
+import { cn } from "@/lib/utils";
 
 export default function AccountDetailPage({
   params,
@@ -47,30 +40,49 @@ export default function AccountDetailPage({
   const { id } = use(params);
   const accountId = id as Id<"accounts">;
   const router = useRouter();
+  const reduce = useReducedMotion();
 
   const [month, setMonth] = useState(() => currentMonth());
   const [shareOpen, setShareOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [reassignOpen, setReassignOpen] = useState(false);
+  const [balanceOpen, setBalanceOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [pendingAction, setPendingAction] = useState<"archive" | "delete" | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const me = useQuery(api.users.getMe);
   const account = useQuery(api.accounts.getById, { accountId });
   const shares = useQuery(api.accountShares.listForAccount, { accountId });
-  const transactions = useQuery(api.transactions.listByAccountMonth, {
-    accountId,
-    month,
-  });
+  const transactions = useQuery(api.transactions.listByAccountMonth, { accountId, month });
   const categories = useQuery(api.categories.list, {});
 
-  const revokeShare = useMutation(api.accountShares.revoke);
-  const archiveAccount = useMutation(api.accounts.archive);
+  const setArchived = useMutation(api.accounts.setArchived);
   const removeAccount = useMutation(api.accounts.remove);
 
-  const catMap = Object.fromEntries(
-    (categories ?? []).map((c) => [c._id, c.name])
+  const catMap = useMemo(
+    () => Object.fromEntries((categories ?? []).map((c) => [c._id, c.name])),
+    [categories]
   );
+
+  // Totales del mes. La dirección de cada tipo la da `TX_TYPE_CONFIG.sign`, la
+  // misma fuente que usa la fila para pintar el signo: así un pago de tarjeta o un
+  // préstamo otorgado cuentan como salida, en vez de quedar fuera del resumen.
+  // Las transferencias son dos filas de doble entrada: cuentan como movimiento
+  // pero no como entrada ni salida del mes, así que van aparte.
+  const monthTotals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    let transfers = 0;
+    for (const tx of transactions ?? []) {
+      if (tx.transferGroupId) {
+        transfers += 1;
+        continue;
+      }
+      const sign = TX_TYPE_CONFIG[tx.type]?.sign;
+      if (sign === "+") income += tx.amount;
+      else if (sign === "−") expense += tx.amount;
+    }
+    return { income, expense, transfers };
+  }, [transactions]);
 
   // Comparar contra me.clerkId (no un id de sesión crudo): bajo Better Auth el
   // id de la sesión del cliente es el authId, no el clerkId que guarda
@@ -87,305 +99,222 @@ export default function AccountDetailPage({
     }
   }, [isLoading, account, router]);
 
-  if (!isLoading && account === null) {
-    return null;
-  }
+  if (!isLoading && account === null) return null;
 
-  async function handleRevoke(shareId: Id<"accountShares">) {
+  async function handleArchive() {
+    if (!account) return;
+    haptic(15);
     try {
-      await revokeShare({ shareId });
-      toast.success("Acceso revocado");
+      await setArchived({ accountId, archived: true });
+      toast(`«${account.name}» archivada`, {
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            setArchived({ accountId, archived: false }).catch(() =>
+              toast.error("No se pudo deshacer")
+            );
+          },
+        },
+      });
+      router.replace("/productos?tab=cuentas");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
     }
   }
 
-  function handleArchive() {
-    setPendingAction("archive");
-  }
-
-  function handleDelete() {
-    setPendingAction("delete");
-  }
-
-  async function executeAction() {
-    setPendingAction(null);
-    if (pendingAction === "archive") {
-      try {
-        await archiveAccount({ accountId });
-        toast.success("Cuenta archivada");
-        router.replace("/productos?tab=cuentas");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Error");
-      }
-    } else if (pendingAction === "delete") {
-      setDeleting(true);
-      try {
-        await removeAccount({ accountId });
-        toast.success("Cuenta eliminada");
-        // La navegación la maneja el useEffect cuando account pasa a null
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Error al eliminar");
-        setDeleting(false);
-      }
+  async function handleDelete() {
+    setConfirmDelete(false);
+    setDeleting(true);
+    try {
+      await removeAccount({ accountId });
+      toast.success("Cuenta eliminada");
+      // La navegación la maneja el efecto cuando `account` pasa a null
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      setDeleting(false);
     }
   }
+
+  const visibleShares = (shares ?? []) as Share[];
 
   return (
-    <PageContainer className="space-y-6">
-      {/* Navegación */}
+    <PageContainer className="space-y-5">
       <button
         type="button"
         onClick={() => router.push("/productos?tab=cuentas")}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" />
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Mis productos
       </button>
 
-      {/* Header cuenta */}
-      {isLoading ? (
-        <Skeleton className="h-28 rounded-xl" />
-      ) : (
-        <div className="rounded-xl bg-card border border-border p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold text-foreground">{account!.name}</h1>
-                {account!.isShared && (
-                  <Badge variant="secondary" className="text-xs">Compartida</Badge>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {[
-                  account!.bankName,
-                  ACCOUNT_TYPE_META[account!.type].label,
-                  account!.accountNumber && `···${account!.accountNumber}`,
-                  debitCardLabel(account!),
-                  account!.currency,
-                ].filter(Boolean).join(" · ")}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className={`text-2xl font-bold tabular-nums ${account!.balance < 0 ? "text-danger" : "text-foreground"}`}>
-                {formatCents(account!.balance, account!.currency)}
-              </p>
-              <p className="text-xs text-muted-foreground">saldo actual</p>
-            </div>
+      {isLoading || !account ? (
+        <>
+          <Skeleton className="h-[248px] rounded-[28px]" />
+          <Skeleton className="h-[48px] rounded-[18px]" />
+          <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-[16px]" />)}
           </div>
+        </>
+      ) : (
+        <>
+          <AccountHero
+            account={account}
+            isOwner={isOwner}
+            onShare={() => setShareOpen(true)}
+            onEdit={() => setEditOpen(true)}
+            onAdjust={() => setBalanceOpen(true)}
+            onArchive={handleArchive}
+          />
 
-          {isOwner && (
-            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setShareOpen(true)}
+          {/* Con quién está compartida */}
+          {isOwner && visibleShares.length > 0 && (
+            <section className="space-y-2" aria-label="Compartida con">
+              <h2 className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                Compartida con
+              </h2>
+              <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                <SharesList shares={visibleShares} />
+              </div>
+              <p className="px-1 text-center text-xs text-muted-foreground/80">
+                Desliza para cambiar el nivel de acceso o revocarlo.
+              </p>
+            </section>
+          )}
+
+          {/* Movimientos del mes */}
+          <section className="space-y-2" aria-label="Movimientos">
+            <h2 className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+              Movimientos
+            </h2>
+
+            <MonthStepper month={month} onChange={setMonth} />
+
+            {/* Resumen del mes: antes había que sumar la lista a ojo */}
+            {transactions !== undefined && transactions.length > 0 && (
+              <motion.div
+                initial={reduce ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
+                className="grid grid-cols-2 gap-2"
               >
-                <Share2 className="h-3.5 w-3.5" />
-                Compartir
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setEditOpen(true)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Editar
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setReassignOpen(true)}
-              >
-                <Scale className="h-3.5 w-3.5" />
-                Ajustar saldo
-              </Button>
-              {!account!.isDefault && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-muted-foreground"
-                    onClick={handleArchive}
-                  >
-                    <Archive className="h-3.5 w-3.5" />
-                    Archivar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-danger hover:text-danger"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Eliminar
-                  </Button>
-                </>
+                <Stat
+                  label="Entró"
+                  value={`+${formatCents(monthTotals.income, account.currency)}`}
+                  tone="var(--os-lime-text)"
+                />
+                <Stat
+                  label="Salió"
+                  value={`−${formatCents(monthTotals.expense, account.currency)}`}
+                  tone="var(--os-magenta)"
+                />
+              </motion.div>
+            )}
+
+            <div className={cn("overflow-hidden rounded-[24px]", GLASS_SURFACE)}>
+              {transactions === undefined ? (
+                <div className="space-y-2 p-2">
+                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-[16px]" />)}
+                </div>
+              ) : transactions.length === 0 ? (
+                <p className="flex items-center justify-center gap-2 px-6 py-10 text-center text-sm text-muted-foreground">
+                  <Receipt className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Sin movimientos en {formatMonth(month).toLowerCase()}.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {transactions.map((tx, i) => (
+                    <motion.li
+                      key={tx._id}
+                      initial={reduce ? false : { opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, ease: EASE_OUT_EXPO, delay: Math.min(i, 10) * 0.03 }}
+                    >
+                      <TransactionItem
+                        transaction={tx}
+                        categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
+                      />
+                    </motion.li>
+                  ))}
+                </ul>
               )}
             </div>
+
+            {monthTotals.transfers > 0 && (
+              <p className="px-1 text-xs text-muted-foreground/80">
+                {monthTotals.transfers === 1
+                  ? "1 transferencia del mes no cuenta como ingreso ni gasto."
+                  : `${monthTotals.transfers} transferencias del mes no cuentan como ingreso ni gasto.`}
+              </p>
+            )}
+          </section>
+
+          {/* Zona de riesgo: eliminar no va con el resto de acciones */}
+          {isOwner && !account.isDefault && (
+            <section className="space-y-2 pt-2">
+              <div className="os-hairline" />
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-border text-[15px] font-bold transition-[background-color,transform] active:scale-[0.98] disabled:opacity-40"
+                style={{ color: "var(--os-magenta)" }}
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                Eliminar esta cuenta
+              </button>
+              <p className="px-1 text-center text-xs text-muted-foreground">
+                Archivar la saca del listado y conserva el historial. Eliminar no se puede deshacer.
+              </p>
+            </section>
           )}
-        </div>
-      )}
 
-      {/* Sheet de edición */}
-      {!isLoading && account && (
-        <AppSheet
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          title="Editar cuenta"
-        >
-          <AccountForm account={account} onSuccess={() => setEditOpen(false)} />
-        </AppSheet>
-      )}
+          {/* ── Hojas ──────────────────────────────────────────────────── */}
+          <AccountSheet open={editOpen} onOpenChange={setEditOpen} account={account} />
 
-      {/* Sheet de reasignación de saldo */}
-      {!isLoading && account && isOwner && (
-        <AppSheet
-          open={reassignOpen}
-          onOpenChange={setReassignOpen}
-          title="Ajustar saldo"
-          description="La diferencia se registrará como reasignación bancaria en el historial."
-        >
-          <BalanceReassignForm
-            account={account}
-            onSuccess={() => setReassignOpen(false)}
-          />
-        </AppSheet>
-      )}
-
-      {/* Sección "Compartida con" */}
-      {isOwner && (shares ?? []).length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Compartida con
-          </h2>
-          <div className="rounded-xl bg-card border border-border overflow-hidden">
-            <ul className="divide-y divide-border">
-              {shares!.map((share) => (
-                <li key={share._id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {share.userName ?? share.userEmail ?? share.sharedWithUserId}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {share.permission} · {share.status}
-                    </p>
-                  </div>
-                  {share.status === "aceptada" && (
-                    <button
-                      type="button"
-                      onClick={() => handleRevoke(share._id)}
-                      className="touch-hit p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-danger transition-colors"
-                      aria-label="Revocar acceso"
-                    >
-                      <UserMinus className="h-4 w-4" />
-                    </button>
-                  )}
-                  {share.status === "pendiente" && (
-                    <Badge variant="outline" className="text-[10px]">Pendiente</Badge>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      )}
-
-      <Separator />
-
-      {/* Transacciones del mes */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Movimientos
-          </h2>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setMonth((m) => shiftMonth(m, -1))}
-              className="touch-hit p-1 rounded hover:bg-muted transition-colors"
-              aria-label="Mes anterior"
-            >
-              <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <span className="text-xs font-medium text-muted-foreground w-24 text-center capitalize">
-              {formatMonth(month)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setMonth((m) => shiftMonth(m, 1))}
-              disabled={month >= currentMonth()}
-              className="touch-hit p-1 rounded hover:bg-muted transition-colors disabled:opacity-30"
-              aria-label="Mes siguiente"
-            >
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-card border border-border overflow-hidden">
-          {transactions === undefined ? (
-            <div className="p-4 space-y-2">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
-            </div>
-          ) : transactions.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-10 text-center">
-              Sin movimientos en {formatMonth(month).toLowerCase()}.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {transactions.map((tx) => (
-                <li key={tx._id}>
-                  <TransactionItem
-                    transaction={tx}
-                    categoryName={tx.categoryId ? catMap[tx.categoryId] : undefined}
-                  />
-                </li>
-              ))}
-            </ul>
+          {isOwner && (
+            <>
+              <BalanceSheet account={account} open={balanceOpen} onOpenChange={setBalanceOpen} />
+              <ShareSheet
+                accountId={accountId}
+                accountName={account.name}
+                open={shareOpen}
+                onOpenChange={setShareOpen}
+              />
+            </>
           )}
-        </div>
-      </section>
 
-      {/* Diálogo compartir */}
-      {!isLoading && (
-        <ShareAccountDialog
-          accountId={accountId}
-          open={shareOpen}
-          onOpenChange={setShareOpen}
-        />
+          <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Eliminar «{account.name}»</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {(transactions ?? []).length > 0
+                    ? "Se eliminarán también todas sus transacciones y registros asociados. Esta acción no se puede deshacer."
+                    : "Esta acción no se puede deshacer. Si solo quieres sacarla del listado, archívala."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel />
+                <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
       )}
-
-      {/* Diálogo de confirmación archivar/eliminar */}
-      <AlertDialog
-        open={pendingAction !== null}
-        onOpenChange={(open) => { if (!open) setPendingAction(null); }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingAction === "archive" ? "Archivar cuenta" : "Eliminar cuenta"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingAction === "archive"
-                ? "El historial se conserva y podrás recuperarla más adelante."
-                : (transactions ?? []).length > 0
-                  ? "Se eliminarán también todas sus transacciones y registros asociados. Esta acción no se puede deshacer."
-                  : "Esta acción no se puede deshacer."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel />
-            <AlertDialogAction onClick={executeAction} disabled={deleting}>
-              {pendingAction === "archive" ? "Archivar" : "Eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </PageContainer>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div className={cn("rounded-[18px] px-3 py-2.5", GLASS_SURFACE)}>
+      <p className="text-[11px] font-semibold text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate font-mono-num text-[15px] font-bold tabular-nums" style={{ color: tone }}>
+        {value}
+      </p>
+    </div>
   );
 }

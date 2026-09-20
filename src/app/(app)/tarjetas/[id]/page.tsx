@@ -1,34 +1,31 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../../../../convex/_generated/api";
-import type { Id, Doc } from "../../../../../convex/_generated/dataModel";
-import { use, useState } from "react";
+import { use, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useMutation, useQuery } from "convex/react";
+import { ArrowLeft, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AppSheet } from "@/components/ui/app-sheet";
 import {
   AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
   AlertDialogAction,
   AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CardSummary } from "@/components/cards/CardSummary";
-import { CardForm, CARD_SHEET_CLASS } from "@/components/cards/CardForm";
-import { PurchaseForm } from "@/components/cards/PurchaseForm";
-import { PayCardForm } from "@/components/cards/PayCardForm";
 import { CardCycleTabs } from "@/components/cards/CardCycleTabs";
-import { formatCents } from "@/lib/money";
-import { toast } from "sonner";
-import { PageContainer } from "@/components/layout/PageContainer";
-
-// ─── Página de detalle de tarjeta ─────────────────────────────────────────────
+import { CardHero } from "@/components/cards/CardHero";
+import { CardSheet } from "@/components/cards/CardSheet";
+import { PayCardSheet } from "@/components/cards/PayCardSheet";
+import { PurchaseSheet } from "@/components/cards/PurchaseSheet";
+import { GLASS_SURFACE, haptic, type Purchase } from "@/components/cards/shared";
+import { cn } from "@/lib/utils";
 
 export default function CardDetailPage({
   params,
@@ -39,77 +36,100 @@ export default function CardDetailPage({
   const cardId = id as Id<"cards">;
   const router = useRouter();
 
-  // ── Estado de UI (sheets y diálogos) ────────────────────────────────────────
+  // Se fija al montar: Date.now() en el render rompería la pureza del componente
+  const [nowMs] = useState(() => Date.now());
+
   const [editOpen, setEditOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Estado para el sheet de editar compra (elevado aquí para que el diálogo
-  // de confirmación de eliminación también tenga acceso a los datos)
-  const [editingPurchase, setEditingPurchase] = useState<Doc<"cardPurchases"> | null>(null);
+  // El estado de editar/eliminar compra vive aquí para que los tabs y los
+  // diálogos compartan la misma compra seleccionada
+  const [purchaseSheet, setPurchaseSheet] = useState<{ open: boolean; purchase: Purchase | null }>({ open: false, purchase: null });
   const [purchaseDeleteId, setPurchaseDeleteId] = useState<Id<"cardPurchases"> | null>(null);
   const [purchaseDeleting, setPurchaseDeleting] = useState(false);
 
-  // ── Queries de Convex ────────────────────────────────────────────────────────
-
-  // Query principal: toda la data de la tarjeta en una sola subscripción.
-  // Reemplaza las anteriores: getById, listByCard, listDirectByCard, listByCardMonth.
+  // Query principal: toda la data de la tarjeta en una sola subscripción
   const data = useQuery(api.cards.getCardDetailData, { cardId });
-
-  // Categorías para el filtro del Tab "Plan completo" y para mostrar nombres
   const categories = useQuery(api.categories.list, { type: "gasto" });
 
-  // Mapa id → nombre de categoría — se computa aquí (no depende de `data`)
-  // para que los handlers de descarga puedan accederlo antes de los guards
-  const categoryMap = Object.fromEntries(
-    (categories ?? []).map((c) => [c._id, c.name])
+  const removeCard = useMutation(api.cards.remove);
+  const setArchived = useMutation(api.cards.setArchived);
+  const deletePurchase = useMutation(api.cardPurchases.deletePurchase);
+
+  const categoryMap = useMemo(
+    () => Object.fromEntries((categories ?? []).map((c) => [c._id, c.name])),
+    [categories]
   );
 
-  // ── Mutations ────────────────────────────────────────────────────────────────
-  const removeCard = useMutation(api.cards.remove);
-  const deletePurchaseMut = useMutation(api.cardPurchases.deletePurchase);
+  async function handleArchive() {
+    if (!data) return;
+    haptic(15);
+    try {
+      await setArchived({ cardId, archived: true });
+      toast(`«${data.card.name}» archivada`, {
+        action: {
+          label: "Deshacer",
+          onClick: () => {
+            setArchived({ cardId, archived: false }).catch(() =>
+              toast.error("No se pudo deshacer")
+            );
+          },
+        },
+      });
+      router.replace("/productos?tab=tarjetas");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+    }
+  }
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
-
-  async function executeDeleteCard() {
-    setDeleteOpen(false);
+  async function handleDeleteCard() {
+    setConfirmDelete(false);
     setDeleting(true);
     try {
       await removeCard({ cardId });
       toast.success("Tarjeta eliminada");
-      router.push("/productos?tab=tarjetas");
+      router.replace("/productos?tab=tarjetas");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
       setDeleting(false);
     }
   }
 
-  async function executeDeletePurchase() {
+  async function handleDeletePurchase() {
     if (!purchaseDeleteId) return;
     setPurchaseDeleting(true);
     try {
-      await deletePurchaseMut({ purchaseId: purchaseDeleteId });
+      await deletePurchase({ purchaseId: purchaseDeleteId });
       toast.success("Compra eliminada");
       setPurchaseDeleteId(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
     } finally {
       setPurchaseDeleting(false);
     }
   }
 
-  // ── Render de carga ──────────────────────────────────────────────────────────
+  const back = (
+    <button
+      type="button"
+      onClick={() => router.push("/productos?tab=tarjetas")}
+      className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Mis productos
+    </button>
+  );
 
   if (data === undefined) {
     return (
-      <PageContainer className="space-y-4">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-52 rounded-2xl" />
-        <Skeleton className="h-24 rounded-xl" />
-        <Skeleton className="h-10 rounded-xl" />
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
+      <PageContainer className="space-y-5">
+        {back}
+        <Skeleton className="h-[420px] rounded-[28px]" />
+        <Skeleton className="h-[46px] rounded-[18px]" />
+        <div className={cn("space-y-1.5 rounded-[24px] p-2", GLASS_SURFACE)}>
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-[68px] rounded-[18px]" />)}
         </div>
       </PageContainer>
     );
@@ -117,165 +137,124 @@ export default function CardDetailPage({
 
   if (data === null) {
     return (
-      <div className="flex flex-col items-center gap-3 py-20">
-        <p className="text-muted-foreground">Tarjeta no encontrada.</p>
-        <Button variant="outline" onClick={() => router.push("/productos?tab=tarjetas")}>
-          Mis productos
-        </Button>
-      </div>
+      <PageContainer className="space-y-5">
+        {back}
+        <p className={cn("rounded-[24px] px-6 py-12 text-center text-sm text-muted-foreground", GLASS_SURFACE)}>
+          Esta tarjeta ya no existe.
+        </p>
+      </PageContainer>
     );
   }
 
-  const { card, minimumPayment, currentCycleCuotas } = data;
-
-  // ── Render principal ─────────────────────────────────────────────────────────
+  const { card } = data;
+  // Mismo criterio que las pestañas: la fecha límite es la del ciclo cerrado
+  // mientras quede algo facturado sin pagar.
+  const billed = data.overdueCuotas.length;
+  const paymentTs = billed > 0 ? data.cycle.prevPaymentTs : data.cycle.nextPaymentTs;
+  // Vencido = pasó el día de pago Y hay algo facturado pendiente
+  const overdue = data.isPaymentOverdue && billed > 0;
 
   return (
     <PageContainer className="space-y-5">
+      {back}
 
-      {/* Navegación + acciones de tarjeta */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => router.push("/productos?tab=tarjetas")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" /> Mis productos
-        </button>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={() => setEditOpen(true)}
-            aria-label="Editar tarjeta"
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-danger"
-            onClick={() => setDeleteOpen(true)}
-            disabled={deleting}
-            aria-label="Eliminar tarjeta"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <CardHero
+        card={card}
+        nowMs={nowMs}
+        paymentTs={paymentTs}
+        billedCount={billed}
+        billedAmount={data.minimumPayment}
+        currentCycleCount={data.currentCycleCuotas.length}
+        isPaymentOverdue={overdue}
+        onPay={() => setPayOpen(true)}
+        onEdit={() => setEditOpen(true)}
+        onArchive={handleArchive}
+      />
 
-      {/* Sheet: editar tarjeta */}
-      <AppSheet open={editOpen} onOpenChange={setEditOpen} title="Editar tarjeta" footer
-        contentClassName={CARD_SHEET_CLASS}>
-        <CardForm card={card} onSuccess={() => setEditOpen(false)} />
-      </AppSheet>
-
-      {/* Sheet: editar compra (elevado a la página para compartir con los tabs) */}
-      <AppSheet
-        open={!!editingPurchase}
-        onOpenChange={(open) => { if (!open) setEditingPurchase(null); }}
-        title="Editar compra"
-      >
-        {editingPurchase && (
-          <PurchaseForm
-            cardId={cardId}
-            defaultInterestRate={card.interestRate}
-            currency={card.currency}
-            purchase={editingPurchase}
-            onSuccess={() => setEditingPurchase(null)}
-          />
-        )}
-      </AppSheet>
-
-      {/* Sheet: pagar tarjeta */}
-      <AppSheet
-        open={payOpen}
-        onOpenChange={(open) => { if (!open) setPayOpen(false); }}
-        title={`Pagar tarjeta — ${card.name}`}
-      >
-        {payOpen && (
-          <PayCardForm card={card} onSuccess={() => setPayOpen(false)} />
-        )}
-      </AppSheet>
-
-      {/* Resumen visual de la tarjeta */}
-      <CardSummary card={card} />
-
-      {/* Bloque de saldo pendiente + botón de pago */}
-      {card.currentBalance > 0 && (
-        <div className="rounded-xl bg-card border border-border p-4 space-y-4">
-          <div className="space-y-0.5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">
-              Saldo pendiente
-            </p>
-            <p className="text-2xl font-bold tabular-nums text-foreground">
-              {formatCents(card.currentBalance, card.currency)}
-            </p>
-            {/* Resumen del pago mínimo del ciclo actual */}
-            {currentCycleCuotas.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {currentCycleCuotas.length} cuota
-                {currentCycleCuotas.length !== 1 ? "s" : ""} pendientes este ciclo
-                {" · "}
-                {formatCents(minimumPayment, card.currency)}
-              </p>
-            )}
-          </div>
-          <Button className="w-full" onClick={() => setPayOpen(true)}>
-            Pagar tarjeta
-          </Button>
-        </div>
-      )}
-
-      {/* Tabs del módulo — el corazón del rediseño */}
       <CardCycleTabs
         data={data}
         currency={card.currency}
         categoryMap={categoryMap}
         categories={categories ?? []}
         card={card}
-        onEditPurchase={setEditingPurchase}
+        onEditPurchase={(p) => setPurchaseSheet({ open: true, purchase: p })}
         onDeletePurchase={setPurchaseDeleteId}
       />
 
-      {/* Diálogo: eliminar tarjeta */}
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      {/* Zona de riesgo: eliminar no va con el resto de acciones */}
+      <section className="space-y-2 pt-2">
+        <div className="os-hairline" />
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          disabled={deleting}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-border text-[15px] font-bold transition-[background-color,transform] active:scale-[0.98] disabled:opacity-40"
+          style={{ color: "var(--os-magenta)" }}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          Eliminar esta tarjeta
+        </button>
+        <p className="px-1 text-center text-xs text-muted-foreground">
+          Archivarla la saca del listado y conserva el historial. Eliminar no se puede deshacer.
+        </p>
+      </section>
+
+      {/* ── Hojas ────────────────────────────────────────────────────────── */}
+      <CardSheet open={editOpen} onOpenChange={setEditOpen} card={card} />
+
+      <PayCardSheet
+        card={card}
+        minimumPayment={data.minimumPayment}
+        totalPayment={data.totalPayment}
+        open={payOpen}
+        onOpenChange={setPayOpen}
+      />
+
+      <PurchaseSheet
+        cardId={cardId}
+        cardName={card.name}
+        currency={card.currency}
+        defaultInterestRate={card.interestRate}
+        purchase={purchaseSheet.purchase}
+        open={purchaseSheet.open}
+        onOpenChange={(open) => setPurchaseSheet((prev) => ({ ...prev, open }))}
+      />
+
+      {/* ── Confirmaciones ───────────────────────────────────────────────── */}
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar tarjeta</AlertDialogTitle>
+            <AlertDialogTitle>Eliminar «{card.name}»</AlertDialogTitle>
             <AlertDialogDescription>
               {data.allPurchases.length > 0
                 ? "Se eliminarán también todas sus compras, cuotas y transacciones registradas. Esta acción no se puede deshacer."
-                : "Esta acción no se puede deshacer."}
+                : "Esta acción no se puede deshacer. Si solo quieres sacarla del listado, archívala."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel />
-            <AlertDialogAction onClick={executeDeleteCard} disabled={deleting}>
+            <AlertDialogAction onClick={handleDeleteCard} disabled={deleting}>
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Diálogo: eliminar compra */}
       <AlertDialog
-        open={!!purchaseDeleteId}
+        open={purchaseDeleteId !== null}
         onOpenChange={(open) => { if (!open) setPurchaseDeleteId(null); }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar compra</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminarán todas las cuotas pendientes y se revertirá la deuda correspondiente
-              en la tarjeta. Los pagos ya realizados quedan en el historial.
-              Esta acción no se puede deshacer.
+              Se eliminarán las cuotas pendientes y se revertirá la deuda correspondiente en la
+              tarjeta. Los pagos ya hechos quedan en el historial. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel />
-            <AlertDialogAction onClick={executeDeletePurchase} disabled={purchaseDeleting}>
+            <AlertDialogAction onClick={handleDeletePurchase} disabled={purchaseDeleting}>
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -24,7 +24,7 @@ import { BudgetOverviewCard } from "@/components/budgets/BudgetOverviewCard";
 import { BudgetRow } from "@/components/budgets/BudgetRow";
 import { BudgetSheet } from "@/components/budgets/BudgetSheet";
 import { EmptyState as BudgetsEmptyState } from "@/components/budgets/EmptyState";
-import { MonthStepper } from "@/components/budgets/MonthStepper";
+import { MonthStepper } from "@/components/ui/month-stepper";
 import { byUsage, stateOf, type Budget } from "@/components/budgets/shared";
 import { AddFundsSheet } from "@/components/goals/AddFundsSheet";
 import { EmptyState as GoalsEmptyState } from "@/components/goals/EmptyState";

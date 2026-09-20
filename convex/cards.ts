@@ -4,17 +4,87 @@ import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { toMonthString, getSystemPaymentCategoryId } from "./lib/utils";
 import { recomputeInstallmentsPaid, getBillingCycleDates, getNextPaymentTs } from "./lib/cardHelpers";
 import { deleteTransactionWithEffects } from "./lib/transactionEffects";
+import { convertAmount, getUserRateMap } from "./lib/money";
 
 export const list = query({
+  args: {},
+  handler: async (ctx) => {
+    const clerkId = await getCurrentUserId(ctx);
+    const cards = await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", clerkId).eq("archived", false)
+      )
+      .collect();
+    // `displayOrder` lo fija el usuario arrastrando en /productos; las que nunca
+    // se han movido van al final, en su orden de creación.
+    return cards.sort(
+      (a, b) =>
+        (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
+        a._creationTime - b._creationTime
+    );
+  },
+});
+
+/** Tarjetas archivadas: salieron del listado pero se pueden restaurar. */
+export const listArchived = query({
   args: {},
   handler: async (ctx) => {
     const clerkId = await getCurrentUserId(ctx);
     return await ctx.db
       .query("cards")
       .withIndex("by_user_archived", (q) =>
-        q.eq("userId", clerkId).eq("archived", false)
+        q.eq("userId", clerkId).eq("archived", true)
       )
-      .collect();
+      .take(200);
+  },
+});
+
+/**
+ * Resumen de las tarjetas en la moneda preferida. Existe porque el listado sumaba
+ * `currentBalance` de tarjetas en monedas distintas y etiquetaba el total como
+ * "COP": una cifra que no significaba nada. Las tarjetas sin tasa quedan fuera y
+ * se avisa con `missingRate`, igual que en `debts.overview`.
+ */
+export const overview = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    let missingRate = false;
+    const conv = (amount: number, currency: string) => {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      if (!hasRate) missingRate = true;
+      return hasRate ? converted : 0;
+    };
+
+    const cards = await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", user.clerkId).eq("archived", false)
+      )
+      .take(200);
+
+    let debt = 0;
+    let limit = 0;
+    let available = 0;
+    let overUsedCount = 0;
+    for (const c of cards) {
+      debt += conv(c.currentBalance, c.currency);
+      limit += conv(c.creditLimit, c.currency);
+      available += conv(c.availableCredit, c.currency);
+      if (c.creditLimit > 0 && c.currentBalance / c.creditLimit >= 0.8) overUsedCount += 1;
+    }
+
+    return {
+      currency: preferredCurrency,
+      debt,
+      limit,
+      available,
+      count: cards.length,
+      overUsedCount,
+      missingRate,
+    };
   },
 });
 
@@ -138,6 +208,71 @@ export const archive = mutation({
     const card = await ctx.db.get(cardId);
     if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
     await ctx.db.patch(cardId, { archived: true, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Archiva o restaura. `archive` existía sin que ningún componente lo llamara y sin
+ * vuelta atrás: la tarjeta archivada desaparecía del listado para siempre.
+ */
+export const setArchived = mutation({
+  args: { cardId: v.id("cards"), archived: v.boolean() },
+  handler: async (ctx, { cardId, archived }) => {
+    const user = await getCurrentUser(ctx);
+    const card = await ctx.db.get(cardId);
+    if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+    if (card.archived === archived) return;
+    await ctx.db.patch(cardId, { archived, updatedAt: Date.now() });
+  },
+});
+
+/**
+ * Reordena las tarjetas activas. Reparte entre las filas recibidas los puestos que
+ * ya ocupaban, normalizando antes si hay huecos o repetidos, igual que
+ * `accounts.reorder` y `categories.reorder`.
+ */
+export const reorder = mutation({
+  args: { cardIds: v.array(v.id("cards")) },
+  handler: async (ctx, { cardIds }) => {
+    const user = await getCurrentUser(ctx);
+    const now = Date.now();
+
+    const active = await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) =>
+        q.eq("userId", user.clerkId).eq("archived", false)
+      )
+      .take(200);
+    const byId = new Map(active.map((c) => [c._id as string, c]));
+    for (const id of cardIds) {
+      if (!byId.has(id)) throw new Error("Tarjeta no encontrada");
+    }
+
+    const orders = active.map((c) => c.displayOrder);
+    const clean =
+      orders.every((o) => o !== undefined) && new Set(orders).size === orders.length;
+    const orderOf = new Map<string, number>();
+    if (clean) {
+      for (const c of active) orderOf.set(c._id, c.displayOrder!);
+    } else {
+      [...active]
+        .sort(
+          (a, b) =>
+            (a.displayOrder ?? Infinity) - (b.displayOrder ?? Infinity) ||
+            a._creationTime - b._creationTime
+        )
+        .forEach((c, i) => orderOf.set(c._id, i));
+    }
+
+    const slots = cardIds.map((id) => orderOf.get(id)!).sort((a, b) => a - b);
+    cardIds.forEach((id, i) => orderOf.set(id, slots[i]));
+
+    for (const c of active) {
+      const displayOrder = orderOf.get(c._id)!;
+      if (c.displayOrder !== displayOrder) {
+        await ctx.db.patch(c._id, { displayOrder, updatedAt: now });
+      }
+    }
   },
 });
 
@@ -321,6 +456,16 @@ export const getCardDetailData = query({
       .filter((q) => q.eq(q.field("status"), "activa"))
       .collect();
 
+    // Compras ya liquidadas: solo para el historial. Van en su propio array a
+    // propósito — si entraran en `allPurchases` inflarían el FIFO, el pago mínimo
+    // y el tope de lecturas, que se calculan todos sobre las compras activas.
+    const settledPurchases = await ctx.db
+      .query("cardPurchases")
+      .withIndex("by_card", (q) => q.eq("cardId", cardId))
+      .filter((q) => q.eq(q.field("status"), "pagada"))
+      .order("desc")
+      .take(50);
+
     // Acumuladores
     const installmentsByPurchase: Record<string, Array<{
       _id: string; purchaseId: string; cardId: string; userId: string;
@@ -419,6 +564,7 @@ export const getCardDetailData = query({
       installmentById,
       purchasesInCurrentCycle,
       allPurchases,
+      settledPurchases,
       installmentsByPurchase,
       minimumPayment,
       totalPayment,

@@ -32,7 +32,27 @@ export function getNextCutoffTs(cutoffDay: number, now: Date = new Date()): numb
   return new Date(nextYear, nextMonth, cutoffOf(nextYear, nextMonth), 23, 59, 59, 999).getTime();
 }
 
-/** El pago cae en el mes siguiente al próximo corte (misma regla que el backend). */
+/**
+ * Corte del ciclo que ya cerró. Espejo de la rama `prev` de
+ * `getBillingCycleDates` en convex/lib/cardHelpers.ts: el pago que toca ahora se
+ * deriva de este corte, no del siguiente.
+ */
+export function getPrevCutoffTs(cutoffDay: number, now: Date = new Date()): number {
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const cutoffOf = (y: number, m: number) =>
+    Math.min(cutoffDay, new Date(y, m + 1, 0).getDate());
+
+  let prevYear = year;
+  let prevMonth = month;
+  if (now.getDate() < cutoffOf(year, month)) {
+    prevYear = month === 0 ? year - 1 : year;
+    prevMonth = month === 0 ? 11 : month - 1;
+  }
+  return new Date(prevYear, prevMonth, cutoffOf(prevYear, prevMonth), 23, 59, 59, 999).getTime();
+}
+
+/** El pago cae en el mes siguiente al corte que se le pase. */
 export function getNextPaymentTs(paymentDay: number, nextCutoffTs: number): number {
   const cutoffDate = new Date(nextCutoffTs);
   const cutoffMonth = cutoffDate.getMonth();

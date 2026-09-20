@@ -23,7 +23,7 @@ function resolveCard(color: string) {
   return { background: ACCOUNT_GRADIENTS[0].gradient, darkText: false };
 }
 
-/** Cara visual de la tarjeta. La comparten el listado (CardSummary) y la vista previa del formulario. */
+/** Cara visual de la tarjeta. La comparten el listado, el detalle y la vista previa de la hoja. */
 export function CardFace({ brand, lastFourDigits, name, color, trailing, className }: CardFaceProps) {
   const { background, darkText } = resolveCard(color);
   const textColor = darkText ? "oklch(0.18 0.02 260)" : "white";

@@ -116,16 +116,10 @@ const s = StyleSheet.create({
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-export interface InstallmentEntry {
-  installmentNumber: number;
-  totalInstallments: number;
-  amount: number;
-  dueDate: number;
-  interestAmount?: number;
-  principalAmount?: number;
-  description: string;
-  category: string;
-}
+import type { InstallmentEntry } from "./shared";
+
+// El tipo vive en ./shared: lo comparten el documento y el contenedor de pestañas
+export type { InstallmentEntry } from "./shared";
 
 interface CardStatementProps {
   card: Doc<"cards">;

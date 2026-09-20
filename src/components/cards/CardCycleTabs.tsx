@@ -3,32 +3,30 @@
 // Contenedor de los 3 tabs del detalle de tarjeta:
 //   1. "Ciclo actual"  — compras hechas en el ciclo en curso
 //   2. "A pagar"       — cuotas del ciclo que se deben pagar este mes
-//   3. "Plan completo" — vista completa con búsqueda y filtros (la vista anterior)
+//   3. "Plan completo" — vista completa con búsqueda, filtros e historial
 
-import { useState, useMemo } from "react";
-import { api } from "../../../convex/_generated/api";
+import { useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { FunctionReturnType } from "convex/server";
-import type { Doc, Id } from "../../../convex/_generated/dataModel";
-import { Search, Plus, ArrowUpDown, FileDown, FileText, FileSpreadsheet } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { AppSheet } from "@/components/ui/app-sheet";
-import { PillTabs } from "@/components/ui/pill-tabs";
-import { CompactPurchaseRow } from "./CompactPurchaseRow";
-import { CompactInstallmentRow } from "./CompactInstallmentRow";
-import { PurchaseForm } from "./PurchaseForm";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger,
-} from "@/components/ui/select";
-import { formatCents, currentMonth } from "@/lib/money";
+  ArrowUpDown, ChevronRight, FileDown, FileSpreadsheet, FileText, Plus, Search, X,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { InstallmentEntry } from "./CardStatementDocument";
+import { api } from "../../../convex/_generated/api";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { currentMonth, formatCents } from "@/lib/money";
+import { cn } from "@/lib/utils";
+import { InstallmentRow } from "./InstallmentRow";
+import { PurchaseRow } from "./PurchaseRow";
+import { PurchaseSheet } from "./PurchaseSheet";
+import {
+  EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic, tint,
+  type InstallmentEntry, type Purchase,
+} from "./shared";
 import type { PaymentStatementRow } from "@/lib/reports";
 
 type TabId = "ciclo-actual" | "a-pagar" | "plan-completo";
@@ -39,26 +37,26 @@ const SESSION_NOW = Date.now();
 // Tipo del resultado de getCardDetailData usando el helper oficial de Convex
 type CardDetailData = NonNullable<FunctionReturnType<typeof api.cards.getCardDetailData>>;
 
-const TABS = [
-  { key: "ciclo-actual" as const, label: "Ciclo actual" },
-  { key: "a-pagar" as const, label: "A pagar" },
-  { key: "plan-completo" as const, label: "Plan completo" },
+const TABS: { key: TabId; label: string }[] = [
+  { key: "ciclo-actual", label: "Ciclo actual" },
+  { key: "a-pagar", label: "A pagar" },
+  { key: "plan-completo", label: "Plan completo" },
 ];
 
 interface CardCycleTabsProps {
   data: CardDetailData;
   currency: string;
-  // Mapa id → nombre de categoría para mostrar en las filas
+  /** Mapa id → nombre de categoría para las filas */
   categoryMap: Record<string, string>;
-  // Lista completa de categorías para el filtro del Tab 3
+  /** Lista completa de categorías para el filtro del Tab 3 */
   categories: Doc<"categories">[];
   card: Doc<"cards">;
-  onEditPurchase: (p: Doc<"cardPurchases">) => void;
+  onEditPurchase: (p: Purchase) => void;
   onDeletePurchase: (id: Id<"cardPurchases">) => void;
 }
 
 // ─── Helper: mes de la próxima cuota impaga (para agrupar en Tab 3) ──────────
-function nextInstallmentMonth(p: Doc<"cardPurchases">): string {
+function nextInstallmentMonth(p: Purchase): string {
   const base = new Date(p.firstInstallmentDate);
   const totalMonths = base.getMonth() + p.paidInstallments;
   const year = base.getFullYear() + Math.floor(totalMonths / 12);
@@ -66,20 +64,14 @@ function nextInstallmentMonth(p: Doc<"cardPurchases">): string {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
-// ─── Helper: etiqueta y variante visual del grupo de mes ─────────────────────
-function groupLabel(
-  monthStr: string,
-  currMonthStr: string
-): { text: string; variant: "overdue" | "current" | "future" } {
-  if (monthStr < currMonthStr) return { text: "Vencidas", variant: "overdue" };
-  if (monthStr === currMonthStr) return { text: "Este mes", variant: "current" };
+// ─── Helper: etiqueta y tono del grupo de mes ────────────────────────────────
+function groupLabel(monthStr: string, currMonthStr: string): { text: string; tone?: string } {
+  if (monthStr < currMonthStr) return { text: "Vencidas", tone: "var(--os-magenta)" };
+  if (monthStr === currMonthStr) return { text: "Este mes", tone: "var(--os-lime-text)" };
   const [y, m] = monthStr.split("-").map(Number);
   const d = new Date(y, m - 1, 1);
-  const name = d
-    .toLocaleDateString("es-CO", { month: "long" })
-    .replace(/^\w/, (c) => c.toUpperCase());
-  const text = y === new Date().getFullYear() ? name : `${name} ${y}`;
-  return { text, variant: "future" };
+  const name = d.toLocaleDateString("es-CO", { month: "long" }).replace(/^\w/, (c) => c.toUpperCase());
+  return { text: y === new Date().getFullYear() ? name : `${name} ${y}` };
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -93,28 +85,29 @@ export function CardCycleTabs({
   onEditPurchase,
   onDeletePurchase,
 }: CardCycleTabsProps) {
+  const reduce = useReducedMotion();
   const [activeTab, setActiveTab] = useState<TabId>("ciclo-actual");
   // Estado de búsqueda y filtro solo para Tab 3 (Plan completo)
   const [searchText, setSearchText] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [purchaseOpen, setPurchaseOpen] = useState(false);
-  // Orden del Tab 2 "A pagar": true = más antiguo primero (default), false = más reciente primero
+  // Orden del Tab 2: true = más antiguo primero (default)
   const [sortAsc, setSortAsc] = useState(true);
-  // Estado de la descarga del extracto
   const [downloading, setDownloading] = useState<"pdf" | "csv" | null>(null);
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [showSettled, setShowSettled] = useState(false);
 
   const currMonthStr = currentMonth();
 
-  // ── Tab 2: cuotas ordenadas por dueDate (el backend devuelve asc por defecto) ──
-  // sortAsc=true → más antiguo primero (default), sortAsc=false → más reciente primero
+  // ── Tab 2: cuotas ordenadas por dueDate (el backend devuelve asc) ─────────
   const sortedOverdueCuotas = useMemo(() => {
     const arr = [...data.overdueCuotas];
     return sortAsc ? arr : arr.reverse();
   }, [data.overdueCuotas, sortAsc]);
 
-  // ── Descarga del extracto "A pagar" ──────────────────────────────────────
+  // ── Extracto: PDF y CSV ──────────────────────────────────────────────────
 
-  // Convierte un ID de cuota en la estructura que usan PDF y CSV
+  /** Convierte un ID de cuota en la fila que usan PDF y CSV. */
   function buildInstallmentEntry(instId: string): InstallmentEntry | null {
     const inst = data.installmentById[instId];
     if (!inst) return null;
@@ -132,20 +125,41 @@ export function CardCycleTabs({
     };
   }
 
+  const overdueEntries = () => sortedOverdueCuotas.flatMap((id) => {
+    const e = buildInstallmentEntry(id);
+    return e ? [e] : [];
+  });
+
+  /** Cuotas del ciclo en curso: el PDF tenía esta sección y nunca recibía datos. */
+  const currentCycleEntries = () => data.currentCycleCuotas.flatMap((id) => {
+    const e = buildInstallmentEntry(id);
+    return e ? [e] : [];
+  });
+
+  const canExport = data.overdueCuotas.length > 0 || data.currentCycleCuotas.length > 0;
+
   async function handleDownloadCsv() {
     setDownloading("csv");
     try {
       const { generatePaymentStatementCsv, downloadCsv } = await import("@/lib/reports");
-      const rows: PaymentStatementRow[] = sortedOverdueCuotas.flatMap((id) => {
-        const entry = buildInstallmentEntry(id);
-        return entry ? [{ ...entry, status: "A pagar" as const, currency }] : [];
-      });
+      const rows: PaymentStatementRow[] = [
+        ...overdueEntries().map((entry) => ({
+          ...entry,
+          status: (hasOverdue ? "Vencida" : "A pagar") as PaymentStatementRow["status"],
+          currency,
+        })),
+        ...currentCycleEntries().map((entry) => ({
+          ...entry,
+          status: "A pagar" as const,
+          currency,
+        })),
+      ];
       const csv = generatePaymentStatementCsv(rows);
       const month = new Date().toISOString().slice(0, 7);
       downloadCsv(csv, `a-pagar_${card.lastFourDigits}_${month}.csv`);
-      toast.success("CSV descargado correctamente");
+      toast.success("CSV descargado");
     } catch {
-      toast.error("Error al generar el CSV");
+      toast.error("No se pudo generar el CSV");
     } finally {
       setDownloading(null);
     }
@@ -158,19 +172,14 @@ export function CardCycleTabs({
         import("@react-pdf/renderer"),
         import("@/components/cards/CardStatementDocument"),
       ]);
-      // Construir arrays de entradas para cada sección
-      const overdueEntries = sortedOverdueCuotas.flatMap((id) => {
-        const e = buildInstallmentEntry(id);
-        return e ? [e] : [];
-      });
       const element = (
         <CardStatementDocument
           card={card}
           cycle={data.cycle}
-          overdue={overdueEntries}
-          currentCycle={[]}
+          overdue={overdueEntries()}
+          currentCycle={currentCycleEntries()}
           minimumPayment={data.minimumPayment}
-          hasOverdue={data.isPaymentOverdue}
+          hasOverdue={hasOverdue}
         />
       );
       const blob = await pdf(element).toBlob();
@@ -181,58 +190,49 @@ export function CardCycleTabs({
       link.download = `a-pagar_${card.lastFourDigits}_${month}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
-      toast.success("PDF descargado correctamente");
+      toast.success("PDF descargado");
     } catch {
-      toast.error("Error al generar el PDF");
+      toast.error("No se pudo generar el PDF");
     } finally {
       setDownloading(null);
     }
   }
 
-  // ── Tab 1: Ciclo actual ────────────────────────────────────────────────────
+  // ── Tab 1: Ciclo actual ──────────────────────────────────────────────────
 
-  // Total gastado en el ciclo actual (suma de las compras por su cuota mensual)
   const currentCycleTotal = data.purchasesInCurrentCycle.reduce(
     (sum, p) => sum + p.totalWithInterest,
     0
   );
 
-  const prevDateStr = new Date(data.cycle.prevCutoffTs).toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "short",
-  });
-  const nextDateStr = new Date(data.cycle.nextCutoffTs).toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "short",
-  });
-  // "Vencido" solo si el día de pago de la tarjeta ya pasó (no por fechas individuales de cuotas)
-  const hasOverdue = data.isPaymentOverdue;
-  // Fecha límite más próxima: si hay cuotas del ciclo anterior pendientes, usar prevPaymentTs;
-  // si no hay, usar nextPaymentTs (el del ciclo en curso que aún no cerró).
+  const shortDate = (ts: number) =>
+    new Date(ts).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+
+  const prevDateStr = shortDate(data.cycle.prevCutoffTs);
+  const nextDateStr = shortDate(data.cycle.nextCutoffTs);
+  // Vencido = pasó el día de pago Y quedó algo facturado sin pagar. Con solo la
+  // fecha, quien pagó a tiempo veía «ya venció» durante las tres semanas que van
+  // del día de pago al siguiente corte.
+  const hasOverdue = data.isPaymentOverdue && data.overdueCuotas.length > 0;
+  // Si hay cuotas del ciclo anterior pendientes, la fecha límite es la de ese ciclo
   const relevantPaymentTs = data.overdueCuotas.length > 0
     ? data.cycle.prevPaymentTs
     : data.cycle.nextPaymentTs;
-  const paymentDateStr = new Date(relevantPaymentTs).toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "short",
-  });
+  const paymentDateStr = shortDate(relevantPaymentTs);
   const daysUntilPayment = Math.max(
     0,
-    Math.ceil((relevantPaymentTs - SESSION_NOW) / (1000 * 60 * 60 * 24))
+    Math.ceil((relevantPaymentTs - SESSION_NOW) / 86_400_000)
   );
 
-  // ── Tab 3: Plan completo (con filtros) ─────────────────────────────────────
+  // ── Tab 3: Plan completo ─────────────────────────────────────────────────
+
+  const filtering = searchText.trim().length > 0 || catFilter.length > 0;
 
   const purchaseGroups = useMemo(() => {
     const filtered = data.allPurchases
-      .filter((p) =>
-        !searchText || p.description.toLowerCase().includes(searchText.toLowerCase())
-      )
+      .filter((p) => !searchText || p.description.toLowerCase().includes(searchText.toLowerCase()))
       .filter((p) => !catFilter || p.categoryId === catFilter)
-      .sort((a, b) => {
-        // Ordenar cronológicamente por mes de la próxima cuota
-        return nextInstallmentMonth(a).localeCompare(nextInstallmentMonth(b));
-      });
+      .sort((a, b) => nextInstallmentMonth(a).localeCompare(nextInstallmentMonth(b)));
 
     const map = new Map<string, typeof filtered>();
     for (const p of filtered) {
@@ -243,357 +243,414 @@ export function CardCycleTabs({
     return [...map.entries()];
   }, [data.allPurchases, searchText, catFilter]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // `?? []` por si la query todavía no se ha desplegado: sin esto la página
+  // reventaría en render en vez de avisar de la función que falta.
+  const settled = data.settledPurchases ?? [];
+
+  function switchTab(next: TabId) {
+    if (next === activeTab) return;
+    haptic();
+    setActiveTab(next);
+    setOpenRowId(null);
+  }
+
+  /** Fila de cuota con su compra padre resuelta. */
+  function renderInstallments(ids: string[], overdue: boolean) {
+    return (
+      <ul className="space-y-0.5">
+        <AnimatePresence initial={false}>
+          {ids.map((instId, i) => {
+            const inst = data.installmentById[instId];
+            if (!inst) return null;
+            const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
+            if (!purchase) return null;
+            return (
+              <InstallmentRow
+                key={instId}
+                installment={inst}
+                purchase={purchase}
+                currency={currency}
+                categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
+                index={i}
+                overdue={overdue}
+                openId={openRowId}
+                setOpenId={setOpenRowId}
+                onEdit={onEditPurchase}
+                onDelete={onDeletePurchase}
+              />
+            );
+          })}
+        </AnimatePresence>
+      </ul>
+    );
+  }
+
+  function renderPurchases(list: Purchase[], settledList?: boolean) {
+    return (
+      <ul className="space-y-0.5">
+        <AnimatePresence initial={false}>
+          {list.map((purchase, i) => (
+            <PurchaseRow
+              key={purchase._id}
+              purchase={purchase}
+              installments={data.installmentsByPurchase[purchase._id]}
+              currency={currency}
+              categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
+              index={i}
+              settled={settledList}
+              openId={openRowId}
+              setOpenId={setOpenRowId}
+              onEdit={onEditPurchase}
+              onDelete={onDeletePurchase}
+            />
+          ))}
+        </AnimatePresence>
+      </ul>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      {/* Barra de tabs + botón "Nueva compra" en la misma línea */}
+    <div className="space-y-4">
+      {/* Pestañas + nueva compra */}
       <div className="flex items-center gap-2">
-        <PillTabs
-          tabs={TABS}
-          active={activeTab}
-          onChange={setActiveTab}
-          ariaLabel="Sección de tarjeta"
-          className="flex-1"
-        />
-        {/* Botón de nueva compra siempre visible para acceso rápido */}
-        <AppSheet
-          open={purchaseOpen}
-          onOpenChange={setPurchaseOpen}
-          title={`Nueva compra — ${card.name}`}
-          trigger={
-            <Button size="sm" variant="outline" className="shrink-0 h-[42px] gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Nueva compra</span>
-              <span className="sm:hidden">+</span>
-            </Button>
-          }
+        <div
+          role="tablist"
+          aria-label="Sección de la tarjeta"
+          className={cn("flex flex-1 rounded-[18px] p-1", GLASS_SURFACE)}
         >
-          <PurchaseForm
-            cardId={card._id}
-            defaultInterestRate={card.interestRate}
-            currency={currency}
-            onSuccess={() => setPurchaseOpen(false)}
-          />
-        </AppSheet>
+          {TABS.map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                id={`card-tab-${t.key}`}
+                aria-selected={active}
+                aria-controls="card-panel"
+                onClick={() => switchTab(t.key)}
+                className={cn(
+                  "touch-hit relative flex-1 rounded-[14px] px-1 py-2 text-[13px] transition-colors",
+                  active ? "font-bold text-foreground" : "font-semibold text-muted-foreground",
+                )}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="card-tab-pill"
+                    className="absolute inset-0 rounded-[14px] bg-[var(--surface)] shadow-[0_2px_10px_-4px_rgb(0_0_0/0.25)] dark:bg-white/10"
+                    transition={SPRING}
+                  />
+                )}
+                <span className="relative truncate">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => { haptic(); setPurchaseOpen(true); }}
+          aria-label="Nueva compra"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_8px_20px_-8px_rgb(16_185_129/0.9)] transition-transform active:scale-90"
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
+        </button>
       </div>
 
-      {/* ── Tab 1: Ciclo actual ─────────────────────────────────────────────── */}
-      {activeTab === "ciclo-actual" && (
-        <div
-          role="tabpanel"
-          id="panel-ciclo-actual"
-          aria-labelledby="tab-ciclo-actual"
-          className="space-y-3"
-        >
-          {/* Resumen del ciclo en curso */}
-          <div className="rounded-xl bg-card border border-border px-4 py-3 space-y-0.5">
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
-              Del {prevDateStr} al {nextDateStr}
-            </p>
-            <p className="text-xl font-bold tabular-nums text-foreground">
-              {formatCents(currentCycleTotal, currency)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {data.purchasesInCurrentCycle.length} compra
-              {data.purchasesInCurrentCycle.length !== 1 ? "s" : ""} en este ciclo
-            </p>
-          </div>
-
-          {/* Lista de compras hechas en el ciclo actual */}
-          {data.purchasesInCurrentCycle.length === 0 ? (
-            <div className="rounded-xl bg-card border border-border px-4 py-8 text-center">
-              <p className="text-sm font-medium text-foreground">Sin compras este ciclo</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Las compras que registres del {prevDateStr} al {nextDateStr} aparecerán aquí.
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-xl bg-card border border-border overflow-hidden">
-              {data.purchasesInCurrentCycle.map((purchase) => (
-                <CompactPurchaseRow
-                  key={purchase._id}
-                  purchase={purchase}
-                  installments={
-                    data.installmentsByPurchase[purchase._id] as Parameters<
-                      typeof CompactPurchaseRow
-                    >[0]["installments"]
-                  }
-                  currency={currency}
-                  categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
-                  onEdit={onEditPurchase}
-                  onDelete={onDeletePurchase}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Tab 2: A pagar ─────────────────────────────────────────────────── */}
-      {activeTab === "a-pagar" && (
-        <div
-          role="tabpanel"
-          id="panel-a-pagar"
-          aria-labelledby="tab-a-pagar"
-          className="space-y-3"
-        >
-          {/* Bloque de vencidas: solo se muestra si el día de pago de la tarjeta ya pasó */}
-          {hasOverdue && sortedOverdueCuotas.length > 0 && (
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--os-magenta)" }}>
-              <div
-                className="px-4 py-2 flex items-center justify-between gap-2"
-                style={{ background: "color-mix(in oklch, var(--os-magenta) 12%, var(--surface))" }}
-              >
-                <span
-                  className="text-[11px] font-bold uppercase tracking-widest"
-                  style={{ color: "var(--os-magenta)" }}
-                >
-                  Vencidas ({sortedOverdueCuotas.length})
-                </span>
-                <span
-                  className="text-sm font-bold tabular-nums"
-                  style={{ color: "var(--os-magenta)" }}
-                >
-                  {formatCents(data.minimumPayment, currency)}
-                </span>
-              </div>
-              {sortedOverdueCuotas.map((instId) => {
-                const inst = data.installmentById[instId];
-                if (!inst) return null;
-                const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
-                if (!purchase) return null;
-                return (
-                  <CompactInstallmentRow
-                    key={instId}
-                    installment={inst}
-                    purchase={purchase}
-                    currency={currency}
-                    categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
-                    onEdit={onEditPurchase}
-                    onDelete={onDeletePurchase}
-                  />
-                );
-              })}
-            </div>
-          )}
-
-          {/* Resumen del pago mínimo */}
-          <div
-            className="rounded-xl px-4 py-3 space-y-0.5 border"
-            style={
-              hasOverdue
-                ? {
-                    borderColor: "var(--os-magenta)",
-                    background: "color-mix(in oklch, var(--os-magenta) 6%, var(--card))",
-                  }
-                : { borderColor: "var(--border)", background: "var(--card)" }
-            }
+      <div id="card-panel" role="tabpanel" aria-labelledby={`card-tab-${activeTab}`} className="relative">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={activeTab}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -10 }}
+            transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
+            className="space-y-3"
           >
-            <p
-              className="text-[11px] uppercase tracking-wider font-semibold"
-              style={{ color: hasOverdue ? "var(--os-magenta)" : "var(--muted-foreground)" }}
-            >
-              {hasOverdue
-                ? `Pago mínimo · Venció el ${paymentDateStr}`
-                : data.overdueCuotas.length > 0
-                  ? `Pago mínimo · Vence en ${daysUntilPayment} ${daysUntilPayment === 1 ? "día" : "días"} · ${paymentDateStr}`
-                  : `Pago mínimo · Vence ${paymentDateStr}`}
-            </p>
-            <p className="text-xl font-bold tabular-nums text-foreground">
-              {formatCents(data.minimumPayment, currency)}
-            </p>
-            <div className="flex items-center justify-between mt-1">
-              <p className="text-xs text-muted-foreground">
-                {data.overdueCuotas.length} cuota
-                {data.overdueCuotas.length !== 1 ? "s" : ""} del ciclo anterior
-              </p>
-              <div className="flex items-center gap-2">
-                {data.overdueCuotas.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setSortAsc((s) => !s)}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label={sortAsc ? "Cambiar a más reciente primero" : "Cambiar a más antiguo primero"}
-                  >
-                    <ArrowUpDown className="h-3 w-3" />
-                    {sortAsc ? "Antiguo primero" : "Reciente primero"}
-                  </button>
-                )}
-                {data.overdueCuotas.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      disabled={!!downloading}
-                      aria-label="Descargar extracto"
-                      className="inline-flex items-center justify-center rounded-md h-6 w-6 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      <FileDown className="h-3.5 w-3.5" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={handleDownloadPdf}
-                        disabled={downloading === "pdf"}
-                        className="gap-2"
-                      >
-                        <FileText className="h-4 w-4" />
-                        {downloading === "pdf" ? "Generando PDF…" : "Descargar PDF"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={handleDownloadCsv}
-                        disabled={downloading === "csv"}
-                        className="gap-2"
-                      >
-                        <FileSpreadsheet className="h-4 w-4" />
-                        {downloading === "csv" ? "Generando CSV…" : "Descargar CSV"}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            </div>
-          </div>
+            {/* ── Tab 1: Ciclo actual ──────────────────────────────────── */}
+            {activeTab === "ciclo-actual" && (
+              <>
+                <div className={cn("rounded-[24px] px-5 py-4", GLASS_SURFACE)}>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                    Del {prevDateStr} al {nextDateStr}
+                  </p>
+                  <p className="mt-1 font-mono-num text-[26px] font-extrabold leading-none tracking-tight tabular-nums text-foreground">
+                    {formatCents(currentCycleTotal, currency)}
+                  </p>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    {data.purchasesInCurrentCycle.length}{" "}
+                    {data.purchasesInCurrentCycle.length === 1 ? "compra" : "compras"} en este ciclo
+                  </p>
+                </div>
 
-          {/* Lista plana de cuotas del ciclo anterior (solo cuando el pago aún no venció) */}
-          {!hasOverdue && (
-            sortedOverdueCuotas.length === 0 ? (
-              <div className="rounded-xl bg-card border border-border px-4 py-8 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  Sin cuotas pendientes del ciclo anterior
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  El próximo corte es el {nextDateStr}
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-card border border-border overflow-hidden">
-                {sortedOverdueCuotas.map((instId) => {
-                  const inst = data.installmentById[instId];
-                  if (!inst) return null;
-                  const purchase = data.allPurchases.find((p) => p._id === inst.purchaseId);
-                  if (!purchase) return null;
-                  return (
-                    <CompactInstallmentRow
-                      key={instId}
-                      installment={inst}
-                      purchase={purchase}
-                      currency={currency}
-                      categoryName={purchase.categoryId ? categoryMap[purchase.categoryId] : undefined}
-                      onEdit={onEditPurchase}
-                      onDelete={onDeletePurchase}
-                    />
-                  );
-                })}
-              </div>
-            )
-          )}
-        </div>
-      )}
-
-      {/* ── Tab 3: Plan completo ───────────────────────────────────────────── */}
-      {activeTab === "plan-completo" && (
-        <div
-          role="tabpanel"
-          id="panel-plan-completo"
-          aria-labelledby="tab-plan-completo"
-          className="space-y-3"
-        >
-          {/* Filtros: búsqueda + categoría */}
-          {data.allPurchases.length > 0 && (
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  placeholder="Buscar compra…"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  className="pl-8 h-8 text-sm"
-                />
-              </div>
-              <Select value={catFilter} onValueChange={(v) => setCatFilter(v ?? "")}>
-                <SelectTrigger className="h-8 w-[140px] text-sm shrink-0">
-                  <span className="truncate text-left">
-                    {catFilter
-                      ? categories.find((c) => c._id === catFilter)?.name ?? "Categoría"
-                      : <span className="text-muted-foreground">Categoría</span>}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Todas</SelectItem>
-                  {categories.map((c) => (
-                    <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Estado vacío general */}
-          {data.allPurchases.length === 0 ? (
-            <div className="rounded-xl bg-card border border-border px-4 py-8 text-center">
-              <p className="text-sm font-medium text-foreground">
-                No hay compras activas en esta tarjeta
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Usa el botón &ldquo;+ Nueva compra&rdquo; para registrar tu primera compra.
-              </p>
-            </div>
-          ) : purchaseGroups.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center rounded-xl bg-card border border-border">
-              Sin resultados para los filtros aplicados.
-            </p>
-          ) : (
-            /* Grupos de compras por mes de próxima cuota */
-            <div className="space-y-3">
-              {purchaseGroups.map(([monthKey, group]) => {
-                const { text, variant } = groupLabel(monthKey, currMonthStr);
-                return (
-                  <div key={monthKey} className="space-y-1">
-                    {/* Cabecera del grupo */}
-                    <div className="flex items-center gap-2 px-1">
-                      <span
-                        className="text-[11px] font-bold uppercase tracking-widest"
-                        style={{
-                          color:
-                            variant === "overdue"
-                              ? "var(--os-magenta)"
-                              : variant === "current"
-                              ? "var(--os-lime)"
-                              : "var(--muted-foreground)",
-                        }}
-                      >
-                        {text}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground font-medium">
-                        ({group.length} compra{group.length !== 1 ? "s" : ""})
-                      </span>
-                    </div>
-                    {/* Filas de compra */}
-                    <div className="rounded-xl bg-card border border-border overflow-hidden">
-                      {group.map((purchase) => (
-                        <CompactPurchaseRow
-                          key={purchase._id}
-                          purchase={purchase}
-                          installments={
-                            data.installmentsByPurchase[purchase._id] as Parameters<
-                              typeof CompactPurchaseRow
-                            >[0]["installments"]
-                          }
-                          currency={currency}
-                          categoryName={
-                            purchase.categoryId ? categoryMap[purchase.categoryId] : undefined
-                          }
-                          onEdit={onEditPurchase}
-                          onDelete={onDeletePurchase}
-                        />
-                      ))}
-                    </div>
+                {data.purchasesInCurrentCycle.length === 0 ? (
+                  <EmptyPanel
+                    title="Sin compras este ciclo"
+                    hint={`Lo que registres del ${prevDateStr} al ${nextDateStr} aparecerá aquí.`}
+                  />
+                ) : (
+                  <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                    {renderPurchases(data.purchasesInCurrentCycle)}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                )}
+              </>
+            )}
+
+            {/* ── Tab 2: A pagar ───────────────────────────────────────── */}
+            {activeTab === "a-pagar" && (
+              <>
+                {/* Pago mínimo: el conteo y el monto son del mismo bucket */}
+                <div
+                  className={cn("rounded-[24px] px-5 py-4", GLASS_SURFACE)}
+                  style={hasOverdue ? { background: tint("var(--os-magenta)", 8) } : undefined}
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p
+                      className="text-[11px] font-bold uppercase tracking-[0.08em]"
+                      style={{ color: hasOverdue ? "var(--os-magenta)" : undefined }}
+                    >
+                      {hasOverdue
+                        ? `Pago mínimo · venció el ${paymentDateStr}`
+                        : data.overdueCuotas.length > 0
+                          ? `Pago mínimo · en ${daysUntilPayment} ${daysUntilPayment === 1 ? "día" : "días"}`
+                          : `Pago mínimo · vence el ${paymentDateStr}`}
+                    </p>
+
+                    {canExport && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          disabled={!!downloading}
+                          aria-label="Descargar extracto"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={handleDownloadPdf} disabled={downloading === "pdf"} className="gap-2">
+                            <FileText className="h-4 w-4" />
+                            {downloading === "pdf" ? "Generando PDF…" : "Descargar PDF"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={handleDownloadCsv} disabled={downloading === "csv"} className="gap-2">
+                            <FileSpreadsheet className="h-4 w-4" />
+                            {downloading === "csv" ? "Generando CSV…" : "Descargar CSV"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+
+                  <p className="mt-1 font-mono-num text-[26px] font-extrabold leading-none tracking-tight tabular-nums text-foreground">
+                    {formatCents(data.minimumPayment, currency)}
+                  </p>
+
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {data.overdueCuotas.length}{" "}
+                      {data.overdueCuotas.length === 1 ? "cuota" : "cuotas"} del ciclo anterior
+                    </p>
+                    {data.overdueCuotas.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => { haptic(); setSortAsc((s) => !s); }}
+                        className="flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <ArrowUpDown className="h-3 w-3" aria-hidden="true" />
+                        {sortAsc ? "Antiguo primero" : "Reciente primero"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {sortedOverdueCuotas.length === 0 ? (
+                  <EmptyPanel
+                    title="Sin cuotas pendientes del ciclo anterior"
+                    hint={`El próximo corte es el ${nextDateStr}.`}
+                  />
+                ) : (
+                  <Group title={hasOverdue ? "Vencidas" : "Por pagar"} tone={hasOverdue ? "var(--os-magenta)" : undefined}>
+                    <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                      {renderInstallments(sortedOverdueCuotas, hasOverdue)}
+                    </div>
+                  </Group>
+                )}
+
+                {data.currentCycleCuotas.length > 0 && (
+                  <Group title={`En el ciclo en curso · cierra el ${nextDateStr}`}>
+                    <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                      {renderInstallments(data.currentCycleCuotas, false)}
+                    </div>
+                  </Group>
+                )}
+
+                <p className="px-1 text-center text-xs text-muted-foreground/80">
+                  Desliza una cuota para editar o eliminar su compra.
+                </p>
+              </>
+            )}
+
+            {/* ── Tab 3: Plan completo ─────────────────────────────────── */}
+            {activeTab === "plan-completo" && (
+              <>
+                {data.allPurchases.length > 0 && (
+                  <div className="flex gap-2">
+                    <div className={cn("flex flex-1 items-center gap-2 rounded-[16px] px-3", GLASS_SURFACE)}>
+                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <input
+                        type="search"
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        placeholder="Buscar compra"
+                        aria-label="Buscar compra"
+                        className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70 [&::-webkit-search-cancel-button]:hidden"
+                      />
+                      {searchText && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchText("")}
+                          aria-label="Borrar búsqueda"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                        >
+                          <X className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                    <Select value={catFilter} onValueChange={(v) => setCatFilter(v ?? "")}>
+                      <SelectTrigger className="h-[42px] w-[132px] shrink-0 rounded-[16px] text-sm">
+                        <span className="truncate text-left">
+                          {catFilter
+                            ? categories.find((c) => c._id === catFilter)?.name ?? "Categoría"
+                            : <span className="text-muted-foreground">Categoría</span>}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Todas</SelectItem>
+                        {categories.map((c) => (
+                          <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {data.allPurchases.length === 0 ? (
+                  <EmptyPanel
+                    title="No hay compras activas en esta tarjeta"
+                    hint="Usa el botón + para registrar la primera."
+                  />
+                ) : purchaseGroups.length === 0 ? (
+                  <EmptyPanel title="Sin resultados" hint="Prueba con otro texto o quita el filtro." />
+                ) : (
+                  purchaseGroups.map(([monthKey, group]) => {
+                    const { text, tone } = groupLabel(monthKey, currMonthStr);
+                    return (
+                      <Group
+                        key={monthKey}
+                        title={text}
+                        tone={tone}
+                        count={group.length}
+                      >
+                        <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                          {renderPurchases(group)}
+                        </div>
+                      </Group>
+                    );
+                  })
+                )}
+
+                {/* Historial: las compras liquidadas desaparecían de todas las vistas */}
+                {!filtering && settled.length > 0 && (
+                  <section className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => { haptic(); setShowSettled((v) => !v); }}
+                      aria-expanded={showSettled}
+                      className="flex w-full items-center gap-2 px-1 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground pointer-coarse:min-h-11"
+                    >
+                      <motion.span animate={{ rotate: showSettled ? 90 : 0 }} transition={{ duration: 0.2 }} className="flex">
+                        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                      </motion.span>
+                      Pagadas
+                      <span className="rounded-full bg-muted px-1.5 text-[11px] font-bold tabular-nums">
+                        {settled.length}
+                      </span>
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {showSettled && (
+                        <motion.div
+                          initial={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                          animate={reduce ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+                          exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                          transition={{ duration: 0.32, ease: EASE_OUT_EXPO }}
+                          className="overflow-hidden"
+                        >
+                          <div className={cn("rounded-[24px] p-1.5", GLASS_SURFACE)}>
+                            {renderPurchases(settled, true)}
+                          </div>
+                          {settled.length >= 50 && (
+                            <p className="px-1 pt-2 text-[11px] text-muted-foreground/80">
+                              Se muestran las 50 compras liquidadas más recientes.
+                            </p>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </section>
+                )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      <PurchaseSheet
+        cardId={card._id}
+        cardName={card.name}
+        currency={currency}
+        defaultInterestRate={card.interestRate}
+        purchase={null}
+        open={purchaseOpen}
+        onOpenChange={setPurchaseOpen}
+      />
+    </div>
+  );
+}
+
+// ─── Piezas ───────────────────────────────────────────────────────────────────
+
+function Group({
+  title,
+  tone,
+  count,
+  children,
+}: {
+  title: string;
+  tone?: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-2" aria-label={title}>
+      <h3
+        className="flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground"
+        style={tone ? { color: tone } : undefined}
+      >
+        {title}
+        {count !== undefined && (
+          <span className="rounded-full bg-muted px-1.5 text-[10px] font-bold tabular-nums text-muted-foreground">
+            {count}
+          </span>
+        )}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function EmptyPanel({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className={cn("rounded-[24px] px-6 py-8 text-center", GLASS_SURFACE)}>
+      <p className="text-sm font-bold text-foreground">{title}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
     </div>
   );
 }
