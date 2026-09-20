@@ -6,6 +6,7 @@
 //   const { default: CardStatementDocument } = await import("@/components/cards/CardStatementDocument");
 
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { BrandMark } from "@/components/pdf/BrandMark";
 import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
 import type { Doc } from "../../../convex/_generated/dataModel";
@@ -30,6 +31,7 @@ const s = StyleSheet.create({
   page:      { padding: 32, fontFamily: "Helvetica", fontSize: 9, color: C.ink },
 
   // Encabezado del doc
+  brandRow:  { flexDirection: "row", alignItems: "center", gap: 9 },
   appName:   { fontSize: 16, fontFamily: "Helvetica-Bold", color: C.accent },
   docTitle:  { fontSize: 10, color: C.muted, marginTop: 2 },
   cardBlock: {
@@ -232,8 +234,13 @@ export default function CardStatementDocument({
       <Page size="A4" style={s.page}>
 
         {/* ── Encabezado ────────────────────────────────────────────────────── */}
-        <Text style={s.appName}>Okany Sync</Text>
-        <Text style={s.docTitle}>Extracto a pagar — tarjeta de crédito</Text>
+        <View style={s.brandRow}>
+          <BrandMark size={32} />
+          <View>
+            <Text style={s.appName}>Okany Sync</Text>
+            <Text style={s.docTitle}>Extracto a pagar — tarjeta de crédito</Text>
+          </View>
+        </View>
 
         {/* ── Datos de la tarjeta ──────────────────────────────────────────── */}
         <View style={s.cardBlock}>

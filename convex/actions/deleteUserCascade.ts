@@ -4,6 +4,7 @@ import { components, internal } from "../_generated/api";
 import { v } from "convex/values";
 import { AUDIT_ACTIONS } from "../../src/lib/constants";
 import { assertAdminFromAction } from "../lib/auth";
+import { USER_DATA_TABLES } from "../lib/userData";
 
 /**
  * Acción pública: llamada desde el panel admin.
@@ -34,85 +35,70 @@ export const run = internalAction({
     });
     if (!user) return; // Ya fue borrado
 
-    // ── Borrado en cascada (orden importante por integridad referencial) ──
+    // ── Borrado en cascada ────────────────────────────────────────────────
+    //
+    // Las 15 tablas de datos del usuario se recorren desde USER_DATA_TABLES,
+    // que es la misma lista que usa el reset de fábrica y la exportación. Antes
+    // había acá una lista escrita a mano de 12 entidades: se le escapaban
+    // `goals`, `loans`, `loanRepayments` y `netWorthSnapshots`, que quedaban
+    // huérfanas cada vez que un admin borraba un usuario. Un test en
+    // convex/lib/__tests__/userData.test.ts impide que vuelva a divergir.
+    //
+    // El borrado va por lotes por el mismo motivo que en el reset: una sola
+    // mutation no aguanta un usuario con muchos movimientos.
 
     const counts: Record<string, number> = {};
 
-    // 1. Notificaciones
-    counts.notifications = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "notifications",
-    });
+    // Movimientos que otras personas registraron en las cuentas de este
+    // usuario. Antes del recorrido de tablas: al borrar `accounts` se pierde
+    // el único camino para encontrarlos, y quedarían apuntando a la nada.
+    let inOwnedAccounts = 0;
+    for (;;) {
+      const swept: number = await ctx.runMutation(
+        internal.factoryReset.deleteTransactionsInOwnedAccounts,
+        { userId: clerkId }
+      );
+      if (swept === 0) break;
+      inOwnedAccounts += swept;
+    }
+    counts.transactionsInOwnedAccounts = inOwnedAccounts;
 
-    // 2. Push subscriptions
-    counts.pushSubscriptions = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "pushSubscriptions",
-    });
+    for (const table of USER_DATA_TABLES) {
+      let removed = 0;
+      for (;;) {
+        const { deleted, extra } = await ctx.runMutation(
+          internal.factoryReset.deleteBatch,
+          { userId: clerkId, table }
+        );
+        if (extra > 0) {
+          counts.sharesOnOwnedAccounts = (counts.sharesOnOwnedAccounts ?? 0) + extra;
+        }
+        if (deleted === 0) break;
+        removed += deleted;
+      }
+      counts[table] = removed;
+    }
 
-    // 3. Sessions
+    // Notificaciones y suscripciones push: datos que generó la app, fuera de
+    // USER_DATA_TABLES porque la exportación tampoco los entrega.
+    let generated = 0;
+    for (;;) {
+      const deleted: number = await ctx.runMutation(
+        internal.factoryReset.deleteGeneratedData,
+        { userId: clerkId }
+      );
+      if (deleted === 0) break;
+      generated += deleted;
+    }
+    counts.generated = generated;
+
+    // Sesiones: no son datos del usuario, se borran igual al eliminarlo.
     counts.sessions = await ctx.runMutation(internal.users.deleteEntities, {
       clerkId,
       entity: "sessions",
     });
 
-    // 4. Card installments → card purchases → cards
-    counts.cardInstallments = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "cardInstallments",
-    });
-    counts.cardPurchases = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "cardPurchases",
-    });
-    counts.cards = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "cards",
-    });
-
-    // 5. Debt payments → debts
-    counts.debtPayments = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "debtPayments",
-    });
-    counts.debts = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "debts",
-    });
-
-    // 6. Transacciones (archivos adjuntos se limpian aparte en Convex Files)
-    counts.transactions = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "transactions",
-    });
-
-    // 7. Presupuestos y categorías
-    counts.budgets = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "budgets",
-    });
-    counts.recurringTransactions = await ctx.runMutation(
-      internal.users.deleteEntities,
-      { clerkId, entity: "recurringTransactions" }
-    );
-    counts.categories = await ctx.runMutation(internal.users.deleteEntities, {
-      clerkId,
-      entity: "categories",
-    });
-
-    // 8. Account shares donde el usuario es invitado
-    counts.accountSharesAsGuest = await ctx.runMutation(
-      internal.users.deleteAccountSharesAsGuest,
-      { clerkId }
-    );
-
-    // 9. Cuentas propias + sus shares
-    counts.accountsAndShares = await ctx.runMutation(
-      internal.users.deleteOwnedAccounts,
-      { clerkId }
-    );
-
-    // 10. Avatar en Convex Storage
+    // Avatar en Convex Storage
     await ctx.runMutation(internal.users.deleteAvatarFileInternal, { clerkId });
 
     // 11. Audit log ANTES de borrar el user doc

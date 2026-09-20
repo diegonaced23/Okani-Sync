@@ -13,6 +13,7 @@ import { InstallAppCard } from "@/components/perfil/InstallAppCard";
 import { NotificationPrefsCard } from "@/components/perfil/NotificationPrefsCard";
 import { SessionsCard } from "@/components/perfil/SessionsCard";
 import { ExportDataCard } from "@/components/perfil/ExportDataCard";
+import { FactoryResetCard } from "@/components/perfil/FactoryResetCard";
 import { SignOutButton } from "@/components/perfil/SignOutButton";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { FIELD_LABEL } from "@/lib/ios";
@@ -66,6 +67,13 @@ export default function PerfilPage() {
         <PasswordCard email={me.email} index={1} />
         <SessionsCard index={2} />
         <ExportDataCard index={3} />
+      </section>
+
+      {/* Sección aparte: es la única acción irreversible del perfil, y ponerla
+          entre los ajustes normales invita a tocarla sin pensar. */}
+      <section className="space-y-3">
+        <span className={FIELD_LABEL}>Zona de peligro</span>
+        <FactoryResetCard index={0} />
       </section>
 
       <SignOutButton />

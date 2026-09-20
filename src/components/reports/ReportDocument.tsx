@@ -4,6 +4,7 @@
 import {
   Document, Page, Text, View, StyleSheet,
 } from "@react-pdf/renderer";
+import { BrandMark } from "@/components/pdf/BrandMark";
 import type { CurrencyTotals, ReportRow } from "@/lib/reports";
 import { txTypeLabel } from "@/lib/reports";
 import { formatCents } from "@/lib/money";
@@ -12,7 +13,7 @@ import { formatDateShort } from "@/lib/utils";
 const styles = StyleSheet.create({
   // El padding inferior deja sitio al pie fijo, que se dibuja sobre la página
   page: { paddingTop: 32, paddingHorizontal: 32, paddingBottom: 46, fontFamily: "Helvetica", fontSize: 9, color: "#1C1917" },
-  header: { marginBottom: 20 },
+  header: { marginBottom: 20, flexDirection: "row", alignItems: "center", gap: 10 },
   title: { fontSize: 18, fontFamily: "Helvetica-Bold", color: "#16A34A" },
   subtitle: { fontSize: 10, color: "#57534E", marginTop: 2 },
   period: { fontSize: 8, color: "#57534E", marginTop: 4 },
@@ -88,9 +89,12 @@ export default function ReportDocument({
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Okany Sync</Text>
-          <Text style={styles.subtitle}>Extracto financiero — {userName}</Text>
-          <Text style={styles.period}>Período: {period}</Text>
+          <BrandMark size={34} />
+          <View>
+            <Text style={styles.title}>Okany Sync</Text>
+            <Text style={styles.subtitle}>Extracto financiero — {userName}</Text>
+            <Text style={styles.period}>Período: {period}</Text>
+          </View>
         </View>
 
         {/* Un extracto recortado que no lo dice es un extracto incorrecto: el aviso

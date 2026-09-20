@@ -154,6 +154,8 @@ export const AUDIT_ACTIONS = {
   USER_UPDATED: "user.updated",
   USER_DELETED: "user.deleted",
   USER_DEACTIVATED: "user.deactivated",
+  /** El propio usuario borró todos sus datos desde perfil (irreversible). */
+  USER_DATA_RESET: "user.data.reset",
   USER_ROLE_CHANGED: "user.role.changed",
   // Cuentas
   ACCOUNT_CREATED: "account.created",
@@ -178,6 +180,16 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 // ─── Configuración de presupuestos ───────────────────────────────────────────
 
 export const DEFAULT_ALERT_THRESHOLD = 80; // % de uso que dispara la alerta
+
+/**
+ * Frase que hay que teclear para restablecer los datos de fábrica.
+ *
+ * No es solo un freno de la interfaz: `convex/actions/factoryReset.ts` la exige
+ * como argumento y rechaza la llamada si no coincide. Una action de Convex es
+ * un endpoint público, así que sin esto la "doble verificación" viviría entera
+ * en el cliente y bastaría una llamada directa para borrarle todo a alguien.
+ */
+export const FACTORY_RESET_PHRASE = "BORRAR MIS DATOS";
 
 // ─── Perfil ──────────────────────────────────────────────────────────────────
 

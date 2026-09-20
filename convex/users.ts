@@ -1,14 +1,13 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import {
-  DEFAULT_CATEGORIES,
-  SYSTEM_CATEGORIES,
   AUDIT_ACTIONS,
   MAX_AVATAR_SIZE_BYTES,
   ALLOWED_AVATAR_MIME_TYPES,
   AVATAR_UPLOAD_THROTTLE_MS,
 } from "../src/lib/constants";
 import { getCurrentUser, getCurrentUserOrNull, assertAdmin } from "./lib/auth";
+import { seedInitialUserData } from "./lib/seedUserData";
 import { authComponent } from "./auth";
 import {
   DEFAULT_NOTIFICATION_PREFS,
@@ -156,52 +155,7 @@ export const ensureExists = mutation({
 
     await ctx.db.patch(invitation._id, { status: "accepted", acceptedAt: now });
 
-    await ctx.db.insert("accounts", {
-      ownerId: identity.subject,
-      name: "Billetera",
-      type: "billetera",
-      balance: 0,
-      initialBalance: 0,
-      currency: "COP",
-      color: "#4ADE80",
-      icon: "wallet",
-      isDefault: true,
-      isShared: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
-      const cat = DEFAULT_CATEGORIES[i];
-      await ctx.db.insert("categories", {
-        userId: identity.subject,
-        name: cat.name,
-        type: cat.type,
-        color: cat.color,
-        icon: cat.icon,
-        isDefault: true,
-        archived: false,
-        order: i,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    for (const sysCat of SYSTEM_CATEGORIES) {
-      await ctx.db.insert("categories", {
-        userId: identity.subject,
-        name: sysCat.name,
-        type: sysCat.type,
-        color: sysCat.color,
-        icon: sysCat.icon,
-        isDefault: false,
-        isSystem: true,
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    await seedInitialUserData(ctx, identity.subject, now);
 
     return userId;
   },
@@ -650,54 +604,7 @@ export const createFromAdmin = internalMutation({
       updatedAt: now,
     });
 
-    // Seed: cuenta Billetera por defecto
-    await ctx.db.insert("accounts", {
-      ownerId: args.clerkId,
-      name: "Billetera",
-      type: "billetera",
-      balance: 0,
-      initialBalance: 0,
-      currency: "COP",
-      color: "#4ADE80",
-      icon: "wallet",
-      isDefault: true,
-      isShared: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Seed: categorías por defecto
-    for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
-      const cat = DEFAULT_CATEGORIES[i];
-      await ctx.db.insert("categories", {
-        userId: args.clerkId,
-        name: cat.name,
-        type: cat.type,
-        color: cat.color,
-        icon: cat.icon,
-        isDefault: true,
-        archived: false,
-        order: i,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    for (const sysCat of SYSTEM_CATEGORIES) {
-      await ctx.db.insert("categories", {
-        userId: args.clerkId,
-        name: sysCat.name,
-        type: sysCat.type,
-        color: sysCat.color,
-        icon: sysCat.icon,
-        isDefault: false,
-        isSystem: true,
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    await seedInitialUserData(ctx, args.clerkId, now);
 
     return userId;
   },
@@ -756,68 +663,21 @@ export const logAuditAction = internalMutation({
  * Elimina todos los documentos de una entidad pertenecientes al usuario.
  * Retorna el número de documentos eliminados.
  */
+/**
+ * Borra las sesiones de un usuario. Antes esto era un `deleteEntities`
+ * genérico sobre 12 tablas, con casts para esquivar el tipado de Convex; hoy
+ * las 15 tablas de datos se recorren desde `convex/lib/userData.ts` y este es
+ * el único caso que quedaba vivo, así que puede ser una consulta normal.
+ */
 export const deleteEntities = internalMutation({
-  args: {
-    clerkId: v.string(),
-    entity: v.union(
-      v.literal("notifications"),
-      v.literal("pushSubscriptions"),
-      v.literal("sessions"),
-      v.literal("cardInstallments"),
-      v.literal("cardPurchases"),
-      v.literal("cards"),
-      v.literal("debtPayments"),
-      v.literal("debts"),
-      v.literal("transactions"),
-      v.literal("budgets"),
-      v.literal("recurringTransactions"),
-      v.literal("categories")
-    ),
-  },
-  handler: async (ctx, { clerkId, entity }) => {
-    // filter() en lugar de withIndex() genérico — scan aceptable para
-    // esta operación de baja frecuencia (borrado de usuario).
-    const docs = await (ctx.db.query(entity as "notifications") as ReturnType<typeof ctx.db.query<"notifications">>)
-      .filter((q) => q.eq(q.field("userId" as "_id"), clerkId as unknown as import("./_generated/dataModel").Id<"notifications">))
-      .collect() as Array<{ _id: import("./_generated/dataModel").Id<"notifications"> }>;
-
+  args: { clerkId: v.string(), entity: v.literal("sessions") },
+  handler: async (ctx, { clerkId }) => {
+    const docs = await ctx.db
+      .query("sessions")
+      .withIndex("by_user", (q) => q.eq("userId", clerkId))
+      .collect();
     await Promise.all(docs.map((d) => ctx.db.delete(d._id)));
     return docs.length;
-  },
-});
-
-export const deleteAccountSharesAsGuest = internalMutation({
-  args: { clerkId: v.string() },
-  handler: async (ctx, { clerkId }) => {
-    const shares = await ctx.db
-      .query("accountShares")
-      .withIndex("by_shared_user", (q) => q.eq("sharedWithUserId", clerkId))
-      .collect();
-    await Promise.all(shares.map((s) => ctx.db.delete(s._id)));
-    return shares.length;
-  },
-});
-
-export const deleteOwnedAccounts = internalMutation({
-  args: { clerkId: v.string() },
-  handler: async (ctx, { clerkId }) => {
-    const accounts = await ctx.db
-      .query("accounts")
-      .withIndex("by_owner", (q) => q.eq("ownerId", clerkId))
-      .collect();
-
-    let count = accounts.length;
-    for (const account of accounts) {
-      // Eliminar shares de cada cuenta
-      const shares = await ctx.db
-        .query("accountShares")
-        .withIndex("by_account", (q) => q.eq("accountId", account._id))
-        .collect();
-      await Promise.all(shares.map((s) => ctx.db.delete(s._id)));
-      count += shares.length;
-      await ctx.db.delete(account._id);
-    }
-    return count;
   },
 });
 
