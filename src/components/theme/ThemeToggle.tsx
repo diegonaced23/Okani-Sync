@@ -2,10 +2,13 @@
 
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { cn } from "@/lib/utils";
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
+  const updateTheme = useMutation(api.users.updateTheme);
   const [mounted, setMounted] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
@@ -13,11 +16,25 @@ export function ThemeToggle({ className }: { className?: string }) {
 
   const isDark = theme === "dark";
 
+  /**
+   * Guarda la elección en la cuenta, igual que hace la tarjeta del perfil.
+   *
+   * Antes solo llamaba a `setTheme`, que escribe en `localStorage`: alternar aquí
+   * dejaba el campo `users.theme` con un valor viejo, así que la cuenta recordaba
+   * un tema distinto del que el usuario estaba viendo.
+   */
+  function choose(next: "light" | "dark") {
+    setTheme(next);
+    // La preferencia de interfaz no merece una alerta si falla: el tema ya cambió
+    // en el dispositivo y se reintentará en el siguiente cambio.
+    updateTheme({ theme: next }).catch(() => {});
+  }
+
   return (
     <button
       type="button"
       aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={() => choose(isDark ? "light" : "dark")}
       className={cn("touch-hit flex-shrink-0", className)}
       style={{
         width: 56, height: 30, borderRadius: 9999,

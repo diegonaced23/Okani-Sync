@@ -179,7 +179,14 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 
 export const DEFAULT_ALERT_THRESHOLD = 80; // % de uso que dispara la alerta
 
-// ─── Avatar de perfil ────────────────────────────────────────────────────────
+// ─── Perfil ──────────────────────────────────────────────────────────────────
+
+/**
+ * Tope del nombre visible. `users.updateName` solo comprobaba que no estuviera
+ * vacío, así que una cadena de miles de caracteres se guardaba y luego rompía la
+ * cabecera, la barra lateral y cualquier fila que lo muestre.
+ */
+export const MAX_USER_NAME_LENGTH = 60;
 
 export const MAX_AVATAR_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 

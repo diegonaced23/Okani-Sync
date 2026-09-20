@@ -2,19 +2,20 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { formatRelative } from "@/lib/utils";
-import { Smartphone, Monitor } from "lucide-react";
+import { Smartphone, Monitor, MonitorSmartphone } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { parseUserAgent, formatDevice } from "@/lib/userAgent";
 import { SESSIONS_CHANGED_EVENT } from "@/lib/sessionEvents";
+import { haptic, tint } from "@/lib/ios";
+import { SettingsCard } from "./SettingsCard";
 
 type SessionRow = NonNullable<
   Awaited<ReturnType<typeof authClient.listSessions>>["data"]
 >[number];
 
-export function SessionsCard() {
+export function SessionsCard({ index }: { index?: number }) {
   const { data: authSession } = authClient.useSession();
 
   const [revokingSession, setRevokingSession] = useState<string | null>(null);
@@ -63,10 +64,7 @@ export function SessionsCard() {
   }
 
   async function handleRevokeAllOther() {
-    if ((sessions?.length ?? 0) <= 1) {
-      toast.info("No hay otras sesiones activas");
-      return;
-    }
+    haptic();
     try {
       const { error } = await authClient.revokeOtherSessions();
       if (error) {
@@ -88,67 +86,94 @@ export function SessionsCard() {
       )
     : null;
 
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Sesiones activas ({sortedSessions?.length ?? 0})
-        </h2>
-        <button
-          type="button"
-          onClick={handleRevokeAllOther}
-          className="touch-hit text-xs text-danger hover:underline"
-        >
-          Cerrar otras sesiones
-        </button>
-      </div>
+  const others = (sortedSessions?.length ?? 0) - 1;
 
-      <div className="rounded-xl bg-card border border-border overflow-hidden">
-        {!sortedSessions ? (
-          <div className="p-4 space-y-2">
-            {[1, 2].map((i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
-          </div>
-        ) : sortedSessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">Sin sesiones activas.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {sortedSessions.map((session, idx) => {
-              const device = parseUserAgent(session.userAgent);
-              const DeviceIcon = device.isMobile ? Smartphone : Monitor;
-              return (
-                <li key={session.id} className="flex items-center gap-3 px-4 py-3">
-                  <DeviceIcon className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden="true" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-sm text-foreground truncate">{formatDevice(device)}</p>
-                      {idx === 0 && (
-                        <Badge variant="secondary" className="text-[10px]">Actual</Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {formatRelative(new Date(session.updatedAt).getTime())}
-                      {/* `ipAddress` puede venir vacío: Better Auth lo deriva de cabeceras
-                          tipo x-forwarded-for y no está verificado que Convex las reenvíe.
-                          Cuando falta no se escribe nada, en vez de un "IP desconocida". */}
-                      {session.ipAddress ? ` · ${session.ipAddress}` : ""}
+  return (
+    <SettingsCard
+      icon={MonitorSmartphone}
+      tone="var(--os-cyan)"
+      title={`Sesiones activas${sortedSessions ? ` (${sortedSessions.length})` : ""}`}
+      index={index}
+      description="Cada navegador o dispositivo donde tu cuenta sigue abierta. Si ves uno que no reconoces, ciérralo y cambia la contraseña."
+      badge={
+        // Antes el botón estaba siempre activo y respondía con un aviso cuando no
+        // había otras sesiones: ahora directamente no se ofrece.
+        others > 0 ? (
+          <button
+            type="button"
+            onClick={handleRevokeAllOther}
+            className="touch-hit shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold text-danger transition-colors active:bg-danger/10"
+          >
+            Cerrar las otras
+          </button>
+        ) : undefined
+      }
+    >
+      {!sortedSessions ? (
+        <div className="space-y-1.5">
+          {[1, 2].map((i) => <Skeleton key={i} className="h-[58px] rounded-[16px]" />)}
+        </div>
+      ) : sortedSessions.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted-foreground">Sin sesiones activas.</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {sortedSessions.map((session, idx) => {
+            const device = parseUserAgent(session.userAgent);
+            const DeviceIcon = device.isMobile ? Smartphone : Monitor;
+            const isCurrent = idx === 0;
+            return (
+              <li
+                key={session.id}
+                className="flex items-center gap-3 rounded-[16px] bg-[color-mix(in_oklch,var(--muted)_40%,transparent)] px-3 py-2.5"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  style={
+                    isCurrent
+                      ? { background: tint("var(--os-lime)", 18), color: "var(--os-lime-text)" }
+                      : { background: "color-mix(in oklch, var(--muted-foreground) 12%, transparent)", color: "var(--muted-foreground)" }
+                  }
+                >
+                  <DeviceIcon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-[13px] font-semibold text-foreground">
+                      {formatDevice(device)}
                     </p>
+                    {isCurrent && (
+                      <span
+                        className="shrink-0 rounded-full px-1.5 text-[10px] font-extrabold"
+                        style={{ background: tint("var(--os-lime)", 20), color: "var(--os-lime-text)" }}
+                      >
+                        Este
+                      </span>
+                    )}
                   </div>
-                  {idx !== 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRevokeSession(session.token)}
-                      disabled={revokingSession === session.token}
-                      className="touch-hit text-xs text-danger hover:underline disabled:opacity-50 shrink-0"
-                    >
-                      {revokingSession === session.token ? "Cerrando…" : "Cerrar"}
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    </section>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {formatRelative(new Date(session.updatedAt).getTime())}
+                    {/* `ipAddress` puede venir vacío: Better Auth lo deriva de cabeceras
+                        tipo x-forwarded-for y no está verificado que Convex las reenvíe.
+                        Cuando falta no se escribe nada, en vez de un "IP desconocida". */}
+                    {session.ipAddress ? ` · ${session.ipAddress}` : ""}
+                  </p>
+                </div>
+                {!isCurrent && (
+                  <button
+                    type="button"
+                    onClick={() => { haptic(); handleRevokeSession(session.token); }}
+                    disabled={revokingSession === session.token}
+                    className="touch-hit shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold text-danger transition-colors active:bg-danger/10 disabled:opacity-50"
+                  >
+                    {revokingSession === session.token ? "Cerrando…" : "Cerrar"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </SettingsCard>
   );
 }

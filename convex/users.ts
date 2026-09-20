@@ -228,11 +228,19 @@ export const updateTheme = mutation({
 });
 
 /** Actualiza el nombre del usuario. La app es la única fuente de verdad para el nombre (no Better Auth). */
+/** Espejo de MAX_USER_NAME_LENGTH en src/lib/constants.ts — mantener ambos iguales. */
+const MAX_NAME_LENGTH = 60;
+
 export const updateName = mutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
     const trimmed = name.trim();
     if (!trimmed) throw new Error("El nombre no puede estar vacío");
+    // Sin tope, una cadena de miles de caracteres se guardaba y rompía la cabecera,
+    // la barra lateral y cualquier fila que muestre el nombre.
+    if (trimmed.length > MAX_NAME_LENGTH) {
+      throw new Error(`El nombre no puede pasar de ${MAX_NAME_LENGTH} caracteres`);
+    }
     const user = await getCurrentUser(ctx);
     await ctx.db.patch(user._id, { name: trimmed, updatedAt: Date.now() });
   },

@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { KeyRound, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { KeyRound, Loader2, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,10 +11,12 @@ import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { AUDIT_ACTIONS } from "@/lib/constants";
 import { SESSIONS_CHANGED_EVENT } from "@/lib/sessionEvents";
+import { FIELD_LABEL, haptic } from "@/lib/ios";
+import { SettingsCard } from "./SettingsCard";
 
 const MIN_LENGTH = 8;
 
-export function PasswordCard({ email }: { email: string }) {
+export function PasswordCard({ email, index }: { email: string; index?: number }) {
   const logSelfAudit = useMutation(api.users.logSelfAudit);
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [current, setCurrent] = useState("");
@@ -122,6 +123,7 @@ export function PasswordCard({ email }: { email: string }) {
   }
 
   async function handleCreate() {
+    haptic();
     setLoading(true);
     try {
       const { error } = await authClient.requestPasswordReset({
@@ -141,55 +143,74 @@ export function PasswordCard({ email }: { email: string }) {
   }
 
   if (hasPassword === null) {
-    return <Skeleton className="h-32 rounded-xl" />;
+    // Medida sobre el caso con contraseña: padding 32 + cabecera 32 + margen 14 +
+    // tres campos de 56 + la nota 21 + separaciones 36 + botón 44 + pie 37. El caso
+    // «crear contraseña» es bastante más corto y el esqueleto no puede medir los dos,
+    // pero es el menos frecuente: solo lo ven las cuentas que aún entran por enlace.
+    return <Skeleton className="h-[384px] rounded-[24px]" />;
   }
 
-  return (
-    <div className="rounded-xl bg-card border border-border p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-        <h2 className="text-sm font-semibold text-foreground">Contraseña</h2>
-      </div>
+  const submitLabel = loading ? "Guardando…" : "Cambiar contraseña";
 
+  return (
+    <SettingsCard
+      icon={Lock}
+      tone="var(--os-violet)"
+      title="Contraseña"
+      index={index}
+      description={
+        hasPassword
+          ? undefined
+          : "Entras con enlace mágico. Puedes definir una contraseña para iniciar sesión sin esperar el correo cada vez."
+      }
+      footnote={hasPassword ? "Al cambiarla se cerrarán tus sesiones en los otros dispositivos." : undefined}
+    >
       {hasPassword ? (
         <form onSubmit={handleChange} className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="current-password">Contraseña actual</Label>
+            <Label htmlFor="current-password" className={FIELD_LABEL}>Contraseña actual</Label>
             <Input id="current-password" type="password" autoComplete="current-password"
               required value={current} onChange={(e) => setCurrent(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="new-password">Contraseña nueva</Label>
+            <Label htmlFor="new-password" className={FIELD_LABEL}>Contraseña nueva</Label>
             <Input id="new-password" type="password" autoComplete="new-password"
               required minLength={MIN_LENGTH} value={next}
               onChange={(e) => setNext(e.target.value)} />
+            <p className="px-1 text-[11px] text-muted-foreground">
+              Mínimo {MIN_LENGTH} caracteres.
+            </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="confirm-password">Confirmar contraseña nueva</Label>
+            <Label htmlFor="confirm-password" className={FIELD_LABEL}>Confirmar contraseña nueva</Label>
             <Input id="confirm-password" type="password" autoComplete="new-password"
               required minLength={MIN_LENGTH} value={confirm}
               onChange={(e) => setConfirm(e.target.value)} />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Al cambiarla se cerrarán tus sesiones en otros dispositivos.
-          </p>
-          <Button type="submit" className="gap-2" disabled={loading}>
-            <KeyRound className="h-4 w-4" aria-hidden="true" />
-            {loading ? "Guardando…" : "Cambiar contraseña"}
-          </Button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="touch-hit flex h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-violet-400 to-indigo-500 text-[14px] font-bold text-white shadow-[0_8px_20px_-10px_rgb(129_140_248/0.8)] transition-transform active:scale-[0.98] disabled:opacity-60"
+          >
+            {loading
+              ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              : <KeyRound className="h-4 w-4" aria-hidden="true" />}
+            {submitLabel}
+          </button>
         </form>
       ) : (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Entras con enlace mágico. Puedes definir una contraseña para iniciar
-            sesión sin esperar el correo cada vez.
-          </p>
-          <Button variant="outline" className="gap-2" onClick={handleCreate} disabled={loading}>
-            <KeyRound className="h-4 w-4" aria-hidden="true" />
-            {loading ? "Enviando…" : "Crear contraseña"}
-          </Button>
-        </div>
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={loading}
+          className="touch-hit flex h-11 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-violet-400 to-indigo-500 text-[14px] font-bold text-white shadow-[0_8px_20px_-10px_rgb(129_140_248/0.8)] transition-transform active:scale-[0.98] disabled:opacity-60"
+        >
+          {loading
+            ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            : <KeyRound className="h-4 w-4" aria-hidden="true" />}
+          {loading ? "Enviando…" : "Crear contraseña"}
+        </button>
       )}
-    </div>
+    </SettingsCard>
   );
 }

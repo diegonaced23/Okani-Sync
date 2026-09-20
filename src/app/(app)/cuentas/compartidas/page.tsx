@@ -68,11 +68,17 @@ export default function CompartidasPage() {
   return (
     <PageContainer className="space-y-6">
       <div className="flex items-center gap-3">
+        {/* Vuelve por donde se vino. Antes empujaba a `/cuentas`, que es un redirect a
+            productos, así que quien llegara desde «Más» acababa en otro sitio en vez de
+            volver. Sin historial —la página abierta por URL— cae en productos. */}
         <button
           type="button"
-          onClick={() => router.push("/cuentas")}
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) router.back();
+            else router.push("/productos?tab=cuentas");
+          }}
           className="touch-hit p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
-          aria-label="Volver a cuentas"
+          aria-label="Volver"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>

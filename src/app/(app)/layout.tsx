@@ -8,6 +8,7 @@ import { PushSubscriptionBanner } from "@/components/notifications/PushSubscript
 import { NewTransactionModalProvider } from "@/contexts/new-transaction-modal";
 import { NewTransactionModal } from "@/components/transactions/NewTransactionModal";
 import { AppDataProvider } from "@/contexts/app-data";
+import { ThemeSync } from "@/components/theme/ThemeSync";
 
 export default async function AppLayout({
   children,
@@ -29,6 +30,8 @@ export default async function AppLayout({
           </a>
           {/* Aurora de fondo — efecto sutil de profundidad */}
           <div aria-hidden className="os-aurora" />
+          {/* Aplica el tema guardado en la cuenta en un dispositivo que aún no eligió */}
+          <ThemeSync />
           <Sidebar />
 
           {/* Área principal — min-w-0 evita que el flex item se expanda más allá del viewport */}

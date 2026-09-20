@@ -1,9 +1,11 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import Link from "next/link";
+import { api } from "../../../convex/_generated/api";
 
 interface HeaderProps {
   title?: string;
@@ -29,11 +31,17 @@ const BrandLogo = () => (
 );
 
 export function Header({ title }: HeaderProps) {
+  // El logo llevaba siempre a /dashboard, mientras el de la barra lateral sí mira el
+  // rol (Sidebar.tsx). Un administrador que lo tocaba en móvil iba a una ruta que
+  // AuthGuard le prohíbe y volvía rebotado a /admin.
+  const me = useQuery(api.users.getMe);
+  const home = me?.role === "admin" ? "/admin" : "/dashboard";
+
   return (
     <header className="sticky top-0 z-40 flex h-[calc(58px+env(safe-area-inset-top))] pt-safe items-center gap-3 px-4 lg:hidden"
       style={{ background: "color-mix(in oklch, var(--background) 85%, transparent)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", borderBottom: "1px solid var(--border)" }}
     >
-      <Link href="/dashboard" aria-label="Okany Sync — Inicio" className="touch-hit flex items-center gap-2 mr-auto">
+      <Link href={home} aria-label="Okany Sync — Inicio" className="touch-hit flex items-center gap-2 mr-auto">
         <BrandLogo />
         <span style={{ fontWeight: 800, fontSize: 17, letterSpacing: "-0.025em", lineHeight: 1 }}>
           Okany<span style={{ opacity: 0.45, fontWeight: 500 }}>·sync</span>
