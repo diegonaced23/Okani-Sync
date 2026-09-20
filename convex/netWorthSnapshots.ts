@@ -43,11 +43,15 @@ async function captureForUser(
 
   const totalAssets = allAccounts.reduce((s, a) => s + conv(a.balance, a.currency), 0);
 
-  // Tarjetas no archivadas
-  const cards = await ctx.db
-    .query("cards")
-    .withIndex("by_user_archived", (q) => q.eq("userId", userId).eq("archived", false))
-    .collect();
+  // Tarjetas no archivadas. El filtro `includeInBalance !== false` es el mismo que
+  // aplica `accounts.netWorth`: sin él el histórico contradecía la cifra en vivo
+  // del dashboard para quien excluye algo, justo lo que este archivo promete no hacer.
+  const cards = (
+    await ctx.db
+      .query("cards")
+      .withIndex("by_user_archived", (q) => q.eq("userId", userId).eq("archived", false))
+      .collect()
+  ).filter((c) => c.includeInBalance !== false);
   const totalCardDebt = cards.reduce((s, c) => s + conv(c.currentBalance, c.currency), 0);
 
   // Deudas activas + vencidas
@@ -55,18 +59,18 @@ async function captureForUser(
     ctx.db.query("debts").withIndex("by_user_status", (q) => q.eq("userId", userId).eq("status", "activa")).collect(),
     ctx.db.query("debts").withIndex("by_user_status", (q) => q.eq("userId", userId).eq("status", "vencida")).collect(),
   ]);
-  const totalDebt = [...activeDebts, ...overdueDebts].reduce(
-    (s, d) => s + conv(d.currentBalance, d.currency), 0
-  );
+  const totalDebt = [...activeDebts, ...overdueDebts]
+    .filter((d) => d.includeInBalance !== false)
+    .reduce((s, d) => s + conv(d.currentBalance, d.currency), 0);
 
   // Préstamos activos + vencidos (activo: dinero que nos deben)
   const [activeLoans, overdueLoans] = await Promise.all([
     ctx.db.query("loans").withIndex("by_user_status", (q) => q.eq("userId", userId).eq("status", "activa")).collect(),
     ctx.db.query("loans").withIndex("by_user_status", (q) => q.eq("userId", userId).eq("status", "vencida")).collect(),
   ]);
-  const totalLoansReceivable = [...activeLoans, ...overdueLoans].reduce(
-    (s, l) => s + conv(l.currentBalance, l.currency), 0
-  );
+  const totalLoansReceivable = [...activeLoans, ...overdueLoans]
+    .filter((l) => l.includeInBalance !== false)
+    .reduce((s, l) => s + conv(l.currentBalance, l.currency), 0);
 
   const netWorth = totalAssets + totalLoansReceivable - totalCardDebt - totalDebt;
 

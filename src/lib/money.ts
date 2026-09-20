@@ -321,6 +321,31 @@ export function currentMonth(): string {
   return toMonthString(Date.now());
 }
 
+/**
+ * Desplaza un mes "YYYY-MM" en `delta` meses, cruzando el año.
+ *
+ * Vivía en `month-stepper.tsx`, que es un componente de cliente con animaciones: para
+ * usar esta aritmética desde otro sitio había que importar el selector entero, y no se
+ * podía probar en el entorno de node de los tests. El componente la sigue reexportando
+ * para no romper a quien la importa desde allí.
+ */
+export function shiftMonth(month: string, delta: number): string {
+  const [year, mo] = month.split("-").map(Number);
+  const d = new Date(year, mo - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Los `count` meses que terminan en `anchor`, en orden ascendente.
+ *
+ * Existe para los horizontes que elige el usuario: `lastNMonths(n)` lee la fecha del
+ * sistema, así que llamarlo en el render con una `n` que cambia rompería la pureza del
+ * componente. Aquí el ancla se fija una vez y el resto es aritmética sobre una cadena.
+ */
+export function monthsEndingAt(anchor: string, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => shiftMonth(anchor, -(count - 1 - i)));
+}
+
 /** Formatea un string "YYYY-MM" como "Abril 2026". */
 export function formatMonth(yearMonth: string): string {
   const [year, month] = yearMonth.split("-").map(Number);

@@ -4,14 +4,12 @@ import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { EASE_OUT_EXPO, GLASS_SURFACE, haptic } from "@/lib/ios";
-import { currentMonth, formatMonth } from "@/lib/money";
+import { currentMonth, formatMonth, shiftMonth } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
-export function shiftMonth(month: string, delta: number): string {
-  const [year, mo] = month.split("-").map(Number);
-  const d = new Date(year, mo - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+// La aritmética vive en @/lib/money para poder usarla y probarla sin arrastrar este
+// componente. Se reexporta porque varias páginas la importan desde aquí.
+export { shiftMonth };
 
 /**
  * Selector de mes en vidrio. El nombre entra deslizándose en la dirección del

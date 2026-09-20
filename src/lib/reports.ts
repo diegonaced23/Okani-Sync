@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import { TX_TYPE_CONFIG } from "@/components/transactions/tx-type-config";
 import { formatCents } from "@/lib/money";
 import { formatDateShort } from "@/lib/utils";
 
@@ -11,17 +12,19 @@ export interface ReportRow {
   currency: string;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  ingreso:            "Ingreso",
-  gasto:              "Gasto",
-  transferencia:      "Transferencia",
-  pago_tarjeta:       "Pago tarjeta",
-  pago_deuda:         "Pago deuda",
-  gasto_tarjeta:      "Gasto tarjeta",
-  ajuste:             "Ajuste saldo",
-  prestamo_otorgado:  "Préstamo otorgado",
-  prestamo_cobrado:   "Cobro de préstamo",
-};
+/**
+ * Etiqueta legible de cada tipo de movimiento, tomada de `TX_TYPE_CONFIG`, que ya
+ * se declara fuente única de verdad y es la que el usuario ve en cada fila.
+ *
+ * Había cuatro copias de esta tabla: dos idénticas en este archivo, una de cinco
+ * entradas en el PDF —que imprimía `gasto_tarjeta` en crudo— y la de
+ * `TX_TYPE_CONFIG`, que además no coincidía: «Gasto con tarjeta» en pantalla frente
+ * a «Gasto tarjeta» en el CSV del mismo mes, y «Reasignación bancaria» frente a
+ * «Ajuste saldo». Ahora el archivo exportado dice lo mismo que la pantalla.
+ */
+export function txTypeLabel(type: string): string {
+  return TX_TYPE_CONFIG[type]?.label ?? type;
+}
 
 // ─── CSV ───────────────────────────────────────────────────────────────────────
 
@@ -30,7 +33,7 @@ export function generateCsv(rows: ReportRow[]): string {
     Fecha: formatDateShort(r.date),
     Descripción: r.description,
     Categoría: r.category,
-    Tipo: TYPE_LABELS[r.type] ?? r.type,
+    Tipo: txTypeLabel(r.type),
     Monto: formatCents(r.amount, r.currency),
     Moneda: r.currency,
   }));
@@ -50,18 +53,6 @@ export function downloadCsv(content: string, filename: string) {
 
 // ─── Libro completo de movimientos (formato contable) ─────────────────────────
 
-const TX_TYPE_LABELS: Record<string, string> = {
-  ingreso:           "Ingreso",
-  gasto:             "Gasto",
-  transferencia:     "Transferencia",
-  pago_tarjeta:      "Pago tarjeta",
-  pago_deuda:        "Pago deuda",
-  gasto_tarjeta:     "Gasto tarjeta",
-  ajuste:            "Ajuste saldo",
-  prestamo_otorgado: "Préstamo otorgado",
-  prestamo_cobrado:  "Cobro de préstamo",
-};
-
 export interface LedgerTx {
   _id: string;
   date: number;
@@ -76,6 +67,17 @@ export interface LedgerTx {
   notes?: string;
 }
 
+/**
+ * Totales de una sola moneda. Un extracto no se convierte a la tasa de hoy —es el
+ * registro de lo que pasó, no una valuación—, así que los totales van agrupados:
+ * antes se sumaban centavos de monedas distintas y se etiquetaban con la del perfil.
+ */
+export interface CurrencyTotals {
+  currency: string;
+  income: number;
+  expense: number;
+}
+
 export interface LedgerMaps {
   accounts: Record<string, string>;                         // id → name
   cards:    Record<string, { name: string; lastFour: string }>;
@@ -85,30 +87,40 @@ export interface LedgerMaps {
 /**
  * Genera el CSV del libro completo de movimientos en formato contable.
  *
- * Columnas: Fecha · Descripción · Tipo · Debe · Haber · Saldo neto acum. · Fuente · Categoría · Moneda · Notas
+ * Columnas: Fecha · Descripción · Tipo · Debe · Haber · Saldo acum. (moneda) · Fuente · Categoría · Moneda · Notas
  *
  * Debe/Haber:
- * - Ingresos y transferencias entrantes → Haber (crédito)
- * - Gastos, pagos y transferencias salientes → Debe (débito)
- * - Ajustes → Haber (no hay forma de distinguir signo del monto; el usuario lo interpreta)
+ * - Ingresos, cobros de préstamo y transferencias entrantes → Haber (crédito)
+ * - Gastos, pagos, préstamos otorgados y transferencias salientes → Debe (débito)
  * - `gasto_tarjeta` → Debe (gasto comprometido, sin salida inmediata de efectivo)
+ * - Ajustes → ninguna de las dos. `reassignBalance` guarda `Math.abs(delta)`, así
+ *   que el signo de la reasignación no está en el registro: clasificarla sería
+ *   adivinar, y adivinar mal desplaza todo el saldo acumulado desde esa fila.
+ *   La fila aparece con su tipo para que se vea que ocurrió.
  *
- * El saldo neto acumulado es la suma corriente de (Haber − Debe). En extractos
- * multi-moneda los montos se suman sin conversión — el campo "Moneda" permite
- * que el usuario aplique sus propias tasas en una hoja de cálculo.
+ * El saldo acumulado corre **por moneda**. Antes era uno solo para todo el libro,
+ * de modo que en una cuenta en dólares y otra en pesos la columna sumaba unidades
+ * distintas y no significaba nada en ninguna fila.
+ *
+ * Arranca en cero en la primera fila: es el neto del período exportado, no el saldo
+ * de la cuenta. Si el período llegó al tope de la consulta, la primera fila no es el
+ * principio del mes y la apertura no representa nada — por eso esos archivos se
+ * descargan marcados como parciales.
  */
 export function generateFullLedgerCsv(txs: LedgerTx[], maps: LedgerMaps): string {
-  let runningBalance = 0;
+  const runningByCurrency: Record<string, number> = {};
 
   const data = txs.map((tx) => {
+    const isAdjustment = tx.type === "ajuste";
     const isCredit =
       tx.type === "ingreso" ||
       tx.type === "prestamo_cobrado" ||
       (tx.type === "transferencia" && tx.transferDirection === "in");
 
-    const debe  = isCredit ? 0 : tx.amount;
-    const haber = isCredit ? tx.amount : 0;
-    runningBalance += haber - debe;
+    const debe  = isAdjustment || isCredit ? 0 : tx.amount;
+    const haber = isAdjustment ? 0 : isCredit ? tx.amount : 0;
+    const running = (runningByCurrency[tx.currency] ?? 0) + haber - debe;
+    runningByCurrency[tx.currency] = running;
 
     const accountName = tx.accountId ? (maps.accounts[tx.accountId] ?? "—") : undefined;
     const cardName    = tx.cardId
@@ -118,10 +130,10 @@ export function generateFullLedgerCsv(txs: LedgerTx[], maps: LedgerMaps): string
     return {
       Fecha:            formatDateShort(tx.date),
       Descripción:      tx.description,
-      Tipo:             TX_TYPE_LABELS[tx.type] ?? tx.type,
+      Tipo:             txTypeLabel(tx.type),
       Debe:             debe > 0 ? (debe / 100).toFixed(2) : "",
       Haber:            haber > 0 ? (haber / 100).toFixed(2) : "",
-      "Saldo neto acum.": (runningBalance / 100).toFixed(2),
+      "Saldo acum.":    (running / 100).toFixed(2),
       Fuente:           source,
       Categoría:        tx.categoryId ? (maps.cats[tx.categoryId] ?? "Sin categoría") : "—",
       Moneda:           tx.currency,

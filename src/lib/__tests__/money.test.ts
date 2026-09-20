@@ -8,6 +8,8 @@ import {
   toMonthString,
   currentMonth,
   addMonthsClamped,
+  shiftMonth,
+  monthsEndingAt,
 } from "../money";
 
 // ─── toCents / fromCents ─────────────────────────────────────────────────────
@@ -181,5 +183,37 @@ describe("addMonthsClamped", () => {
   it("con 0 meses devuelve el mismo instante", () => {
     const ts = new Date(2026, 5, 10, 12).getTime();
     expect(addMonthsClamped(ts, 0)).toBe(ts);
+  });
+});
+
+describe("shiftMonth", () => {
+  it("retrocede cruzando el año", () => {
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+    expect(shiftMonth("2026-02", -14)).toBe("2024-12");
+  });
+
+  it("avanza cruzando el año", () => {
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+  });
+
+  it("devuelve el mismo mes con delta cero", () => {
+    expect(shiftMonth("2026-09", 0)).toBe("2026-09");
+  });
+});
+
+describe("monthsEndingAt", () => {
+  it("termina en el ancla y va en orden ascendente", () => {
+    expect(monthsEndingAt("2026-03", 4)).toEqual(["2025-12", "2026-01", "2026-02", "2026-03"]);
+  });
+
+  it("con un solo mes devuelve el ancla", () => {
+    expect(monthsEndingAt("2026-09", 1)).toEqual(["2026-09"]);
+  });
+
+  it("devuelve exactamente la cantidad pedida", () => {
+    // Un off-by-one aquí pediría trece meses a una query que topa en doce y el mes
+    // más antiguo se caería en silencio
+    expect(monthsEndingAt("2026-09", 12)).toHaveLength(12);
+    expect(monthsEndingAt("2026-09", 12)[0]).toBe("2025-10");
   });
 });

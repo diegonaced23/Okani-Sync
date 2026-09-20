@@ -49,6 +49,7 @@ import type * as lib_notify from "../lib/notify.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_rateLimit from "../lib/rateLimit.js";
 import type * as lib_transactionEffects from "../lib/transactionEffects.js";
+import type * as lib_txClassification from "../lib/txClassification.js";
 import type * as lib_utils from "../lib/utils.js";
 import type * as loanRepayments from "../loanRepayments.js";
 import type * as loans from "../loans.js";
@@ -57,6 +58,7 @@ import type * as netWorthSnapshots from "../netWorthSnapshots.js";
 import type * as notifications from "../notifications.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as recurringTransactions from "../recurringTransactions.js";
+import type * as reports from "../reports.js";
 import type * as transactions from "../transactions.js";
 import type * as users from "../users.js";
 
@@ -108,6 +110,7 @@ declare const fullApi: ApiFromModules<{
   "lib/permissions": typeof lib_permissions;
   "lib/rateLimit": typeof lib_rateLimit;
   "lib/transactionEffects": typeof lib_transactionEffects;
+  "lib/txClassification": typeof lib_txClassification;
   "lib/utils": typeof lib_utils;
   loanRepayments: typeof loanRepayments;
   loans: typeof loans;
@@ -116,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   pushSubscriptions: typeof pushSubscriptions;
   recurringTransactions: typeof recurringTransactions;
+  reports: typeof reports;
   transactions: typeof transactions;
   users: typeof users;
 }>;

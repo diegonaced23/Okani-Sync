@@ -15,6 +15,11 @@ import {
   deleteTransactionWithEffects,
 } from "./lib/transactionEffects";
 import { getUserRateMap, convertAmount } from "./lib/money";
+import {
+  ACCRUAL_EXPENSE_TYPES,
+  isAccrualExpense,
+  isAccrualIncome,
+} from "./lib/txClassification";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -36,28 +41,10 @@ export const listByMonth = query({
   },
 });
 
-/**
- * Exportación completa del libro de movimientos para uno o varios meses.
- * Devuelve TODOS los tipos (incluyendo gasto_tarjeta, transferencias y ajustes),
- * ordenados por fecha ascendente — listos para `generateFullLedgerCsv`.
- * Máximo 12 meses para evitar respuestas demasiado grandes.
- */
-export const listForExport = query({
-  args: { months: v.array(v.string()) },
-  handler: async (ctx, { months }) => {
-    const clerkId = await getCurrentUserId(ctx);
-    const safeMonths = months.slice(0, 12);
-    const byMonth = await Promise.all(
-      safeMonths.map((month) =>
-        ctx.db
-          .query("transactions")
-          .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", month))
-          .collect()
-      )
-    );
-    return byMonth.flat().sort((a, b) => a.date - b.date);
-  },
-});
+// `listForExport` vivía aquí y la reemplazó `reports.statement`: devolvía el mismo
+// mes que `listByMonth` pero con .collect() sin tope frente al techo de 300, así que
+// el extracto y el libro contable de un mismo período podían no coincidir. Ahora la
+// pantalla de reportes lee una sola query, que además avisa cuando trunca.
 
 export const listByAccountMonth = query({
   args: { accountId: v.id("accounts"), month: v.string() },
@@ -232,29 +219,19 @@ export const spendingByCategory = query({
       return hasRate ? converted : 0;
     }
 
-    // Gastos del mes en base devengo — misma definición que monthlySummary.gastos y
-    // financialHealthMetrics: gasto directo de cuenta + gasto_tarjeta (compra a crédito,
-    // se cuenta en el momento de la compra, no cuando se paga la tarjeta).
-    const [gastos, gastosTarjeta, pagosDeuda] = await Promise.all([
-      ctx.db
-        .query("transactions")
-        .withIndex("by_user_type_month", (q) =>
-          q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
-        )
-        .collect(),
-      ctx.db
-        .query("transactions")
-        .withIndex("by_user_type_month", (q) =>
-          q.eq("userId", user.clerkId).eq("type", "gasto_tarjeta").eq("month", month)
-        )
-        .collect(),
-      ctx.db
-        .query("transactions")
-        .withIndex("by_user_type_month", (q) =>
-          q.eq("userId", user.clerkId).eq("type", "pago_deuda").eq("month", month)
-        )
-        .collect(),
-    ]);
+    // Gastos del mes en base devengo. La lista de tipos ya no se escribe aquí:
+    // sale de ACCRUAL_EXPENSE_TYPES, que es la misma que usan monthlySummary y
+    // financialHealthMetrics, para que no puedan separarse con el tiempo.
+    const [gastos, gastosTarjeta, pagosDeuda] = await Promise.all(
+      ACCRUAL_EXPENSE_TYPES.map((type) =>
+        ctx.db
+          .query("transactions")
+          .withIndex("by_user_type_month", (q) =>
+            q.eq("userId", user.clerkId).eq("type", type).eq("month", month)
+          )
+          .collect()
+      )
+    );
 
     const grouped = new Map<string, { amount: number; categoryId: string | null }>();
     for (const tx of [...gastos, ...gastosTarjeta]) {
@@ -312,30 +289,19 @@ export const spendingBySource = query({
       return hasRate ? converted : 0;
     }
 
-    // Misma definición base devengo que spendingByCategory/monthlySummary: gasto directo +
-    // gasto_tarjeta (compra a crédito, fuente real es la tarjeta) + pago_deuda (fuente: cuenta).
-    const [gastos, gastosTarjeta, pagosDeuda] = await Promise.all([
-      ctx.db
-        .query("transactions")
-        .withIndex("by_user_type_month", (q) =>
-          q.eq("userId", user.clerkId).eq("type", "gasto").eq("month", month)
-        )
-        .collect(),
-      // Compras a crédito: la fuente real es la tarjeta (no descuentan cuenta)
-      ctx.db
-        .query("transactions")
-        .withIndex("by_user_type_month", (q) =>
-          q.eq("userId", user.clerkId).eq("type", "gasto_tarjeta").eq("month", month)
-        )
-        .collect(),
-      // Pagos de deuda: el efectivo sale de la cuenta (accountId)
-      ctx.db
-        .query("transactions")
-        .withIndex("by_user_type_month", (q) =>
-          q.eq("userId", user.clerkId).eq("type", "pago_deuda").eq("month", month)
-        )
-        .collect(),
-    ]);
+    // Misma base devengo que spendingByCategory/monthlySummary, desde la lista única.
+    // La fuente de cada tipo es distinta: `gasto` y `pago_deuda` salen de la cuenta,
+    // `gasto_tarjeta` de la tarjeta (no descuenta cuenta).
+    const [gastos, gastosTarjeta, pagosDeuda] = await Promise.all(
+      ACCRUAL_EXPENSE_TYPES.map((type) =>
+        ctx.db
+          .query("transactions")
+          .withIndex("by_user_type_month", (q) =>
+            q.eq("userId", user.clerkId).eq("type", type).eq("month", month)
+          )
+          .collect()
+      )
+    );
 
     // Para pago_deuda la fuente es la cuenta debitada (accountId), no una tarjeta destino
     const txs = [
@@ -440,11 +406,13 @@ export const monthlySummary = query({
           )
           .collect();
 
+        // La definición vive en lib/txClassification: antes estaba escrita aquí y
+        // repetida de memoria en cada query que hablaba de «gasto del mes».
         const ingresos = txs
-          .filter((t) => t.type === "ingreso")
+          .filter((t) => isAccrualIncome(t.type))
           .reduce((s, t) => s + toPreferred(t.amount, t.currency), 0);
         const gastos = txs
-          .filter((t) => t.type === "gasto" || t.type === "gasto_tarjeta" || t.type === "pago_deuda")
+          .filter((t) => isAccrualExpense(t.type))
           .reduce((s, t) => s + toPreferred(t.amount, t.currency), 0);
 
         return { month, ingresos, gastos };

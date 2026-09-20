@@ -1,8 +1,8 @@
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { getUserRateMap, convertAmount } from "./lib/money";
+import { assertValidMonth } from "./lib/utils";
 
 /**
  * Resumen del mes en la moneda preferida del usuario. Existe porque los totales
@@ -56,6 +56,12 @@ export const overview = query({
  * Comparación histórica de presupuesto vs. real por categoría.
  * Devuelve una fila por categoría que tuvo presupuesto en alguno de los meses
  * solicitados, con el detalle presupuestado/gastado por cada mes.
+ *
+ * Todo se devuelve convertido a la moneda preferida, igual que `overview`: la
+ * tabla compara celdas entre sí y suma columnas, así que dejar cada celda en su
+ * moneda daba una fila de totales que sumaba pesos con dólares y la pantalla la
+ * etiquetaba con la moneda del perfil. Es una lectura de gestión, no un extracto:
+ * ahí sí se convierte, y se avisa con `missingRate` cuando falta una tasa.
  */
 export const historicalComparison = query({
   args: {
@@ -63,53 +69,64 @@ export const historicalComparison = query({
     categoryIds: v.optional(v.array(v.id("categories"))), // filtro opcional
   },
   handler: async (ctx, { months, categoryIds }) => {
-    const clerkId = await getCurrentUserId(ctx);
+    const user = await getCurrentUser(ctx);
     const safeMonths = months.slice(0, 12); // máx 12 meses
+    // Faltaba: un mes malformado recorre el índice by_user_month entero.
+    safeMonths.forEach(assertValidMonth);
+
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    let missingRate = false;
+    const conv = (amount: number, currency: string) => {
+      const { converted, hasRate } = convertAmount(amount, currency, preferredCurrency, rateMap);
+      if (!hasRate) missingRate = true;
+      return hasRate ? converted : 0;
+    };
 
     // Recoger todos los presupuestos de los meses solicitados en paralelo
     const budgetsByMonth = await Promise.all(
       safeMonths.map((month) =>
         ctx.db
           .query("budgets")
-          .withIndex("by_user_month", (q) => q.eq("userId", clerkId).eq("month", month))
-          .collect()
+          .withIndex("by_user_month", (q) => q.eq("userId", user.clerkId).eq("month", month))
+          .take(300)
       )
     );
 
     // Construir mapa: categoryId → { month → { budgeted, spent } }
-    const catMap = new Map<
-      string,
-      { budgeted: number; spent: number; hasBudget: boolean; currency: string }[]
-    >();
+    const catMap = new Map<string, { budgeted: number; spent: number; hasBudget: boolean }[]>();
 
     for (let i = 0; i < safeMonths.length; i++) {
       for (const budget of budgetsByMonth[i]) {
         const catId = budget.categoryId;
         if (categoryIds && !categoryIds.includes(catId)) continue;
         if (!catMap.has(catId)) {
-          catMap.set(catId, safeMonths.map(() => ({ budgeted: 0, spent: 0, hasBudget: false, currency: budget.currency })));
+          catMap.set(catId, safeMonths.map(() => ({ budgeted: 0, spent: 0, hasBudget: false })));
         }
         catMap.get(catId)![i] = {
-          budgeted: budget.amount,
-          spent: budget.spent,
+          budgeted: conv(budget.amount, budget.currency),
+          spent: conv(budget.spent, budget.currency),
           hasBudget: true,
-          currency: budget.currency,
         };
       }
     }
 
-    // Enriquecer con nombres de categorías
-    const rows = await Promise.all(
-      [...catMap.entries()].map(async ([catId, data]) => {
-        const cat = await ctx.db.get(catId as Id<"categories">);
-        return {
-          categoryId: catId,
-          categoryName: cat?.name ?? "Sin categoría",
-          categoryColor: cat?.color ?? "#6B7280",
-          data,
-        };
-      })
-    );
+    // Categorías en lote: antes era un ctx.db.get por fila, igual que el N+1 que ya
+    // se había resuelto en listByMonthWithCategory.
+    const allCats = await ctx.db
+      .query("categories")
+      .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+      .collect();
+    const catById = new Map(allCats.map((c) => [c._id as string, c]));
+
+    const rows = [...catMap.entries()].map(([catId, data]) => {
+      const cat = catById.get(catId);
+      return {
+        categoryId: catId,
+        categoryName: cat?.name ?? "Sin categoría",
+        categoryColor: cat?.color ?? "#6B7280",
+        data,
+      };
+    });
 
     // Ordenar por nombre de categoría
     rows.sort((a, b) => a.categoryName.localeCompare(b.categoryName));
@@ -121,7 +138,7 @@ export const historicalComparison = query({
       return { budgeted, spent };
     });
 
-    return { rows, months: safeMonths, totals };
+    return { rows, months: safeMonths, totals, currency: preferredCurrency, missingRate };
   },
 });
 
