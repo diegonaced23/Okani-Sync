@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import dynamic from "next/dynamic";
 import { BalanceCard } from "@/components/dashboard/BalanceCard";
-import { BalanceAccountsSheet } from "@/components/dashboard/BalanceAccountsSheet";
+import { NetWorthSheet } from "@/components/dashboard/NetWorthSheet";
 import { SavingsCard } from "@/components/dashboard/SavingsCard";
 import { RecentTransactionsCard } from "@/components/dashboard/RecentTransactionsCard";
 import { ProductsCarousel } from "@/components/dashboard/ProductsCarousel";
@@ -20,10 +20,18 @@ import { currentMonth } from "@/lib/money";
 import { MonthlySnapshotSection } from "@/components/dashboard/MonthlySnapshotSection";
 import { BudgetsMiniList } from "@/components/dashboard/BudgetsMiniList";
 import { GoalsMiniList } from "@/components/dashboard/GoalsMiniList";
+import { HealthCard } from "@/components/dashboard/HealthCard";
 import { lastNMonths } from "@/lib/utils";
 import { Plus } from "lucide-react";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
+import { haptic } from "@/lib/ios";
 import { PageContainer } from "@/components/layout/PageContainer";
+
+/**
+ * Días que tienen que haber pasado para comparar con el mes anterior. Antes de eso la
+ * base prorrateada es demasiado pequeña y el porcentaje deja de significar nada.
+ */
+const MIN_DAYS_FOR_DELTA = 4;
 
 export default function DashboardPage() {
   const { openModal } = useNewTransactionModal();
@@ -34,7 +42,7 @@ export default function DashboardPage() {
 
   const me             = useQuery(api.users.getMe);
   const nw             = useQuery(api.accounts.netWorth);
-  // Solo para la comparativa de SavingsCard (tasa de ahorro del mes anterior)
+  // Alimenta la tarjeta de salud financiera y la comparativa de SavingsCard
   const health         = useQuery(api.accounts.financialHealthMetrics);
   const accounts       = useQuery(api.accounts.list);
   const sharedAccounts = useQuery(api.accounts.listSharedWithMe);
@@ -47,14 +55,49 @@ export default function DashboardPage() {
   const savings    = useQuery(api.accounts.monthlySavingsSummary, { month: today });
   const goals      = useQuery(api.goals.list);
   const cards      = useQuery(api.cards.list);
+  // Para la hoja del patrimonio: las activas y las vencidas son exactamente el
+  // conjunto que `netWorth` resta y suma.
+  const allDebts   = useQuery(api.debts.list, {});
+  const allLoans   = useQuery(api.loans.list, {});
   const hasActiveGoals = (goals ?? []).some((g) => g.status === "activa");
 
-  const accountNames = useMemo(
-    () => Object.fromEntries((accounts ?? []).map((a) => [a._id, a.name])),
-    [accounts]
+  // Incluye las compartidas: sin ellas, un movimiento sobre una cuenta compartida
+  // no mostraba su fuente y las transferencias que la tocaban perdían el «origen →
+  // destino». La query ya está cargada unas líneas más arriba.
+  const netWorthDebts = useMemo(
+    () => (allDebts ?? []).filter((d) => d.status === "activa" || d.status === "vencida"),
+    [allDebts]
+  );
+  const netWorthLoans = useMemo(
+    () => (allLoans ?? []).filter((l) => l.status === "activa" || l.status === "vencida"),
+    [allLoans]
   );
 
-  const currency       = me?.currency ?? "COP";
+  // Piezas que el usuario dejó fuera del patrimonio. Se cuenta aquí porque la página
+  // ya tiene las cuatro listas: `netWorth` no necesita devolverlo.
+  const excludedFromNetWorth = useMemo(
+    () =>
+      (accounts ?? []).filter((a) => a.includeInBalance === false).length +
+      (cards ?? []).filter((c) => c.includeInBalance === false).length +
+      netWorthDebts.filter((d) => d.includeInBalance === false).length +
+      netWorthLoans.filter((l) => l.includeInBalance === false).length,
+    [accounts, cards, netWorthDebts, netWorthLoans]
+  );
+
+  const accountNames = useMemo(
+    () =>
+      Object.fromEntries([
+        ...(accounts ?? []).map((a) => [a._id, a.name] as const),
+        ...(sharedAccounts ?? []).flatMap((a) => (a ? [[a._id, a.name] as const] : [])),
+      ]),
+    [accounts, sharedAccounts]
+  );
+
+  // La moneda la manda el servidor: los importes de `netWorth` ya vienen convertidos
+  // a ella. Tomarla de `getMe` hacía que, mientras esa query no resolviera, un total
+  // convertido a USD se formateara como pesos (y `formatCents` solo quita decimales
+  // cuando la moneda es COP, así que además se perdían los centavos).
+  const currency       = nw?.currency ?? me?.currency ?? "COP";
   const currentTrend = useMemo(
     () => (trend ?? []).find((t) => t.month === today),
     [trend, today]
@@ -81,8 +124,14 @@ export default function DashboardPage() {
     const now = new Date();
     // Día 0 del mes siguiente = último día del mes actual
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const elapsed = now.getDate() / daysInMonth;
+    const day = now.getDate();
 
+    // Los primeros días la base prorrateada es tan pequeña que un gasto corriente
+    // produce variaciones de tres cifras: un número que desinforma. Sin base, el chip
+    // simplemente no se dibuja.
+    if (day < MIN_DAYS_FOR_DELTA) return undefined;
+
+    const elapsed = day / daysInMonth;
     return {
       ingresos: prev.ingresos * elapsed,
       gastos: prev.gastos * elapsed,
@@ -103,12 +152,12 @@ export default function DashboardPage() {
     <PageContainer variant="wide" className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-stagger">
 
       {/* ── Saludo ── full width */}
-      <div className="md:col-span-2 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            {greeting}, {me?.name?.trim().split(" ")[0] || "usuario"} 👋
+      <header className="flex items-end justify-between gap-3 md:col-span-2">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-foreground">
+            {greeting}, {me?.name?.trim().split(" ")[0] || "usuario"}
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-sm capitalize text-muted-foreground">
             {new Date().toLocaleDateString("es-CO", {
               weekday: "long", day: "numeric", month: "long",
             })}
@@ -116,13 +165,13 @@ export default function DashboardPage() {
         </div>
         <button
           type="button"
-          onClick={() => openModal()}
-          className="hidden md:inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90 active:scale-95 bg-[linear-gradient(135deg,var(--os-lime),var(--os-cyan))] shadow-[0_4px_14px_-2px_color-mix(in_oklch,var(--os-lime)_45%,transparent)]"
+          onClick={() => { haptic(); openModal(); }}
+          aria-label="Nuevo movimiento"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-white shadow-[0_8px_20px_-8px_rgb(16_185_129/0.9)] transition-transform active:scale-90"
         >
-          <Plus className="h-4 w-4" strokeWidth={2.5} />
-          Nuevo movimiento
+          <Plus className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />
         </button>
-      </div>
+      </header>
 
       {/* ── Balance hero ── col 1 */}
       <div>
@@ -137,12 +186,16 @@ export default function DashboardPage() {
           totalCardDebt={nw?.totalCardDebt}
           totalDebt={nw?.totalDebt}
           totalLoansReceivable={nw?.totalLoansReceivable}
+          excludedCount={excludedFromNetWorth}
         />
-        <BalanceAccountsSheet
+        <NetWorthSheet
           open={balanceSheetOpen}
           onOpenChange={setBalanceSheetOpen}
           accounts={accounts ?? []}
           sharedAccounts={sharedAccounts ?? []}
+          cards={cards ?? []}
+          debts={netWorthDebts}
+          loans={netWorthLoans}
         />
       </div>
 
@@ -157,6 +210,12 @@ export default function DashboardPage() {
         prevGastos={prevProrated?.gastos}
         history={trend}
       />
+
+      {/* ── Salud financiera ── full width. Estos cuatro indicadores ya los calculaba
+           `financialHealthMetrics` en cada carga y la pantalla solo usaba uno. */}
+      <section aria-label="Salud financiera" className="md:col-span-2">
+        <HealthCard data={health ?? undefined} />
+      </section>
 
       {/* ── Últimos movimientos ── full width, justo debajo del mes en curso:
            es lo que más se consulta después del resumen del mes */}

@@ -27,6 +27,8 @@ interface BalanceCardProps {
   totalCardDebt?: number;
   totalDebt?: number;
   totalLoansReceivable?: number;
+  /** Cuentas, tarjetas, deudas o préstamos que el usuario dejó fuera del cálculo */
+  excludedCount?: number;
 }
 
 export const BalanceCard = memo(function BalanceCard({
@@ -40,6 +42,7 @@ export const BalanceCard = memo(function BalanceCard({
   totalCardDebt,
   totalDebt,
   totalLoansReceivable,
+  excludedCount = 0,
 }: BalanceCardProps) {
   // Compartido con "Mes en curso": el ojo oculta los saldos de ambas tarjetas
   const [hidden, toggleHidden] = useBalanceHidden();
@@ -152,6 +155,16 @@ export const BalanceCard = memo(function BalanceCard({
               <span role="listitem" className="flex items-center gap-1">
                 <TrendingDown size={11} aria-hidden="true" />
                 <span>Deudas: {formatCents(totalLiabilities, currency)}</span>
+              </span>
+            )}
+            {/* Sin esto, el total no cuadraría con la suma de sus partes y no habría
+                forma de saber que falta algo a propósito. */}
+            {excludedCount > 0 && (
+              <span role="listitem" className="flex items-center gap-1">
+                <EyeOff size={11} aria-hidden="true" />
+                <span>
+                  {excludedCount} {excludedCount === 1 ? "excluido" : "excluidos"} del cálculo
+                </span>
               </span>
             )}
           </div>

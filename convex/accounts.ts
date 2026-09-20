@@ -127,7 +127,10 @@ export const netWorth = query({
       .query("cards")
       .withIndex("by_user_archived", (q) => q.eq("userId", clerkId).eq("archived", false))
       .collect();
-    const totalCardDebt = cards.reduce((s, c) => s + convert(c.currentBalance, c.currency), 0);
+    // `includeInBalance !== false`: lo que el usuario marcó como ajeno a su patrimonio
+    // queda fuera de esta cifra, pero sigue contando en su propio módulo.
+    const includedCards = cards.filter((c) => c.includeInBalance !== false);
+    const totalCardDebt = includedCards.reduce((s, c) => s + convert(c.currentBalance, c.currency), 0);
 
     // ── Pasivos: deudas personales activas (no pagadas ni vencidas ya cubiertas) ──
     const debts = await ctx.db
@@ -139,7 +142,9 @@ export const netWorth = query({
       .query("debts")
       .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "vencida"))
       .collect();
-    const totalDebt = [...debts, ...debtsVencidas].reduce(
+    const allDebts = [...debts, ...debtsVencidas];
+    const includedDebts = allDebts.filter((d) => d.includeInBalance !== false);
+    const totalDebt = includedDebts.reduce(
       (s, d) => s + convert(d.currentBalance, d.currency),
       0
     );
@@ -153,7 +158,9 @@ export const netWorth = query({
       .query("loans")
       .withIndex("by_user_status", (q) => q.eq("userId", clerkId).eq("status", "vencida"))
       .collect();
-    const totalLoansReceivable = [...loans, ...loansVencidos].reduce(
+    const allLoans = [...loans, ...loansVencidos];
+    const includedLoans = allLoans.filter((l) => l.includeInBalance !== false);
+    const totalLoansReceivable = includedLoans.reduce(
       (s, l) => s + convert(l.currentBalance, l.currency),
       0
     );

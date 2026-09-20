@@ -1,8 +1,12 @@
 "use client";
 
 import { memo } from "react";
+import { sourceVisual } from "@/components/ui/source-chip";
 import { PiggyBank, ArrowRight, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 import { formatCents } from "@/lib/money";
+import { useBalanceHidden } from "@/hooks/use-balance-hidden";
+import { GLASS_SURFACE } from "@/lib/ios";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 
@@ -28,15 +32,17 @@ type SavingsCardProps =
     };
 
 export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
+  const [balanceHidden] = useBalanceHidden();
+
   if (props.loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+      <div className={cn("space-y-3 rounded-[22px] p-5", GLASS_SURFACE)}>
         <Skeleton className="h-4 w-28" />
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-3 w-full rounded-full" />
         <div className="grid grid-cols-2 gap-2">
-          <Skeleton className="h-14 rounded-lg" />
-          <Skeleton className="h-14 rounded-lg" />
+          <Skeleton className="h-14 rounded-[16px]" />
+          <Skeleton className="h-14 rounded-[16px]" />
         </div>
       </div>
     );
@@ -54,7 +60,7 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
   const totalCuentasAhorro = cuentasAhorro.reduce((s, c) => s + c.balance, 0);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+    <div className={cn("space-y-4 rounded-[22px] p-5", GLASS_SURFACE)}>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -81,7 +87,7 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
         <p
           className={`font-mono-num text-[28px] font-extrabold tracking-[-0.03em] ${hasSavings ? "text-cyan-text" : "text-muted-foreground"}`}
         >
-          {formatCents(totalAhorrado, currency)}
+          {balanceHidden ? "$ ••••••" : formatCents(totalAhorrado, currency)}
         </p>
         {tasa !== null && totalIngresos > 0 && (
           <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
@@ -146,27 +152,27 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
         <div className="grid grid-cols-2 gap-2">
           {transferenciasAhorro > 0 && (
             <div
-              className="rounded-lg p-3 space-y-0.5"
+              className="space-y-0.5 rounded-[16px] p-3"
               style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
             >
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
                 Cuentas ahorro
               </p>
               <p className="font-mono-num text-sm font-bold text-foreground">
-                {formatCents(transferenciasAhorro, currency)}
+                {balanceHidden ? "$ ••••••" : formatCents(transferenciasAhorro, currency)}
               </p>
             </div>
           )}
           {gastosMetaVinculada > 0 && (
             <div
-              className="rounded-lg p-3 space-y-0.5"
+              className="space-y-0.5 rounded-[16px] p-3"
               style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
             >
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
                 Metas (efectivo)
               </p>
               <p className="font-mono-num text-sm font-bold text-foreground">
-                {formatCents(gastosMetaVinculada, currency)}
+                {balanceHidden ? "$ ••••••" : formatCents(gastosMetaVinculada, currency)}
               </p>
             </div>
           )}
@@ -192,7 +198,9 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
                   style={{
                     width: 8,
                     height: 8,
-                    background: cuenta.color,
+                    // `color` es una clave de degradado («g-night»), no un hex: usarla
+                    // en crudo era CSS inválido y los puntos quedaban invisibles.
+                    background: sourceVisual(cuenta.color).flat,
                     // Halo del color de la superficie para separar los puntos solapados
                     boxShadow: "0 0 0 2px var(--surface-2)",
                   }}
@@ -204,7 +212,7 @@ export const SavingsCard = memo(function SavingsCard(props: SavingsCardProps) {
             </span>
           </span>
           <span className="font-mono-num text-xs font-bold text-foreground shrink-0">
-            {formatCents(totalCuentasAhorro, currency)}
+            {balanceHidden ? "$ ••••••" : formatCents(totalCuentasAhorro, currency)}
           </span>
         </Link>
       )}

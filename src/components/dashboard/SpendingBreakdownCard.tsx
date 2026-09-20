@@ -1,6 +1,10 @@
 "use client";
 
 import { memo, useId, useState } from "react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { useBalanceHidden } from "@/hooks/use-balance-hidden";
+import { GLASS_SURFACE } from "@/lib/ios";
 import { formatCents } from "@/lib/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -48,12 +52,16 @@ function BreakdownBars({
   total,
   currency,
   caption,
+  hidden,
 }: {
   rows: Row[];
   total: number;
   currency: string;
   caption: string;
+  /** Saldos ocultos: se enmascaran los importes, no los porcentajes */
+  hidden?: boolean;
 }) {
+  const money = (cents: number) => (hidden ? "$ ••••••" : formatCents(cents, currency));
   const max = rows[0].amount;
 
   return (
@@ -78,7 +86,7 @@ function BreakdownBars({
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-xs tabular-nums font-semibold text-foreground">
-                    {formatCents(d.amount, currency)}
+                    {money(d.amount)}
                   </span>
                   <span
                     className="text-[10px] tabular-nums rounded-full px-1.5 py-0.5 font-medium"
@@ -124,7 +132,7 @@ function BreakdownBars({
           {rows.map((d) => (
             <tr key={d.name}>
               <td>{d.name}</td>
-              <td>{formatCents(d.amount, currency)}</td>
+              <td>{money(d.amount)}</td>
               <td>{total > 0 ? Math.round((d.amount / total) * 100) : 0}%</td>
             </tr>
           ))}
@@ -147,10 +155,11 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
 }: SpendingBreakdownCardProps) {
   const [tab, setTab] = useState<Breakdown>("categoria");
   const baseId = useId();
+  const [balanceHidden] = useBalanceHidden();
 
   // El skeleton cubre ambas queries: cambiar de pestaña no debe revelar un hueco.
   if (byCategory === undefined || bySource === undefined) {
-    return <Skeleton className="h-72 rounded-xl" />;
+    return <Skeleton className="h-72 rounded-[22px]" />;
   }
 
   const categoryRows: Row[] = [...byCategory]
@@ -163,10 +172,13 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
 
   const rows = tab === "categoria" ? categoryRows : sourceRows;
   const total = rows.reduce((s, d) => s + d.amount, 0);
+  // El ojo de la tarjeta de patrimonio también manda aquí: antes este total y cada
+  // importe del desglose seguían visibles con los saldos ocultos.
+  const money = (cents: number) => (balanceHidden ? "$ ••••••" : formatCents(cents, currency));
   const activeTab = TABS.find((t) => t.key === tab)!;
 
   return (
-    <div className="rounded-xl bg-card border border-border p-4">
+    <div className={cn("rounded-[22px] p-4", GLASS_SURFACE)}>
       {/* ── Cabecera + pestañas ─────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -234,17 +246,26 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
               total={total}
               currency={currency}
               caption={activeTab.srCaption}
+              hidden={balanceHidden}
             />
             <div
               className="mt-4 pt-3 flex items-center justify-between"
               style={{ borderTop: "1px solid var(--border)" }}
             >
-              <span className="text-xs text-muted-foreground">
-                Total {tab === "categoria" ? "en categorías" : "gastado"}
+              <span className="text-xs text-muted-foreground">Total gastado</span>
+              <span className="font-mono-num text-sm font-bold tabular-nums text-foreground">
+                {money(total)}
               </span>
-              <span className="text-sm font-bold tabular-nums text-foreground">
-                {formatCents(total, currency)}
-              </span>
+            </div>
+
+            {/* Era la única tarjeta sin salida: ni a reportes ni a movimientos */}
+            <div className="mt-3 flex justify-end">
+              <Link
+                href="/transacciones"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Ver los movimientos <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              </Link>
             </div>
           </>
         )}

@@ -339,3 +339,18 @@ export const markOverdueInternal = internalMutation({
     await ctx.db.patch(loanId, { status: "vencida", updatedAt: Date.now() });
   },
 });
+
+/**
+ * Excluir o volver a incluir en el patrimonio neto. Solo afecta a ese cálculo: el
+ * resumen de este módulo sigue mostrando el saldo real, porque esconder algo del
+ * sitio cuyo trabajo es vigilarlo sería peor que no poder excluirlo.
+ */
+export const toggleBalanceInclusion = mutation({
+  args: { loanId: v.id("loans"), include: v.boolean() },
+  handler: async (ctx, { loanId, include }) => {
+    const user = await getCurrentUser(ctx);
+    const doc = await ctx.db.get(loanId);
+    if (!doc || doc.userId !== user.clerkId) throw new Error("Préstamo no encontrado");
+    await ctx.db.patch(loanId, { includeInBalance: include, updatedAt: Date.now() });
+  },
+});

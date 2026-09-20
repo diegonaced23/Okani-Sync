@@ -54,9 +54,26 @@ export const ProductsCarousel = memo(function ProductsCarousel({ accounts, cards
         // Margen para la sombra y la inclinación 3D: el scroll horizontal recorta
         // también en vertical, así que el aire va dentro del contenedor (y se
         // compensa con -my para no separar la fila del resto)
-        <ul role="list" className={cn(rail, "-my-2 py-4 pb-8")}>
+        <ul
+          role="list"
+          // Focusable: el carril tiene scroll horizontal y sin esto las últimas
+          // fichas solo se alcanzaban tabulando a ciegas. Mismo criterio que el
+          // scroller de «Mes en curso».
+          tabIndex={0}
+          aria-label="Carrusel de cuentas y tarjetas"
+          className={cn(rail, "-my-2 py-4 pb-8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+        >
           {accounts.map((account) => (
-            <li key={account._id} className={TILE}>
+            <li
+              key={account._id}
+              className={TILE}
+              role="group"
+              aria-label={
+                hidden
+                  ? `${account.name}, saldo oculto`
+                  : `${account.name}, ${formatCents(account.balance, account.currency)}`
+              }
+            >
               <CardTilt className="h-full">
                 <AccountCard
                   account={account}
@@ -84,7 +101,7 @@ function MiniCard({ card, hidden }: { card: Doc<"cards">; hidden: boolean }) {
       <Link
         href={`/tarjetas/${card._id}`}
         className="block h-full rounded-[20px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={`${card.name}, disponible ${hidden ? "oculto" : formatCents(available, card.currency)} de ${formatCents(card.creditLimit, card.currency)}`}
+        aria-label={hidden ? `${card.name}, saldos ocultos` : `${card.name}, disponible ${formatCents(available, card.currency)} de ${formatCents(card.creditLimit, card.currency)}`}
       >
         <CardTilt className="h-full">
           <CardFace
@@ -103,7 +120,8 @@ function MiniCard({ card, hidden }: { card: Doc<"cards">; hidden: boolean }) {
                 <span aria-hidden className="mt-1 block h-[3px] w-full overflow-hidden rounded-full bg-current/25">
                   <span
                     className={cn("block h-full rounded-full bar-fill", low ? "bg-[var(--warning)]" : "bg-current")}
-                    style={{ width: `${availablePct}%` }}
+                    // Con los saldos ocultos el medidor seguía revelando la proporción
+                    style={{ width: hidden ? "0%" : `${availablePct}%` }}
                   />
                 </span>
               </span>

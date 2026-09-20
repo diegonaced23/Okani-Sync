@@ -2,6 +2,8 @@
 
 import { memo, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { GLASS_SURFACE } from "@/lib/ios";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { BudgetRow } from "./BudgetRow";
@@ -49,10 +51,10 @@ export const BudgetsMiniList = memo(function BudgetsMiniList({ budgets }: Budget
           Ver todos
         </Link>
       </div>
-      <div className="rounded-xl bg-card border border-border overflow-hidden">
+      <div className={cn("rounded-[22px] p-1.5", GLASS_SURFACE)}>
         {budgets === undefined ? (
           <div className="p-4 space-y-2">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-[16px]" />)}
           </div>
         ) : budgets.length === 0 ? (
           // Estado vacío con CTA directo para que el usuario no quede en un callejón sin salida
@@ -69,13 +71,24 @@ export const BudgetsMiniList = memo(function BudgetsMiniList({ budgets }: Budget
             </Link>
           </div>
         ) : (
-          <ul className="divide-y divide-border os-enter">
+          <ul className="os-enter space-y-0.5">
             {top5.map((budget) => (
               <BudgetRow key={budget._id} budget={budget} />
             ))}
           </ul>
         )}
       </div>
+
+      {/* Se muestran los 5 más gastados: sin esto, con doce presupuestos siete
+          desaparecían sin que nada lo indicara. */}
+      {budgets !== undefined && budgets.length > top5.length && (
+        <Link
+          href="/presupuestos"
+          className="block px-1 text-center text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Ver los {budgets.length - top5.length} presupuestos restantes
+        </Link>
+      )}
     </section>
   );
 });

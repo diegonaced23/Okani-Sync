@@ -635,3 +635,18 @@ export const getByIdInternal = internalQuery({
     return await ctx.db.get(cardId);
   },
 });
+
+/**
+ * Excluir o volver a incluir en el patrimonio neto. Solo afecta a ese cálculo: el
+ * resumen de este módulo sigue mostrando el saldo real, porque esconder algo del
+ * sitio cuyo trabajo es vigilarlo sería peor que no poder excluirlo.
+ */
+export const toggleBalanceInclusion = mutation({
+  args: { cardId: v.id("cards"), include: v.boolean() },
+  handler: async (ctx, { cardId, include }) => {
+    const user = await getCurrentUser(ctx);
+    const doc = await ctx.db.get(cardId);
+    if (!doc || doc.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+    await ctx.db.patch(cardId, { includeInBalance: include, updatedAt: Date.now() });
+  },
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useState, useEffect } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight, CreditCard, Plus } from "lucide-react";
@@ -10,6 +10,7 @@ import { CategoryIcon } from "@/components/ui/category-icon";
 import { TX_TYPE_CONFIG } from "@/components/transactions/tx-type-config";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { EASE_OUT_EXPO, GLASS_SURFACE } from "@/lib/ios";
 import { useBalanceHidden } from "@/hooks/use-balance-hidden";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
@@ -76,6 +77,14 @@ export const RecentTransactionsCard = memo(function RecentTransactionsCard({
     }
   }
 
+  // El destello dura 1,6 s: sin limpiar `fresh`, cualquier re-render posterior lo
+  // volvía a lanzar sobre las mismas filas durante toda la sesión.
+  useEffect(() => {
+    if (fresh.size === 0) return;
+    const id = setTimeout(() => setFresh(new Set()), 1800);
+    return () => clearTimeout(id);
+  }, [fresh]);
+
   // Agrupar por día conservando el orden (ya vienen del más reciente al más antiguo)
   const groups: { day: number; items: Doc<"transactions">[] }[] = [];
   for (const tx of transactions ?? []) {
@@ -95,11 +104,7 @@ export const RecentTransactionsCard = memo(function RecentTransactionsCard({
       </div>
 
       {/* Mobile: cristal (como "Mes en curso"); desktop: superficie con esquinas de 22px */}
-      <div className={cn(
-        "overflow-hidden rounded-[24px] border shadow-sm md:rounded-[22px]",
-        "border-white/50 bg-[color-mix(in_oklch,var(--card)_72%,transparent)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10",
-        "md:border-border md:bg-card md:backdrop-blur-none"
-      )}>
+      <div className={cn("overflow-hidden rounded-[24px] md:rounded-[22px]", GLASS_SURFACE)}>
         <div className="hidden md:flex items-center justify-between px-5 pt-5 pb-1">
           <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground m-0">
             Últimos movimientos
@@ -142,16 +147,24 @@ export const RecentTransactionsCard = memo(function RecentTransactionsCard({
                           initial={reduce ? false : { opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1], delay: isNew ? 0 : i * 0.04 }}
+                          transition={{ duration: 0.35, ease: EASE_OUT_EXPO, delay: isNew ? 0 : i * 0.04 }}
                         >
-                          <Row
-                            tx={tx}
-                            category={tx.categoryId ? catMap.get(tx.categoryId) : undefined}
-                            source={sourceLabel(tx, accountNames, cardMap)}
-                            viaCard={!!tx.cardId}
-                            hidden={hidden}
-                            highlight={isNew && !reduce}
-                          />
+                          {/* La fila era un bloque muerto: ahora lleva a la lista
+                              completa, que es donde se puede abrir y editar. */}
+                          <Link
+                            href="/transacciones"
+                            aria-label={`Ver ${tx.description} en movimientos`}
+                            className="block rounded-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Row
+                              tx={tx}
+                              category={tx.categoryId ? catMap.get(tx.categoryId) : undefined}
+                              source={sourceLabel(tx, accountNames, cardMap)}
+                              viaCard={!!tx.cardId}
+                              hidden={hidden}
+                              highlight={isNew && !reduce}
+                            />
+                          </Link>
                         </motion.li>
                       );
                     })}

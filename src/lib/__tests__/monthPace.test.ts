@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeMonthPace } from "../monthPace";
+import { deadlineLabel } from "@/components/goals/shared";
 
 // 15 de septiembre de 2026: día 15 de 30 → mitad del mes
 const mid = new Date(2026, 8, 15);
@@ -41,5 +42,33 @@ describe("computeMonthPace", () => {
   it("gastar exactamente lo ingresado todavía no es excederse", () => {
     const end = new Date(2026, 8, 30);
     expect(computeMonthPace(1000, 1000, end).status).toBe("en-ritmo");
+  });
+});
+
+describe("deadlineLabel", () => {
+  const at = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h).getTime();
+  // Las fechas límite se guardan al mediodía local (dateStrToTs)
+  const deadline = at(2026, 6, 10);
+
+  it("dice que vence hoy durante todo el día, no solo por la tarde", () => {
+    expect(deadlineLabel(deadline, at(2026, 6, 10, 8)).text).toBe("Vence hoy");
+    expect(deadlineLabel(deadline, at(2026, 6, 10, 20)).text).toBe("Vence hoy");
+  });
+
+  it("una fecha de ayer está vencida desde la primera hora de hoy", () => {
+    const yesterday = at(2026, 6, 9);
+    const info = deadlineLabel(yesterday, at(2026, 6, 10, 9));
+    expect(info.overdue).toBe(true);
+    expect(info.text).toBe("Fecha vencida");
+  });
+
+  it("mañana es un día, a cualquier hora", () => {
+    expect(deadlineLabel(deadline, at(2026, 6, 9, 8)).text).toBe("Queda 1 día");
+    expect(deadlineLabel(deadline, at(2026, 6, 9, 23)).text).toBe("Queda 1 día");
+  });
+
+  it("marca urgencia dentro de la semana", () => {
+    expect(deadlineLabel(deadline, at(2026, 6, 5)).urgent).toBe(true);
+    expect(deadlineLabel(deadline, at(2026, 6, 1)).urgent).toBe(false);
   });
 });

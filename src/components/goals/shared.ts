@@ -33,9 +33,23 @@ export interface DeadlineInfo {
   urgent: boolean;
 }
 
-/** Etiqueta de la fecha límite con el mismo criterio de urgencia que las deudas. */
+/** Medianoche local: los días se cuentan por fecha, no por horas de diferencia. */
+function startOfDay(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * Etiqueta de la fecha límite con el mismo criterio de urgencia que las deudas.
+ *
+ * La cuenta va de medianoche a medianoche. Con la diferencia en crudo, las fechas
+ * —que se guardan al mediodía local— daban dos respuestas distintas el mismo día:
+ * una meta que vencía hoy decía «queda 1 día» por la mañana y «vence hoy» por la
+ * tarde, y una vencida ayer seguía diciendo «vence hoy» hasta el mediodía.
+ */
 export function deadlineLabel(deadlineMs: number, nowMs: number): DeadlineInfo {
-  const days = Math.ceil((deadlineMs - nowMs) / 86_400_000);
+  const days = Math.round((startOfDay(deadlineMs) - startOfDay(nowMs)) / 86_400_000);
   if (days < 0) return { text: "Fecha vencida", overdue: true, urgent: true };
   if (days === 0) return { text: "Vence hoy", overdue: false, urgent: true };
   if (days === 1) return { text: "Queda 1 día", overdue: false, urgent: true };

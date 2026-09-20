@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { computeMonthPace, type MonthPace } from "@/lib/monthPace";
+import { GLASS_SURFACE } from "@/lib/ios";
 import { useBalanceHidden } from "@/hooks/use-balance-hidden";
 import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 import { MoMDelta } from "./MoMDelta";
@@ -112,7 +113,7 @@ function DesktopCard({ loading, pace, monthName, money, monthIngresos, monthGast
   const netNegative = pace.net < 0;
 
   return (
-    <div className="hidden md:flex flex-col rounded-[22px] border border-border bg-card p-5 h-full gap-4 shadow-sm">
+    <div className={cn("hidden h-full flex-col gap-4 rounded-[22px] p-5 md:flex", GLASS_SURFACE)}>
       <div className="flex items-center justify-between gap-2">
         {/* h2 para coherencia con los demás sections del dashboard */}
         <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground m-0">
@@ -369,7 +370,11 @@ function FlowPage({ label, dot, amount, delta, trend, color }: {
         </div>
         <Sparkline values={trend} color={color} />
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">Últimos {trend.length} meses</p>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        {/* El último punto es el mes en curso, que aún no ha terminado: sin decirlo,
+            la serie parece caer siempre al final. */}
+        {trend.length - 1} meses cerrados + el mes en curso
+      </p>
     </>
   );
 }

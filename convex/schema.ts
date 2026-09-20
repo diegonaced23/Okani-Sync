@@ -214,6 +214,9 @@ export default defineSchema({
     archived: v.boolean(),
     notes: v.optional(v.string()),
     displayOrder: v.optional(v.number()),
+    // Excluir del patrimonio neto. Optativo a propósito: las filas que ya existen
+    // no lo traen y se leen como incluidas (`!== false`), igual que en `accounts`.
+    includeInBalance: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -309,6 +312,9 @@ export default defineSchema({
     icon: v.string(),
     notes: v.optional(v.string()),
     archived: v.optional(v.boolean()),  // archivada: fuera de la lista y de las alertas
+    // Excluir del patrimonio neto. Optativo a propósito: las filas que ya existen
+    // no lo traen y se leen como incluidas (`!== false`), igual que en `accounts`.
+    includeInBalance: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -609,6 +615,9 @@ export default defineSchema({
     icon: v.string(),
     archived: v.boolean(),
     notes: v.optional(v.string()),
+    // Excluir del patrimonio neto. Optativo a propósito: las filas que ya existen
+    // no lo traen y se leen como incluidas (`!== false`), igual que en `accounts`.
+    includeInBalance: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
