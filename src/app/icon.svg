@@ -6,6 +6,14 @@
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#g)"/>
-  <path d="M8 18c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#052e16" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="16" cy="21" r="2.5" fill="#052e16"/>
+  <!-- Arco concentrico con la moneda (mismo centro, separacion 2.0 constante).
+       El recorrido es asimetrico a proposito: el extremo izquierdo cuelga y el
+       derecho queda alto, asi la curva se lee como un gesto ascendente. -->
+  <path d="M5.81 20.05A10.35 10.35 0 0 1 23.93 11.6" stroke="#052e16" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="16" cy="18.25" r="6.1" stroke="#052e16" stroke-width="2"/>
+  <!-- Simbolo de dolar de Lucide (dollar-sign, ISC). El transform lo escala sin
+       tener que reescribir el path: su caja es x 6..18, y 2..22, centro (12,12). -->
+  <g transform="translate(16 18.25) scale(0.4) translate(-12 -12)">
+    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="#052e16" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>

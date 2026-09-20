@@ -15,14 +15,27 @@ const useIsomorphicLayoutEffect =
 function BrandMark({ ref }: { ref: React.RefObject<HTMLSpanElement | null> }) {
   return (
     <span ref={ref} className="auth-logo auth-mark" aria-hidden="true">
-      <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
+      {/* Mismo glifo que src/app/icon.svg, Sidebar.tsx y Header.tsx. Ocupa el
+          recuadro entero (76px, el tamaño de .auth-mark) porque ya trae su
+          propio margen dentro de la rejilla de 32: encogerlo lo dejaría con el
+          doble de aire que el icono de la app. */}
+      <svg width="76" height="76" viewBox="0 0 32 32" fill="none">
         <path
-          d="M4 14c0-5 4-9 8-9s8 4 8 9"
+          d="M5.81 20.05A10.35 10.35 0 0 1 23.93 11.6"
           stroke="currentColor"
-          strokeWidth="3"
+          strokeWidth="2.5"
           strokeLinecap="round"
         />
-        <circle cx="12" cy="17" r="2.5" fill="currentColor" />
+        <circle cx="16" cy="18.25" r="6.1" stroke="currentColor" strokeWidth="2" />
+        <g transform="translate(16 18.25) scale(0.4) translate(-12 -12)">
+          <path
+            d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"
+            stroke="currentColor"
+            strokeWidth="3.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
       </svg>
     </span>
   );
