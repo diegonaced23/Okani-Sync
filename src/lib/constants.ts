@@ -157,6 +157,8 @@ export const AUDIT_ACTIONS = {
   /** El propio usuario borró todos sus datos desde perfil (irreversible). */
   USER_DATA_RESET: "user.data.reset",
   USER_ROLE_CHANGED: "user.role.changed",
+  /** Un admin anuló una invitación pendiente antes de que se usara. */
+  USER_INVITE_REVOKED: "user.invite.revoked",
   // Cuentas
   ACCOUNT_CREATED: "account.created",
   ACCOUNT_DELETED: "account.deleted",
@@ -165,15 +167,63 @@ export const AUDIT_ACTIONS = {
   ACCOUNT_SHARE_ACCEPTED: "account.share.accepted",
   ACCOUNT_SHARE_REJECTED: "account.share.rejected",
   ACCOUNT_BALANCE_REASSIGNED: "account.balance.reassigned",
+  /**
+   * Corrección directa del saldo de una cuenta SIN movimientos
+   * (`convex/accounts.ts::correctBalance`). Existía en la base de datos desde
+   * siempre —la mutation escribía el literal— pero no en esta lista, así que
+   * el feed del panel no tenía etiqueta y pintaba el identificador crudo.
+   */
+  ACCOUNT_BALANCE_CORRECTED: "account.balance.corrected",
   // Tarjetas
   CARD_CREATED: "card.created",
   CARD_DELETED: "card.deleted",
   // Admin
   ADMIN_EXPORT: "admin.export",
+  /**
+   * Un admin sobrescribió a mano una tasa de cambio. Es una acción
+   * administrativa sobre una tabla GLOBAL (`currentExchangeRates`), de la que
+   * depende la consolidación multi-moneda de todos los usuarios: tiene que
+   * quedar registrada como cualquier otra.
+   */
+  EXCHANGE_RATE_SET_MANUAL: "exchange_rate.set_manual",
   USER_PASSWORD_RESET: "user.password_reset",
   USER_PASSWORD_CHANGED: "user.password.changed",
   USER_DATA_EXPORTED: "user.data.exported",
 } as const;
+
+/**
+ * Texto legible de cada acción de auditoría.
+ *
+ * Vive junto a AUDIT_ACTIONS y no en los componentes porque estaba duplicada en
+ * dos pantallas del panel y a las dos les faltaban acciones, así que el
+ * historial mostraba identificadores crudos como `user.data.reset`. Un test
+ * comprueba que cubre exactamente las acciones declaradas, ni más ni menos.
+ */
+export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  [AUDIT_ACTIONS.USER_CREATED]: "Usuario creado",
+  [AUDIT_ACTIONS.USER_INVITED]: "Usuario invitado",
+  [AUDIT_ACTIONS.USER_UPDATED]: "Usuario actualizado",
+  [AUDIT_ACTIONS.USER_DELETED]: "Usuario eliminado",
+  [AUDIT_ACTIONS.USER_DEACTIVATED]: "Usuario desactivado",
+  [AUDIT_ACTIONS.USER_ROLE_CHANGED]: "Rol cambiado",
+  [AUDIT_ACTIONS.USER_INVITE_REVOKED]: "Invitación revocada",
+  [AUDIT_ACTIONS.USER_DATA_RESET]: "Datos restablecidos de fábrica",
+  [AUDIT_ACTIONS.ACCOUNT_CREATED]: "Cuenta creada",
+  [AUDIT_ACTIONS.ACCOUNT_DELETED]: "Cuenta eliminada",
+  [AUDIT_ACTIONS.ACCOUNT_SHARED]: "Cuenta compartida",
+  [AUDIT_ACTIONS.ACCOUNT_SHARE_REVOKED]: "Acceso revocado",
+  [AUDIT_ACTIONS.ACCOUNT_SHARE_ACCEPTED]: "Acceso aceptado",
+  [AUDIT_ACTIONS.ACCOUNT_SHARE_REJECTED]: "Acceso rechazado",
+  [AUDIT_ACTIONS.ACCOUNT_BALANCE_REASSIGNED]: "Saldo reasignado",
+  [AUDIT_ACTIONS.ACCOUNT_BALANCE_CORRECTED]: "Saldo corregido",
+  [AUDIT_ACTIONS.CARD_CREATED]: "Tarjeta creada",
+  [AUDIT_ACTIONS.CARD_DELETED]: "Tarjeta eliminada",
+  [AUDIT_ACTIONS.ADMIN_EXPORT]: "Exportación de administrador",
+  [AUDIT_ACTIONS.EXCHANGE_RATE_SET_MANUAL]: "Tasa de cambio manual",
+  [AUDIT_ACTIONS.USER_PASSWORD_RESET]: "Acceso reenviado",
+  [AUDIT_ACTIONS.USER_PASSWORD_CHANGED]: "Contraseña cambiada",
+  [AUDIT_ACTIONS.USER_DATA_EXPORTED]: "Datos exportados",
+};
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 
@@ -222,6 +272,26 @@ export const EXPORT_MAX_ROWS_PER_TABLE = 10_000;
 
 // Vida del archivo de export en `_storage` antes de su borrado programado.
 export const EXPORT_FILE_TTL_MS = 60 * 60 * 1000; // 1 hora
+
+// ─── Contadores del panel de administración ──────────────────────────────────
+
+/**
+ * Tope de filas que se cuentan por tabla y usuario en `userStats`.
+ *
+ * Vive aquí y no en `convex/adminStats.ts` porque el número lo necesitan los
+ * dos lados: Convex para dejar de contar, y el panel para escribir la etiqueta
+ * «10.000+» y decidir cuándo aplicarla. Estaba escrito a mano en cuatro sitios
+ * (`UserRow`, `UserUsageCard`, `VolumeCard` y su nota al pie); ahora Convex lo
+ * importa de aquí, que es el sentido de importación que ya usa el repositorio
+ * (`convex/users.ts` importa `AUDIT_ACTIONS` de este mismo archivo).
+ *
+ * Alcanzarlo se declara con `userStats.capped` y se muestra como
+ * `STATS_COUNT_CAP_LABEL`, nunca como una cifra exacta.
+ */
+export const STATS_COUNT_CAP = 10_000;
+
+/** «10.000+»: la cifra topada, formateada como el resto de números del panel. */
+export const STATS_COUNT_CAP_LABEL = `${STATS_COUNT_CAP.toLocaleString("es-CO")}+`;
 
 // ─── Autenticación ───────────────────────────────────────────────────────────
 

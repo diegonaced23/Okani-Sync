@@ -71,6 +71,11 @@ export default defineSchema({
     // sendMigrationMagicLinks sea reanudable sin volver a mandarle el correo
     // a quien ya lo recibió.
     authMigrationEmailSentAt: v.optional(v.number()),
+    // Última vez que el usuario cargó la app estando autenticado. Lo escribe
+    // ensureExists con acelerador de una hora (ver src/lib/adminHealth.ts).
+    // `undefined` = nunca ha entrado desde que existe el campo; la interfaz lo
+    // dice así en vez de inventarse una fecha.
+    lastSeenAt: v.optional(v.number()),
   })
     .index("by_clerkId", ["clerkId"])
     .index("by_authId", ["authId"])
@@ -685,4 +690,41 @@ export default defineSchema({
     createdAt:            v.number(),
   })
     .index("by_user_month", ["userId", "month"]),
+
+  // ============================================================
+  // LATIDO DE LOS TRABAJOS PROGRAMADOS
+  // Convex no guarda historial de ejecuciones, así que sin esta tabla no hay
+  // forma de saber si un cron dejó de correr. Las filas las escribe siempre
+  // registrarEjecucion() de convex/lib/cronHeartbeat.ts.
+  //
+  // Una fila solo se crea cuando la ejecución YA TERMINÓ, así que finishedAt y
+  // durationMs son obligatorios: no existe el estado «empezó y sigue
+  // corriendo». Un job que se cuelga no deja fila a medias, no deja fila
+  // ninguna — y ese caso lo detecta el panel por caducidad (comparando la
+  // última fila con el everyMs de CRON_JOBS), no buscando campos vacíos.
+  // ============================================================
+  cronRuns: defineTable({
+    job: v.string(),
+    startedAt: v.number(),
+    finishedAt: v.number(),
+    ok: v.boolean(),
+    error: v.optional(v.string()),   // solo cuando ok === false
+    durationMs: v.number(),
+  })
+    .index("by_job", ["job"]),
+
+  // ============================================================
+  // CONTADORES POR USUARIO — materializados por RECÁLCULO, no write-through
+  // Los recalcula un cron diario (y el botón del panel) desde los índices
+  // by_user. No se incrementan en cada escritura a propósito: eso obligaría a
+  // tocar todas las rutas de escritura y una sola olvidada haría mentir los
+  // números en silencio. Ver el spec del 2026-09-20.
+  // ============================================================
+  userStats: defineTable({
+    userId: v.string(),
+    counts: v.record(v.string(), v.number()),
+    capped: v.boolean(),
+    computedAt: v.number(),
+  })
+    .index("by_user", ["userId"]),
 });

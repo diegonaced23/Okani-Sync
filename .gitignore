@@ -147,3 +147,6 @@ temp/
 
 # Capturas y logs del MCP de Playwright
 .playwright-mcp/
+
+# Espacio de trabajo de superpowers (scratch, no es parte del proyecto)
+.superpowers/

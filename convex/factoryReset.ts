@@ -211,10 +211,25 @@ export const deleteTransactionsInOwnedAccounts = internalMutation({
 });
 
 /**
- * Borra lo que la app generó para el usuario: avisos y suscripciones push.
+ * Borra lo que la app generó para el usuario: avisos, suscripciones push y su
+ * fila de `userStats`.
  *
  * Va aparte de USER_DATA_TABLES a propósito — esa lista es "los datos del
- * usuario", los mismos que entrega la exportación, y estos dos no salen ahí.
+ * usuario", los mismos que entrega la exportación, y estos tres no salen ahí.
+ *
+ * `userStats` se suma aquí y no a USER_DATA_TABLES porque, igual que
+ * `notifications`/`pushSubscriptions`, no es algo que el usuario introdujo:
+ * es un contador que calcula `adminStats.recomputeForUser`. Pero a diferencia
+ * de esos dos, nadie la borraba: sobrevivía tanto a un usuario eliminado (fila
+ * huérfana que `adminStats.getTotals` sigue sumando para siempre) como a un
+ * reset de fábrica (fila con los contadores de ANTES del reset, mintiendo
+ * sobre datos que ya no existen). `by_user` es único por diseño —
+ * `recomputeForUser` hace `.unique()` antes de escribir— así que hay a lo
+ * sumo una fila que borrar.
+ *
+ * Esta función la llaman los dos únicos caminos de borrado del repo
+ * (`convex/actions/deleteUserCascade.ts::run` y `factoryReset.run` de este
+ * archivo), así que un solo cambio aquí cierra la fuga en ambos.
  */
 export const deleteGeneratedData = internalMutation({
   args: { userId: v.string() },
@@ -231,7 +246,17 @@ export const deleteGeneratedData = internalMutation({
       .take(DELETE_BATCH_SIZE);
     await Promise.all(subs.map((s) => ctx.db.delete(s._id)));
 
-    return notifications.length + subs.length;
+    // A lo sumo una fila (índice `by_user`, y `recomputeForUser` mantiene la
+    // unicidad con `.unique()` antes de escribir). Se busca en cada llamada
+    // del bucle igual que las otras dos consultas: cuando ya no hay nada que
+    // borrar, esta también devuelve 0 y el bucle de la action puede parar.
+    const stats = await ctx.db
+      .query("userStats")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .unique();
+    if (stats) await ctx.db.delete(stats._id);
+
+    return notifications.length + subs.length + (stats ? 1 : 0);
   },
 });
 
@@ -355,7 +380,8 @@ export const run = action({
       }
     }
 
-    // Avisos y suscripciones push, que no forman parte de USER_DATA_TABLES.
+    // Avisos, suscripciones push y la fila de `userStats`, que no forman
+    // parte de USER_DATA_TABLES.
     for (let batches = 0; ; batches++) {
       const deleted: number = await ctx.runMutation(
         internal.factoryReset.deleteGeneratedData,
@@ -372,6 +398,30 @@ export const run = action({
     // borrar dejaría la cuenta Billetera y las categorías nuevas dentro del
     // propio barrido.
     await ctx.runMutation(internal.factoryReset.restoreFactoryState, {
+      userId: user.clerkId,
+    });
+
+    // El reset es distinto del borrado de usuario en un punto clave: aquí el
+    // usuario SIGUE existiendo, así que el panel admin puede volver a
+    // preguntar por sus contadores en cualquier momento. `deleteGeneratedData`
+    // ya quitó su fila de `userStats` (ver el comentario de esa función), y
+    // dejarlo así hasta el `recomputeAll` de las 03:00 UTC sería honesto —el
+    // panel mostraría "sin calcular" en vez de mentir con los contadores de
+    // ANTES del reset— pero deja al usuario recién resetado horas apareciendo
+    // como un signo de interrogación en vez de con los ceros (y el par de
+    // filas que siembra `seedInitialUserData`) que de verdad tiene.
+    //
+    // La alternativa —encolar el recálculo ya mismo— es igual de honesta en
+    // cuanto termina, así que se elige por ser mejor experiencia sin costar
+    // exactitud, CON una condición: tiene que encolarse DESPUÉS de sembrar,
+    // no antes. `recomputeForUser` encadena sus quince pasos por
+    // `ctx.scheduler.runAfter(0, …)`, así que si se lanzara antes de que
+    // `restoreFactoryState` (arriba) termine de crear la cuenta Billetera y
+    // las categorías por defecto, podría contarlas a medio sembrar y dejar
+    // una fila que ya está desactualizada en el instante en que se escribe —
+    // exactamente la mentira que se quiere evitar. Encolado aquí, después de
+    // que el `await` de arriba ya resolvió, mira un estado quieto.
+    await ctx.runMutation(internal.adminStats.recomputeForUser, {
       userId: user.clerkId,
     });
 
