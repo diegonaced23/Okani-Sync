@@ -18,24 +18,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { DeleteUserDialog } from "@/components/admin/DeleteUserDialog";
+import { UserUsageCard } from "@/components/admin/UserUsageCard";
 import { toast } from "sonner";
 import { formatRelative } from "@/lib/utils";
 import { PageContainer } from "@/components/layout/PageContainer";
-
-const AUDIT_ACTION_LABELS: Record<string, string> = {
-  "user.created":           "Usuario creado",
-  "user.updated":           "Usuario actualizado",
-  "user.deleted":           "Usuario eliminado",
-  "user.deactivated":       "Usuario desactivado",
-  "user.role.changed":      "Rol cambiado",
-  "user.password_reset":    "Enlace de acceso enviado",
-  "account.shared":         "Cuenta compartida",
-  "account.share.revoked":  "Acceso revocado",
-  "account.share.accepted": "Invitación aceptada",
-  "account.share.rejected": "Invitación rechazada",
-  "account.created":        "Cuenta creada",
-  "account.deleted":        "Cuenta eliminada",
-};
+import { AUDIT_ACTION_LABELS } from "@/lib/constants";
 
 export default function AdminUserDetailPage({
   params,
@@ -45,12 +32,12 @@ export default function AdminUserDetailPage({
   const { id: clerkId } = use(params);
   const router = useRouter();
 
-  const users = useQuery(api.users.listAll);
+  // getByClerkId y no listAll().find(): la versión anterior descargaba TODOS
+  // los usuarios para mostrar uno.
+  const user = useQuery(api.users.getByClerkId, { clerkId });
   const auditLogs = useQuery(api.auditLogs.listForUser, { targetClerkId: clerkId });
   const updateUser = useMutation(api.users.updateByAdmin);
   const sendAccessEmail = useAction(api.actions.adminUsers.sendAccessEmail);
-
-  const user = (users ?? []).find((u) => u.clerkId === clerkId);
 
   const [name, setName] = useState("");
   const [nameEditing, setNameEditing] = useState(false);
@@ -59,7 +46,7 @@ export default function AdminUserDetailPage({
   const [confirmLinkOpen, setConfirmLinkOpen] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
 
-  const isLoading = users === undefined;
+  const isLoading = user === undefined;
 
   if (!isLoading && !user) {
     return (
@@ -224,6 +211,9 @@ export default function AdminUserDetailPage({
               {generatingLink ? "Enviando…" : "Enviar enlace"}
             </Button>
           </div>
+
+          {/* Panel de uso: agregados y fechas, nunca datos financieros */}
+          <UserUsageCard clerkId={clerkId} createdAt={user.createdAt} lastSeenAt={user.lastSeenAt} />
 
           {/* Zona de peligro */}
           <Separator />

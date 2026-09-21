@@ -8,6 +8,7 @@
  */
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { normalizeEmail } from "../src/lib/email";
 
 const SYSTEM_CATEGORIES = [
   { name: "Pago de tarjeta",   type: "gasto" as const, color: "#F97316", icon: "credit-card" },
@@ -207,5 +208,29 @@ export const consolidateLegacyPayments = internalMutation({
       isDone: allWithFilter.isDone,
       nextCursor: allWithFilter.isDone ? null : allWithFilter.continueCursor,
     };
+  },
+});
+
+// ─── Paso 4: Normalizar el correo de las invitaciones ya guardadas ──────────
+
+/**
+ * Pasa a minúsculas el correo de las invitaciones ya guardadas.
+ *
+ * Sin esto, una invitación creada antes del arreglo con mayúsculas distintas a
+ * las del proveedor de identidad sigue sin poder encontrarse, y su titular
+ * sigue sin poder entrar. Idempotente: las que ya están normalizadas no se tocan.
+ */
+export const normalizeInvitationEmails = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("invitations").collect();
+    let changed = 0;
+    for (const inv of all) {
+      const normalized = normalizeEmail(inv.email);
+      if (normalized === inv.email) continue;
+      await ctx.db.patch(inv._id, { email: normalized });
+      changed++;
+    }
+    return { total: all.length, changed };
   },
 });

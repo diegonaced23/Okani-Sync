@@ -1,6 +1,7 @@
 import { internalMutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { buildRateMap, convertAmount, type RateMap } from "./lib/money";
+import { registrarEjecucion } from "./lib/cronHeartbeat";
 
 // ─── Helper interno ───────────────────────────────────────────────────────────
 
@@ -107,6 +108,11 @@ export const captureForAllUsers = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
+    // El latido se escribe al final, dentro de ESTA misma transacción: así es
+    // imposible que se capturen los snapshots y no quede constancia, o al
+    // revés. Por eso este job sigue siendo destino directo del cron en vez de
+    // pasar por el despachador (ver lib/cronJobs.ts).
+    const startedAt = now;
     const d = new Date(now);
     const prevMonthDate = new Date(d.getFullYear(), d.getMonth() - 1, 1);
     const month = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
@@ -125,6 +131,17 @@ export const captureForAllUsers = internalMutation({
     }
 
     console.log(`netWorthSnapshots: capturados ${users.length} snapshots para ${month}`);
+
+    // Si algo de lo anterior lanza, la transacción revierte y esta fila tampoco
+    // se escribe: por eso aquí `ok` es siempre true. Un fallo no deja una fila
+    // con ok:false, deja ausencia de fila, y el panel lo ve como caducidad.
+    await registrarEjecucion(ctx, {
+      job: "captureNetWorth",
+      startedAt,
+      finishedAt: Date.now(),
+      ok: true,
+    });
+
     return { month, usersProcessed: users.length };
   },
 });

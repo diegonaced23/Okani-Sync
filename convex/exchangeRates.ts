@@ -1,7 +1,8 @@
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
-import { getCurrentUser, getCurrentUserId } from "./lib/auth";
+import { assertAdmin, getCurrentUserId } from "./lib/auth";
+import { AUDIT_ACTIONS } from "../src/lib/constants";
 
 // ─── Helper interno ───────────────────────────────────────────────────────────
 
@@ -80,7 +81,10 @@ export const setManualRate = mutation({
     rate: v.number(),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
+    // assertAdmin y no getCurrentUser: `currentExchangeRates` es una tabla
+    // GLOBAL, no del usuario. Con el guard anterior, cualquier usuario activo
+    // podía falsear la conversión multi-moneda del dashboard de todos los demás.
+    const user = await assertAdmin(ctx);
     const now = Date.now();
     await ctx.db.insert("exchangeRates", {
       fromCurrency: args.fromCurrency,
@@ -92,6 +96,27 @@ export const setManualRate = mutation({
       createdBy: user.clerkId,
     });
     await upsertCurrentRate(ctx, args.fromCurrency, args.toCurrency, args.rate);
+
+    // Auditoría: mismo patrón que invitations.ts::revoke (insert directo,
+    // porque internal.users.logAuditAction es una internalMutation y esta es
+    // una mutation pública con el admin ya resuelto). Es obligatorio: CLAUDE.md
+    // exige registrar toda acción administrativa, y esta sobrescribe una tabla
+    // GLOBAL de la que depende la consolidación multi-moneda de todos.
+    //
+    // En `metadata`, solo el par y la tasa: es lo que hace falta para saber
+    // qué se cambió, y nada de ello es el dinero de nadie. El panel además
+    // filtra la metadata por lista blanca (convex/auditLogs.ts).
+    await ctx.db.insert("auditLogs", {
+      userId: user.clerkId,
+      action: AUDIT_ACTIONS.EXCHANGE_RATE_SET_MANUAL,
+      entity: "currentExchangeRates",
+      metadata: {
+        fromCurrency: args.fromCurrency,
+        toCurrency: args.toCurrency,
+        rate: args.rate,
+      },
+      createdAt: now,
+    });
   },
 });
 

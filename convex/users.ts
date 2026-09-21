@@ -1,4 +1,6 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import {
   AUDIT_ACTIONS,
@@ -6,6 +8,8 @@ import {
   ALLOWED_AVATAR_MIME_TYPES,
   AVATAR_UPLOAD_THROTTLE_MS,
 } from "../src/lib/constants";
+import { normalizeEmail } from "../src/lib/email";
+import { shouldRefreshLastSeen } from "../src/lib/adminHealth";
 import { getCurrentUser, getCurrentUserOrNull, assertAdmin } from "./lib/auth";
 import { seedInitialUserData } from "./lib/seedUserData";
 import { authComponent } from "./auth";
@@ -59,6 +63,7 @@ export const ensureExists = mutation({
       .unique();
     if (linked) {
       if (!linked.active) throw new Error("No autorizado: usuario desactivado");
+      await touchLastSeen(ctx, linked);
       return linked._id;
     }
 
@@ -70,14 +75,15 @@ export const ensureExists = mutation({
 
     if (existing) {
       if (!existing.active) throw new Error("No autorizado: usuario desactivado");
+      await touchLastSeen(ctx, existing);
       return existing._id;
     }
 
-    // Solo para el enlace nuevo por email (ver nota de normalización abajo).
-    // No se usa para la búsqueda de invitación ni para el email guardado —
-    // ese camino conserva el comportamiento exacto de siempre (sin normalizar)
-    // para no alterar el flujo de Clerk que ya está en producción.
-    const normalizedEmail = (identity.email ?? "").toLowerCase().trim();
+    // Se usa para el enlace por email de un usuario legacy y para la
+    // búsqueda de invitación (ver más abajo) — no para el email guardado en
+    // `users.email`, que conserva el comportamiento exacto de siempre (sin
+    // normalizar) para no alterar el flujo de Clerk que ya está en producción.
+    const normalizedEmail = normalizeEmail(identity.email ?? "");
 
     // Primer login de un usuario preexistente bajo Better Auth: vincular por
     // email en vez de crear una fila nueva (repara lo que el trigger no pudo).
@@ -113,15 +119,22 @@ export const ensureExists = mutation({
         throw new Error("No autorizado: verifica tu correo antes de continuar");
       }
       if (!legacy.active) throw new Error("No autorizado: usuario desactivado");
-      await ctx.db.patch(legacy._id, { authId: identity.subject });
+      // `lastSeenAt` en el MISMO patch: esta rama es una entrada real a la
+      // app, igual que las dos de arriba. Sin ella, quien se vincula por este
+      // camino sale del login marcado como "nunca ha entrado" y, si además no
+      // tiene movimientos contados, como cuenta dormida.
+      await ctx.db.patch(legacy._id, { authId: identity.subject, lastSeenAt: Date.now() });
       return legacy._id;
     }
 
     // El webhook aún no llegó — verificar invitación antes de crear
     const email = identity.email ?? "";
+    // `normalizedEmail` ya está calculado más arriba en este handler. La
+    // invitación se busca con él porque es como se guarda desde
+    // invitations.createFromAdmin.
     const invitation = await ctx.db
       .query("invitations")
-      .withIndex("by_email", (q) => q.eq("email", email))
+      .withIndex("by_email", (q) => q.eq("email", normalizedEmail))
       .filter((q) => q.eq(q.field("status"), "pending"))
       .first();
 
@@ -151,6 +164,12 @@ export const ensureExists = mutation({
       theme: "dark",
       createdAt: now,
       updatedAt: now,
+      // El alta ocurre DENTRO del primer login, así que la primera visita es
+      // ahora. Dejarlo sin definir hacía que un invitado que acaba de entrar
+      // apareciera en el panel como «nunca ha entrado» y —con 0 movimientos,
+      // que es lo normal el primer día— como «Cuenta dormida»: justo el flujo
+      // que vigila la tarjeta de invitaciones.
+      lastSeenAt: now,
     });
 
     await ctx.db.patch(invitation._id, { status: "accepted", acceptedAt: now });
@@ -422,52 +441,107 @@ export const deleteAvatarFileInternal = internalMutation({
 
 // ─── Query interna: buscar usuario por clerkId ────────────────────────────────
 
+/**
+ * Ficha de un usuario para el panel admin (o la propia, si alguien se consulta
+ * a sí mismo).
+ *
+ * DOS cambios respecto de la versión anterior, ambos por el mismo motivo:
+ *
+ * 1. `assertAdmin` en vez de `getCurrentUserOrNull` + comprobación de rol en
+ *    línea. Ese patrón se eliminó de `listAll`/`adminStats` precisamente
+ *    porque `getCurrentUserOrNull` NO valida `active`: un administrador
+ *    desactivado seguía leyendo el documento completo de cualquiera. Ahora la
+ *    ficha del panel depende de esta query, así que el agujero era real.
+ *    Consecuencia deliberada: para un no-admin que consulta a otro, esto ahora
+ *    LANZA en vez de devolver `null`. La pantalla que la usa está bajo el
+ *    guard de `/admin`, así que ese caso no existe en la interfaz.
+ * 2. Proyección explícita. Se dejan fuera `authId` (el puente con Better Auth,
+ *    que no pinta nada en la interfaz y es un identificador de sesión),
+ *    `notificationPrefs` (preferencia personal, no asunto del admin),
+ *    `imageStorageId` y `lastAvatarUploadAt`. Se devuelve exactamente lo que
+ *    la ficha muestra.
+ */
 export const getByClerkId = query({
   args: { clerkId: v.string() },
   handler: async (ctx, { clerkId }) => {
-    const caller = await getCurrentUserOrNull(ctx);
-    if (!caller) return null;
-    // Solo el propio usuario o un admin pueden consultar datos completos de otro usuario.
     // Comparar contra caller.clerkId (no identity.subject): bajo Better Auth
     // identity.subject es el authId, no el clerkId, así que compararlo
     // directo haría fallar el check "soy yo mismo" para todo el mundo.
-    if (caller.clerkId !== clerkId && caller.role !== "admin") return null;
-    return await ctx.db
+    const caller = await getCurrentUserOrNull(ctx);
+    if (!caller) return null;
+    if (caller.clerkId !== clerkId) await assertAdmin(ctx);
+
+    const user = await ctx.db
       .query("users")
       .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
       .unique();
+    if (!user) return null;
+
+    return {
+      _id: user._id,
+      clerkId: user.clerkId,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      active: user.active,
+      createdAt: user.createdAt,
+      lastSeenAt: user.lastSeenAt,
+      welcomeEmailSentAt: user.welcomeEmailSentAt,
+    };
   },
 });
 
 // ─── Queries admin ────────────────────────────────────────────────────────────
 
-/** Lista todos los usuarios (solo admins). */
-export const listAll = query({
+/**
+ * Lista de usuarios para el panel, con PROYECCIÓN explícita.
+ *
+ * Se elige campo a campo —nunca el documento entero, que traería `authId`,
+ * `notificationPrefs` e `imageStorageId`— y en particular no se incluye ningún
+ * importe, saldo ni descripción: la restricción de privacidad del panel es que
+ * solo pueden salir conteos y fechas.
+ */
+export const listForAdmin = query({
   args: {},
   handler: async (ctx) => {
-    // getCurrentUserOrNull resuelve por by_clerkId y by_authId — identity.subject
-    // directo es el authId bajo Better Auth, no matchea la fila del admin.
-    const caller = await getCurrentUserOrNull(ctx);
-    if (!caller || caller.role !== "admin") return [];
-    return await ctx.db.query("users").order("desc").collect();
-  },
-});
+    await assertAdmin(ctx);
 
-/** Estadísticas globales de la app para el dashboard admin. */
-export const adminStats = query({
-  args: {},
-  handler: async (ctx) => {
-    const caller = await getCurrentUserOrNull(ctx);
-    if (!caller || caller.role !== "admin") return null;
+    const users = await ctx.db.query("users").order("desc").collect();
+    // `userStats` ya trae los conteos materializados por
+    // convex/adminStats.ts::recomputeAll — no se recalculan acá, solo se
+    // proyectan junto con el resto de la fila de usuario.
+    const stats = await ctx.db.query("userStats").collect();
+    const byUser = new Map(stats.map((s) => [s.userId, s]));
 
-    const allUsers = await ctx.db.query("users").collect();
-    const totalUsers = allUsers.length;
-    const activeUsers = allUsers.filter((u) => u.active).length;
-    const adminCount = allUsers.filter((u) => u.role === "admin").length;
-
-    const totalTransactions = (await ctx.db.query("transactions").take(100000)).length;
-
-    return { totalUsers, activeUsers, adminCount, totalTransactions };
+    return users.map((u) => {
+      const s = byUser.get(u.clerkId);
+      return {
+        clerkId: u.clerkId,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        active: u.active,
+        createdAt: u.createdAt,
+        // `undefined` para quien nunca haya entrado desde que se desplegó el
+        // campo — se pasa tal cual, no se sustituye por `createdAt` ni por 0.
+        lastSeenAt: u.lastSeenAt,
+        // `undefined` —y NO `?? 0`— cuando no hay fila en `userStats`: nadie
+        // ha corrido el recálculo desde que este usuario existe, así que no
+        // hay conteo. El 0 por defecto que había aquí hacía que `isDormant`
+        // recibiera un cero inventado y el panel afirmara «dormida» y «En
+        // uso: 0» a partir de un número que él mismo declaraba no haber
+        // calculado (`statsComputedAt: undefined`). La ignorancia se propaga
+        // hasta la interfaz, que la dice, en vez de disfrazarse de cero por
+        // el camino: ver `activityStatus` en src/lib/adminHealth.ts.
+        transactionCount: s?.counts.transactions,
+        accountCount: s?.counts.accounts,
+        statsComputedAt: s?.computedAt,
+        // `userStats.capped` distingue "conteo exacto" de "llegó al tope de
+        // STATS_COUNT_CAP en alguna tabla de este usuario". Sin este campo,
+        // un conteo topado se pintaría igual que uno exacto.
+        statsCapped: s?.capped ?? false,
+      };
+    });
   },
 });
 
@@ -708,3 +782,13 @@ export const deleteByClerkId = internalMutation({
     await ctx.db.delete(user._id);
   },
 });
+
+/** Refresca lastSeenAt solo si toca; ver shouldRefreshLastSeen. */
+async function touchLastSeen(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+): Promise<void> {
+  const now = Date.now();
+  if (!shouldRefreshLastSeen(user.lastSeenAt, now)) return;
+  await ctx.db.patch(user._id, { lastSeenAt: now });
+}

@@ -7,6 +7,7 @@ import { assertIsOwner } from "./lib/permissions";
 import { toMonthString, assertValidMonth } from "./lib/utils";
 import { deleteTransactionWithEffects } from "./lib/transactionEffects";
 import { convertAmount, getUserRateMap } from "./lib/money";
+import { AUDIT_ACTIONS } from "../src/lib/constants";
 
 // Debe reflejar las keys de ACCOUNT_GRADIENTS en src/lib/constants.ts — el color de una cuenta
 // no es un hex, es la key de un gradiente predefinido.
@@ -900,7 +901,7 @@ export const reassignBalance = mutation({
 
     await ctx.db.insert("auditLogs", {
       userId: user.clerkId,
-      action: "account.balance.reassigned",
+      action: AUDIT_ACTIONS.ACCOUNT_BALANCE_REASSIGNED,
       entity: "account",
       entityId: accountId,
       metadata: { previousBalance, newBalance, delta, txId },
@@ -967,7 +968,7 @@ export const correctBalance = mutation({
 
     await ctx.db.insert("auditLogs", {
       userId: user.clerkId,
-      action: "account.balance.corrected",
+      action: AUDIT_ACTIONS.ACCOUNT_BALANCE_CORRECTED,
       entity: "account",
       entityId: accountId,
       metadata: { previousBalance, newBalance },

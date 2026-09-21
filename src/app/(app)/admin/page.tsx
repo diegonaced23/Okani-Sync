@@ -1,141 +1,69 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
-import {
-  Users, UserCheck, ShieldCheck, ArrowLeftRight,
-} from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelative } from "@/lib/utils";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { FIELD_LABEL } from "@/lib/ios";
+import { RatesHealthCard } from "@/components/admin/RatesHealthCard";
+import { CronsHealthCard } from "@/components/admin/CronsHealthCard";
+import { UsersSummaryCard } from "@/components/admin/UsersSummaryCard";
+import { PendingInvitationsCard } from "@/components/admin/PendingInvitationsCard";
+import { DormantUsersCard } from "@/components/admin/DormantUsersCard";
+import { VolumeCard } from "@/components/admin/VolumeCard";
+import { RecentActivityCard } from "@/components/admin/RecentActivityCard";
+import { ManualRateCard } from "@/components/admin/ManualRateCard";
 
-const AUDIT_ACTION_LABELS: Record<string, string> = {
-  "user.created":           "Usuario creado",
-  "user.updated":           "Usuario actualizado",
-  "user.deleted":           "Usuario eliminado",
-  "user.deactivated":       "Usuario desactivado",
-  "user.role.changed":      "Rol cambiado",
-  "user.password_reset":    "Link de acceso generado",
-  "account.shared":         "Cuenta compartida",
-  "account.share.revoked":  "Acceso revocado",
-  "account.share.accepted": "Invitación aceptada",
-  "account.share.rejected": "Invitación rechazada",
-  "account.created":        "Cuenta creada",
-  "account.deleted":        "Cuenta eliminada",
-};
-
-interface StatCardProps {
-  label: string;
-  value: number | undefined;
-  icon: React.ElementType;
-  loading: boolean;
-}
-
-function StatCard({ label, value, icon: Icon, loading }: StatCardProps) {
-  return (
-    <div className="flex flex-col rounded-xl border border-border bg-card p-5 gap-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      {loading ? (
-        <Skeleton className="h-8 w-20 rounded-lg" />
-      ) : (
-        <p
-          className="text-3xl font-bold text-foreground"
-          style={{ fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em" }}
-        >
-          {value?.toLocaleString("es-CO") ?? "—"}
-        </p>
-      )}
-    </div>
-  );
-}
-
+/**
+ * Panel de administración.
+ *
+ * La página es solo composición: cada tarjeta hace su propio `useQuery` y
+ * gestiona su propia carga. No se centraliza aquí a propósito — con una sola
+ * query compartida, la tarjeta más lenta dejaría en blanco a todas las demás,
+ * y la pregunta con la que el admin entra («¿está todo bien?») se responde
+ * pieza a pieza, no de golpe.
+ *
+ * El `index` que recibe cada tarjeta ordena su entrada escalonada; es una
+ * numeración continua entre secciones para que el barrido visual siga el orden
+ * de lectura y no se reinicie en cada encabezado.
+ */
 export default function AdminDashboardPage() {
-  const stats = useQuery(api.users.adminStats);
-  const auditLogs = useQuery(api.auditLogs.listRecent, { limit: 10 });
-
-  const statsLoading = stats === undefined;
-  const logsLoading = auditLogs === undefined;
-
   return (
-    <PageContainer variant="wide" className="space-y-6">
+    <PageContainer variant="wide" className="space-y-7 pb-4">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Panel administrativo</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Resumen de la actividad de la app
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Qué está funcionando y quién está usando la app
         </p>
       </div>
 
-      {/* KPIs */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Usuarios"
-          value={stats?.totalUsers}
-          icon={Users}
-          loading={statsLoading}
-        />
-        <StatCard
-          label="Activos"
-          value={stats?.activeUsers}
-          icon={UserCheck}
-          loading={statsLoading}
-        />
-        <StatCard
-          label="Admins"
-          value={stats?.adminCount}
-          icon={ShieldCheck}
-          loading={statsLoading}
-        />
-        <StatCard
-          label="Transacciones"
-          value={stats?.totalTransactions}
-          icon={ArrowLeftRight}
-          loading={statsLoading}
-        />
+      <section className="space-y-2.5">
+        <h2 className={FIELD_LABEL}>Estado del sistema</h2>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <RatesHealthCard index={0} />
+          <CronsHealthCard index={1} />
+        </div>
       </section>
 
-      {/* Actividad reciente */}
-      <section className="rounded-xl bg-card border border-border overflow-hidden">
-        <div className="px-4 py-2.5 bg-muted/50 border-b border-border">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Actividad reciente
-          </h2>
-        </div>
-        {logsLoading ? (
-          <div className="p-4 space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-10 rounded-lg" />
-            ))}
+      <section className="space-y-2.5">
+        <h2 className={FIELD_LABEL}>Personas</h2>
+        <div className="grid grid-cols-1 gap-3">
+          <UsersSummaryCard index={2} />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <PendingInvitationsCard index={3} />
+            <DormantUsersCard index={4} />
           </div>
-        ) : !auditLogs || auditLogs.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-10 text-center">
-            Sin actividad reciente.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {auditLogs.map((log) => (
-              <li key={log._id} className="px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm text-foreground">
-                    {AUDIT_ACTION_LABELS[log.action] ?? log.action}
-                  </p>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {formatRelative(log.createdAt)}
-                  </span>
-                </div>
-                {log.targetUserId && (
-                  <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-                    {log.targetUserId}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        </div>
+      </section>
+
+      <section className="space-y-2.5">
+        <h2 className={FIELD_LABEL}>Uso</h2>
+        <VolumeCard index={5} />
+      </section>
+
+      <section className="space-y-2.5">
+        <h2 className={FIELD_LABEL}>Operación</h2>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <RecentActivityCard index={6} />
+          <ManualRateCard index={7} />
+        </div>
       </section>
     </PageContainer>
   );

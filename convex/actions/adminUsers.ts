@@ -3,6 +3,7 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { AUDIT_ACTIONS } from "../../src/lib/constants";
+import { normalizeEmail } from "../../src/lib/email";
 import { assertAdminFromAction } from "../lib/auth";
 import { createAuth } from "../auth";
 
@@ -49,10 +50,15 @@ export const createByAdmin = action({
     // 2. Enviar el magic link de acceso
     await sendAccessMagicLink(ctx, args.email);
 
+    // El mismo correo NORMALIZADO que guarda `invitations.createFromAdmin`.
+    // Sin esto, escribir "Ana@Correo.com" dejaba la invitación como
+    // "ana@correo.com" y el registro de auditoría como "Ana@Correo.com": el
+    // feed de actividad y la tarjeta de invitaciones pendientes mostraban dos
+    // formas del mismo correo, como si fueran dos personas.
     await ctx.runMutation(internal.users.logAuditAction, {
       userId: admin.clerkId,
       action: AUDIT_ACTIONS.USER_INVITED,
-      metadata: { email: args.email, role: args.role },
+      metadata: { email: normalizeEmail(args.email), role: args.role },
     });
   },
 });

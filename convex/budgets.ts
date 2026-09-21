@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import { getUserRateMap, convertAmount } from "./lib/money";
 import { assertValidMonth } from "./lib/utils";
+import { registrarEjecucion } from "./lib/cronHeartbeat";
 
 /**
  * Resumen del mes en la moneda preferida del usuario. Existe porque los totales
@@ -259,6 +260,11 @@ export const remove = mutation({
 export const rolloverRecurring = internalMutation({
   args: {},
   handler: async (ctx) => {
+    // El latido se escribe al final, dentro de ESTA misma transacción: así es
+    // imposible que el rollover ocurra y no quede constancia, o al revés. Por
+    // eso este job sigue siendo destino directo del cron en vez de pasar por el
+    // despachador (ver lib/cronJobs.ts).
+    const startedAt = Date.now();
     const now = new Date();
     const curYear = now.getFullYear();
     const curMonth = now.getMonth() + 1;
@@ -299,6 +305,16 @@ export const rolloverRecurring = internalMutation({
         });
       }
     }
+
+    // Si algo de lo anterior lanza, la transacción revierte y esta fila tampoco
+    // se escribe: por eso aquí `ok` es siempre true. Un fallo no deja una fila
+    // con ok:false, deja ausencia de fila, y el panel lo ve como caducidad.
+    await registrarEjecucion(ctx, {
+      job: "rolloverBudgets",
+      startedAt,
+      finishedAt: Date.now(),
+      ok: true,
+    });
   },
 });
 

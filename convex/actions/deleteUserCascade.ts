@@ -79,8 +79,10 @@ export const run = internalAction({
       counts[table] = removed;
     }
 
-    // Notificaciones y suscripciones push: datos que generó la app, fuera de
-    // USER_DATA_TABLES porque la exportación tampoco los entrega.
+    // Notificaciones, suscripciones push y la fila de `userStats`: datos que
+    // generó la app, fuera de USER_DATA_TABLES porque la exportación tampoco
+    // los entrega. Sin este paso, `userStats` sobrevivía para siempre al
+    // usuario borrado y `adminStats.getTotals` la seguía sumando.
     let generated = 0;
     for (;;) {
       const deleted: number = await ctx.runMutation(

@@ -10,9 +10,12 @@
  * ser posible: el `switch` de abajo es exhaustivo y no compila si falta un caso,
  * y hay un test que compara esta lista contra lo que lee la exportación.
  *
- * NO incluye `notifications` ni `pushSubscriptions`: son datos que genera la
- * app, no del usuario, y la exportación tampoco los entrega. Quien los borre
- * debe hacerlo aparte (tanto el reset como la cascada lo hacen).
+ * NO incluye `notifications`, `pushSubscriptions` ni `userStats`: son datos
+ * que genera la app, no del usuario, y la exportación tampoco los entrega.
+ * Quien los borre debe hacerlo aparte — los tres salen de
+ * `factoryReset.ts::deleteGeneratedData`, que llaman tanto el reset como la
+ * cascada, así que ninguno de los dos caminos puede olvidarse de uno sin
+ * olvidarse de todos.
  */
 
 import type { Id, TableNames } from "../_generated/dataModel";
@@ -135,4 +138,20 @@ export async function collectUserDocs(
 
 function ids<T extends { _id: Id<TableNames> }>(docs: T[]): Id<TableNames>[] {
   return docs.map((d) => d._id);
+}
+
+/**
+ * Cuántos documentos de `table` tiene `userId`, con tope.
+ *
+ * Reutiliza `collectUserDocs` para que el conteo y el borrado miren exactamente
+ * las mismas filas por los mismos índices: si divergieran, el panel diría un
+ * número y el reset de fábrica borraría otro.
+ */
+export async function countUserDocs(
+  ctx: QueryCtx,
+  table: UserDataTable,
+  userId: string,
+  cap: number,
+): Promise<number> {
+  return (await collectUserDocs(ctx, table, userId, cap)).length;
 }
