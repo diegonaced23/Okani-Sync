@@ -31,8 +31,8 @@ export function TransactionDetailSheet({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [loading, setLoading]       = useState(false);
 
-  // Cerrar modo edición cuando cambia la transacción seleccionada o el sheet se cierra.
-  // Patrón de estado derivado (render-time setState) para evitar useEffect.
+  // Salir del modo edición cuando cambia la transacción seleccionada o el sheet se
+  // vuelve a abrir. Patrón de estado derivado (render-time setState) para evitar useEffect.
   const [prevTx, setPrevTx] = useState(tx);
   if (tx !== prevTx) {
     setPrevTx(tx);
@@ -42,7 +42,9 @@ export function TransactionDetailSheet({
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (!open) setEditing(false);
+    // Al abrir y no al cerrar: si se resetea al cerrar, la hoja cambia a la vista
+    // de detalle en plena animación de salida (p. ej. al cerrarse tras guardar)
+    if (open) setEditing(false);
   }
 
   // Devolver el foco al botón "Editar" al salir del modo edición (cancelar o guardar),
@@ -51,11 +53,17 @@ export function TransactionDetailSheet({
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const wasEditingRef = useRef(editing);
   useEffect(() => {
+    // Cerrada, la hoja conserva el modo edición hasta reabrirse: ese reset no
+    // viene de salir de editar y no debe mover el foco
+    if (!open) {
+      wasEditingRef.current = false;
+      return;
+    }
     if (wasEditingRef.current && !editing) {
       editButtonRef.current?.focus();
     }
     wasEditingRef.current = editing;
-  }, [editing]);
+  }, [editing, open]);
 
   // Guardia después de los hooks para no violar la regla de hooks
   if (!tx) return null;
@@ -81,10 +89,7 @@ export function TransactionDetailSheet({
     <>
       <AppSheet
         open={open}
-        onOpenChange={(o) => {
-          if (!o) setEditing(false);
-          onOpenChange(o);
-        }}
+        onOpenChange={onOpenChange}
         title={editing ? "Editar movimiento" : "Detalle del movimiento"}
       >
         {/* TransactionEditForm se remonta cada vez que editing pasa a true,
@@ -92,7 +97,9 @@ export function TransactionDetailSheet({
         {editing ? (
           <TransactionEditForm
             tx={currentTx}
-            onSuccess={() => setEditing(false)}
+            // La confirmación del botón ya muestra cómo quedó: volver a la ficha
+            // solo obligaría a cerrarla a mano
+            onSuccess={() => onOpenChange(false)}
             onCancel={() => setEditing(false)}
           />
         ) : (

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
 import { useMediaQuery } from "@/hooks/use-media-query"
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset"
 import {
   Sheet,
   SheetContent,
@@ -55,11 +56,33 @@ export function AppSheet({
   const isDesktop = useMediaQuery("(min-width: 768px)")
   const [footerSlot, setFooterSlot] = React.useState<HTMLDivElement | null>(null)
 
+  // En móvil la hoja sale desde abajo y el teclado virtual la tapaba, pie incluido
+  // (ver useKeyboardInset). Con el teclado abierto se apoya sobre él y se acorta a
+  // lo visible, así el pie queda justo encima y el cuerpo sigue haciendo scroll.
+  const keyboard = useKeyboardInset(open && !isDesktop)
+  const keyboardStyle: React.CSSProperties | undefined = keyboard.inset
+    ? {
+        bottom: keyboard.inset,
+        maxHeight: keyboard.visibleHeight - 12,
+        transition: "bottom 0.22s ease-out, max-height 0.22s ease-out",
+      }
+    : undefined
+
+  // Al acortarse la hoja, el campo enfocado puede quedar fuera del área con scroll
+  React.useEffect(() => {
+    if (!keyboard.inset) return
+    const el = document.activeElement
+    if (el instanceof HTMLElement && el.closest('[data-slot="sheet-content"]')) {
+      el.scrollIntoView({ block: "nearest" })
+    }
+  }, [keyboard.inset, keyboard.visibleHeight])
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {trigger && <SheetTrigger render={trigger} />}
       <SheetContent
         side={isDesktop ? "right" : "bottom"}
+        style={keyboardStyle}
         className={cn(
           isDesktop
             ? "overflow-x-hidden sm:max-w-md flex flex-col gap-0"

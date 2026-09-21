@@ -62,6 +62,15 @@ export default defineSchema({
     imageStorageId: v.optional(v.id("_storage")),
     // Estrangulador de subidas de avatar (ver users.generateAvatarUploadUrl).
     lastAvatarUploadAt: v.optional(v.number()),
+    // Cuenta o tarjeta que llega seleccionada al registrar un movimiento. Una
+    // sola para todo: si es una tarjeta, en un ingreso no aplica (una tarjeta no
+    // recibe ingresos). Si se archiva o se borra, el formulario la ignora.
+    favoriteSource: v.optional(
+      v.union(
+        v.object({ kind: v.literal("account"), id: v.id("accounts") }),
+        v.object({ kind: v.literal("card"), id: v.id("cards") })
+      )
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     createdBy: v.optional(v.string()),       // clerkId del admin que lo creó

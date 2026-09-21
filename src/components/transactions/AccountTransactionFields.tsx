@@ -7,16 +7,21 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { DatePicker } from "@/components/ui/date-picker";
+import { AppSheetFooter } from "@/components/ui/app-sheet";
 import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { toCents, dateStrToTs, parseMoneyInput } from "@/lib/money";
-import { Check, Loader2, PiggyBank } from "lucide-react";
+import { toCents, dateStrToTs, parseMoneyInput, formatCents } from "@/lib/money";
+import { buildTxConfirmation } from "@/lib/txConfirmation";
+import { PiggyBank } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
+import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
+import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
+
+const FORM_ID = "tx-form";
 
 type TxType = "ingreso" | "gasto";
 
@@ -47,7 +52,7 @@ export function AccountTransactionFields({
   currency,
   onSuccess,
 }: AccountTransactionFieldsProps) {
-  const { categories, goals } = useAppData();
+  const { categories, goals, accountList } = useAppData();
   const createTransaction = useMutation(api.transactions.create);
 
   const [categoryId, setCategoryId]   = useState("");
@@ -55,6 +60,10 @@ export function AccountTransactionFields({
   const [notes, setNotes]             = useState("");
   const [loading, setLoading]         = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { phase, confirm } = useSaveConfirmation(onSuccess);
+  // Plegados de entrada; una vez abiertos se quedan así aunque se vacíen
+  const [showNotes, setShowNotes] = useState(false);
+  const [showGoal, setShowGoal]   = useState(false);
 
   const filteredCategories = (categories ?? []).filter(
     (c) => c.type === type || c.type === "ambos"
@@ -63,6 +72,14 @@ export function AccountTransactionFields({
   const availableGoals = (goals ?? []).filter(
     (g) => g.status === "activa" && !g.linkedAccountId
   );
+
+  const canUseGoal = type === "gasto" && availableGoals.length > 0;
+
+  // El botón dice lo que se va a guardar, así la cifra se confirma sin volver arriba
+  const amountPreview = parseMoneyInput(amount);
+  const saveLabel = amountPreview > 0
+    ? `Guardar ${type === "ingreso" ? "+" : "\u2212"}${formatCents(toCents(amountPreview), currency)}`
+    : "Guardar movimiento";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,8 +111,14 @@ export function AccountTransactionFields({
         // `create` acepta notas desde siempre; solo faltaba el campo
         notes: notes.trim() || undefined,
       });
-      toast.success(type === "ingreso" ? "Ingreso registrado" : "Gasto registrado");
-      onSuccess?.();
+      // En vez de un toast, el botón se vuelve la confirmación y la hoja se cierra sola
+      confirm(buildTxConfirmation({
+        kind: type,
+        amountCents: toCents(amountNum),
+        currency,
+        description,
+        accountName: accountList.find((a) => a._id === accountId)?.name,
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al guardar");
     } finally {
@@ -104,7 +127,7 @@ export function AccountTransactionFields({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
 
       {/* Advertencia: sin cuenta/tarjeta de origen seleccionada (evita registros huérfanos).
           Se oculta apenas se elige una fuente, sin depender de un efecto. */}
@@ -153,14 +176,6 @@ export function AccountTransactionFields({
         )}
       </div>
 
-      {/* ── Fecha ─────────────────────────────────────────────────────────── */}
-      <div>
-        <Label htmlFor="tx-date" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          Fecha
-        </Label>
-        <DatePicker id="tx-date" value={date} onChange={onDateChange} required style={{ background: "var(--surface-2)" }} />
-      </div>
-
       {/* ── Categoría ─────────────────────────────────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
@@ -176,12 +191,20 @@ export function AccountTransactionFields({
         </div>
       )}
 
+      {/* ── Lo opcional, plegado: la fecha casi siempre es hoy y casi nunca hay
+          nota. Cada ficha despliega su campo solo si se toca ──────────────── */}
+      <ExtrasRow>
+        <DateChip id="tx-date" value={date} onChange={onDateChange} />
+        {canUseGoal && !showGoal && <AddChip label="Meta de ahorro" onClick={() => setShowGoal(true)} />}
+        {!showNotes && <AddChip label="Nota" onClick={() => setShowNotes(true)} />}
+      </ExtrasRow>
+
       {/* ── Meta de ahorro (solo gastos desde cuenta, no tarjeta) ──────────── */}
-      {type === "gasto" && availableGoals.length > 0 && (
+      <Reveal show={canUseGoal && showGoal}>
         <div>
-          <Label htmlFor="tx-goal" className="text-[12px] font-semibold text-foreground mb-2 flex items-center gap-1.5">
+          <Label htmlFor="tx-goal" className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             <PiggyBank className="h-3.5 w-3.5" style={{ color: "var(--os-cyan)" }} />
-            Ahorrar para (opcional)
+            Ahorrar para
           </Label>
           <Select value={goalId} onValueChange={(v) => setGoalId(v ?? "")}>
             <SelectTrigger id="tx-goal" className="w-full" style={{ background: "var(--surface-2)" }}>
@@ -209,33 +232,35 @@ export function AccountTransactionFields({
             </p>
           )}
         </div>
-      )}
+      </Reveal>
 
       {/* ── Nota ──────────────────────────────────────────────────────────── */}
-      <div>
-        <Label htmlFor="tx-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          Nota
-        </Label>
-        <Textarea
-          id="tx-notes"
-          rows={2}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          maxLength={500}
-          placeholder="Opcional"
-          style={{ background: "var(--surface-2)" }}
-        />
-      </div>
+      <Reveal show={showNotes}>
+        <div>
+          <Label htmlFor="tx-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Nota
+          </Label>
+          <Textarea
+            id="tx-notes"
+            rows={2}
+            // Se acaba de pedir con la ficha: el foco va directo a escribirla
+            autoFocus
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={500}
+            placeholder="Opcional"
+            style={{ background: "var(--surface-2)" }}
+          />
+        </div>
+      </Reveal>
 
-      {/* ── Botón guardar ─────────────────────────────────────────────────── */}
-      <button
-        type="submit"
-        disabled={loading}
-        className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
-      >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
-        {loading ? "Guardando…" : "Guardar movimiento"}
-      </button>
+      {/* ── Guardar: en el pie fijo de la hoja, siempre a la vista. Vive fuera
+          del <form>, por eso se enlaza con `form` ─────────────────────────── */}
+      <AppSheetFooter>
+        <div data-tx-footer>
+          <SaveMovementButton form={FORM_ID} className="" loading={loading} phase={phase} label={saveLabel} />
+        </div>
+      </AppSheetFooter>
 
     </form>
   );

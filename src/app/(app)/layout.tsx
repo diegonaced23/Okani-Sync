@@ -9,6 +9,7 @@ import { NewTransactionModalProvider } from "@/contexts/new-transaction-modal";
 import { NewTransactionModal } from "@/components/transactions/NewTransactionModal";
 import { AppDataProvider } from "@/contexts/app-data";
 import { ThemeSync } from "@/components/theme/ThemeSync";
+import { ConfirmationCapsule } from "@/components/ui/confirmation-capsule";
 
 export default async function AppLayout({
   children,
@@ -46,6 +47,8 @@ export default async function AppLayout({
           <BottomNav />
         </div>
         <NewTransactionModal />
+        {/* Resumen de lo recién guardado; vive aquí para sobrevivir al cierre de las hojas */}
+        <ConfirmationCapsule />
       </AppDataProvider>
     </NewTransactionModalProvider>
   );

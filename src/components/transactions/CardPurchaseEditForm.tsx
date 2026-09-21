@@ -15,8 +15,10 @@ import { CategorySelect } from "./CategorySelect";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { addMonthsClamped, fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
-import { Check, Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
+import { buildEditConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
+import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 
 interface CardPurchaseEditFormProps {
   purchase: Doc<"cardPurchases">;
@@ -48,6 +50,7 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
   const [purchaseDate, setPurchaseDate]       = useState(tsToDateStr(purchase.purchaseDate));
   const [loading, setLoading]                 = useState(false);
   const [fieldErrors, setFieldErrors]         = useState<Record<string, string>>({});
+  const { phase, confirm } = useSaveConfirmation(onSuccess);
 
   const filteredCategories = (categories ?? []).filter(
     (c) => c.type === "gasto" || c.type === "ambos"
@@ -112,8 +115,12 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
             }
           : {}),
       });
-      toast.success("Compra actualizada");
-      onSuccess();
+      confirm(buildEditConfirmation({
+        type: "gasto_tarjeta",
+        amountCents: canEditFinancials ? newAmount : purchase.totalAmount,
+        currency: purchase.currency,
+        description,
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al actualizar");
     } finally {
@@ -268,36 +275,25 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
       </div>
 
       {/* Guardar / Cancelar */}
-      <div className="flex gap-2 pt-1">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={loading}
-          className="flex-1 flex items-center justify-center gap-2 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-60"
-          style={{
-            padding: "13px 16px",
-            fontSize: 14,
-            background: "linear-gradient(135deg, var(--os-lime), var(--os-cyan))",
-            color: "var(--primary-foreground)",
-            border: "none",
-            cursor: loading ? "not-allowed" : "pointer",
-            boxShadow: "0 6px 16px -4px color-mix(in oklch, var(--os-lime) 55%, transparent)",
-          }}
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
-          {loading ? "Guardando…" : "Guardar cambios"}
-        </button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={loading}
-          className="gap-1.5"
-        >
-          <X className="h-4 w-4" />
-          Cancelar
-        </Button>
-      </div>
+      <SaveMovementButton
+        type="button"
+        onClick={handleSave}
+        loading={loading}
+        phase={phase}
+        label="Guardar cambios"
+        secondary={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={loading}
+            className="h-12 gap-1.5"
+          >
+            <X className="h-4 w-4" />
+            Cancelar
+          </Button>
+        }
+      />
 
     </div>
   );

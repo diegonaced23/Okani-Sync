@@ -19,6 +19,35 @@ export function sourceVisual(color: string): { background: string; flat: string;
   };
 }
 
+/** Miniatura de una cuenta (su inicial) o tarjeta (el ícono) sobre su color. */
+export function SourceThumb({
+  color,
+  name,
+  isCard,
+  size = "sm",
+}: {
+  color: string;
+  name: string;
+  isCard?: boolean;
+  size?: "sm" | "lg";
+}) {
+  const visual = sourceVisual(color);
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center ring-1 ring-white/20",
+        size === "lg" ? "h-9 w-9 rounded-[11px]" : "h-6 w-6 rounded-[8px]",
+      )}
+      style={{ background: visual.background, color: visual.darkText ? "oklch(0.18 0.02 260)" : "white" }}
+      aria-hidden="true"
+    >
+      {isCard
+        ? <CreditCard className={size === "lg" ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"} />
+        : <span className={cn("font-extrabold", size === "lg" ? "text-[13px]" : "text-[10px]")}>{name.charAt(0)}</span>}
+    </span>
+  );
+}
+
 /** Chip seleccionable de cuenta o tarjeta, con su color como miniatura. Va dentro de un radiogroup. */
 export function SourceChip({
   selected,
@@ -48,13 +77,7 @@ export function SourceChip({
       )}
       style={selected ? { background: tint(visual.flat, 16), borderColor: tint(visual.flat, 60) } : undefined}
     >
-      <span
-        className="flex h-6 w-6 items-center justify-center rounded-[8px] ring-1 ring-white/20"
-        style={{ background: visual.background, color: visual.darkText ? "oklch(0.18 0.02 260)" : "white" }}
-        aria-hidden="true"
-      >
-        {isCard ? <CreditCard className="h-3.5 w-3.5" /> : <span className="text-[10px] font-extrabold">{name.charAt(0)}</span>}
-      </span>
+      <SourceThumb color={color} name={name} isCard={isCard} />
       <span className="flex flex-col leading-tight">
         <span className="text-[13px] font-semibold">{name}</span>
         <span className="text-[10px] text-muted-foreground">{detail}</span>

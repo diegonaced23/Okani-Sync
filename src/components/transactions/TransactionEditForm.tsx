@@ -14,8 +14,10 @@ import { CategorySelect } from "./CategorySelect";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
-import { Check, Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
+import { buildEditConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
+import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 
 interface TransactionEditFormProps {
   tx: Doc<"transactions">;
@@ -41,6 +43,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
   const [notes, setNotes]           = useState(tx.notes ?? "");
   const [loading, setLoading]       = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { phase, confirm } = useSaveConfirmation(onSuccess);
 
   // Los gastos con tarjeta vinculados a una cuota solo permiten editar
   // descripción y categoría — el backend rechaza cualquier otro campo (ver convex/transactions.ts).
@@ -81,8 +84,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
           notes: notes.trim() || undefined,
           clearNotes: !!tx.notes && !notes.trim(),
         });
-        toast.success("Transferencia actualizada");
-        onSuccess();
+        confirm(buildEditConfirmation({ type: tx.type, amountCents: tx.amount, currency: tx.currency, description: desc }));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error al actualizar");
       } finally {
@@ -98,8 +100,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       setLoading(true);
       try {
         await updateTx({ transactionId: tx._id, description: desc.trim() });
-        toast.success("Movimiento actualizado");
-        onSuccess();
+        confirm(buildEditConfirmation({ type: tx.type, amountCents: tx.amount, currency: tx.currency, description: desc }));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Error al actualizar");
       } finally {
@@ -126,8 +127,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         accountId:   sourceKind === "account" && sourceRawId ? (sourceRawId as Id<"accounts">) : undefined,
         cardId:      sourceKind === "card"    && sourceRawId ? (sourceRawId as Id<"cards">)    : undefined,
       });
-      toast.success("Movimiento actualizado");
-      onSuccess();
+      confirm(buildEditConfirmation({ type: tx.type, amountCents: toCents(amountNum), currency: tx.currency, description: desc }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al actualizar");
     } finally {
@@ -193,9 +193,6 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
             // cuotas (lo exige `transactions.create`), así que moverlo aquí creaba un
             // cargo sin cuota detrás y subía la deuda sin respaldo.
             showCards={false}
-            // El origen se cambia, no se quita: quitarlo dejaría el movimiento sin
-            // saldo que revertir y `update` no contempla ese caso.
-            allowEmpty={false}
           />
         </div>
       )}
@@ -270,27 +267,25 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       )}
 
       {/* Guardar / Cancelar */}
-      <div className="flex gap-2 pt-1">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={loading}
-          className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
-          {loading ? "Guardando…" : "Guardar cambios"}
-        </button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={loading}
-          className="gap-1.5"
-        >
-          <X className="h-4 w-4" />
-          Cancelar
-        </Button>
-      </div>
+      <SaveMovementButton
+        type="button"
+        onClick={handleSave}
+        loading={loading}
+        phase={phase}
+        label="Guardar cambios"
+        secondary={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={loading}
+            className="h-12 gap-1.5"
+          >
+            <X className="h-4 w-4" />
+            Cancelar
+          </Button>
+        }
+      />
 
     </div>
   );

@@ -43,6 +43,11 @@ export function NewTransactionModal() {
       onOpenChange={(o) => { if (!o) closeModal(); }}
       title="Nuevo movimiento"
       description="Un ingreso, un gasto o una transferencia entre cuentas."
+      // El botón de guardar de cada formulario va en el pie fijo (AppSheetFooter).
+      // Al cambiar de pestaña, el panel que sale y el que entra conviven unos
+      // instantes y ambos pintan su pie: se muestra solo el último en montar.
+      footer
+      contentClassName="[&_[data-tx-footer]:not(:last-child)]:hidden"
     >
       {/* Tipo de movimiento: la píldora se desliza y toma el color del tipo */}
       <div

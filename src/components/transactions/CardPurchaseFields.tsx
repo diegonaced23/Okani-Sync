@@ -9,13 +9,17 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { DatePicker } from "@/components/ui/date-picker";
+import { AppSheetFooter } from "@/components/ui/app-sheet";
 import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import { toast } from "sonner";
-import { addMonthsClamped, toCents, dateStrToTs, parseMoneyInput } from "@/lib/money";
-import { Check, Loader2 } from "lucide-react";
+import { addMonthsClamped, toCents, dateStrToTs, parseMoneyInput, formatCents } from "@/lib/money";
+import { buildTxConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
+import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
+import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
+
+const FORM_ID = "tx-card-form";
 
 interface CardPurchaseFieldsProps {
   card: Doc<"cards">;
@@ -49,11 +53,18 @@ export function CardPurchaseFields({
   const [notes, setNotes]                     = useState("");
   const [loading, setLoading]                 = useState(false);
   const [fieldErrors, setFieldErrors]         = useState<Record<string, string>>({});
+  const { phase, confirm } = useSaveConfirmation(onSuccess);
+  const [showNotes, setShowNotes] = useState(false);
 
   // Las compras con tarjeta siempre son de tipo "gasto"
   const filteredCategories = (categories ?? []).filter(
     (c) => c.type === "gasto" || c.type === "ambos"
   );
+
+  const amountPreview = parseMoneyInput(amount);
+  const saveLabel = amountPreview > 0
+    ? `Guardar \u2212${formatCents(toCents(amountPreview), card.currency)}`
+    : "Registrar compra";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,8 +104,15 @@ export function CardPurchaseFields({
         // `createPurchase` acepta notas y el formulario de edición ya las tenía
         notes: notes.trim() || undefined,
       });
-      toast.success("Compra registrada y cronograma generado");
-      onSuccess?.();
+      // En vez de un toast, el botón se vuelve la confirmación y la hoja se cierra sola
+      confirm(buildTxConfirmation({
+        kind: "compra_tarjeta",
+        amountCents: toCents(amountNum),
+        currency: card.currency,
+        description,
+        cardName: card.name,
+        installments: nInstallments,
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al registrar compra");
     } finally {
@@ -103,7 +121,7 @@ export function CardPurchaseFields({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
 
       {/* ── Monto ─────────────────────────────────────────────────────────── */}
       <MoneyAmountField
@@ -227,14 +245,6 @@ export function CardPurchaseFields({
         </div>
       )}
 
-      {/* ── Fecha ─────────────────────────────────────────────────────────── */}
-      <div>
-        <Label htmlFor="tx-date" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          Fecha de compra
-        </Label>
-        <DatePicker id="tx-date" value={date} onChange={onDateChange} required style={{ background: "var(--surface-2)" }} />
-      </div>
-
       {/* ── Categoría ─────────────────────────────────────────────────────── */}
       {filteredCategories.length > 0 && (
         <div>
@@ -250,31 +260,37 @@ export function CardPurchaseFields({
         </div>
       )}
 
-      {/* ── Nota ──────────────────────────────────────────────────────────── */}
-      <div>
-        <Label htmlFor="cpf-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          Nota
-        </Label>
-        <Textarea
-          id="cpf-notes"
-          rows={2}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          maxLength={500}
-          placeholder="Opcional"
-          style={{ background: "var(--surface-2)" }}
-        />
-      </div>
+      {/* ── Lo opcional, plegado (ver FormExtras) ────────────────────────────── */}
+      <ExtrasRow>
+        <DateChip id="tx-date" value={date} onChange={onDateChange} />
+        {!showNotes && <AddChip label="Nota" onClick={() => setShowNotes(true)} />}
+      </ExtrasRow>
 
-      {/* ── Botón guardar ─────────────────────────────────────────────────── */}
-      <button
-        type="submit"
-        disabled={loading}
-        className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
-      >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
-        {loading ? "Guardando…" : "Registrar compra"}
-      </button>
+      {/* ── Nota ──────────────────────────────────────────────────────────── */}
+      <Reveal show={showNotes}>
+        <div>
+          <Label htmlFor="cpf-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Nota
+          </Label>
+          <Textarea
+            id="cpf-notes"
+            rows={2}
+            autoFocus
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={500}
+            placeholder="Opcional"
+            style={{ background: "var(--surface-2)" }}
+          />
+        </div>
+      </Reveal>
+
+      {/* ── Guardar, en el pie fijo de la hoja (fuera del <form>) ─────────── */}
+      <AppSheetFooter>
+        <div data-tx-footer>
+          <SaveMovementButton form={FORM_ID} className="" loading={loading} phase={phase} label={saveLabel} />
+        </div>
+      </AppSheetFooter>
 
     </form>
   );

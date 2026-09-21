@@ -189,6 +189,36 @@ export const updateCurrency = mutation({
   },
 });
 
+/**
+ * Marca (o quita, con `null`) la cuenta o tarjeta favorita: la que llega
+ * seleccionada al registrar un movimiento. Solo se acepta un producto propio y
+ * activo; una cuenta compartida contigo no es tuya para elegirla por defecto.
+ */
+export const setFavoriteSource = mutation({
+  args: {
+    source: v.union(
+      v.object({ kind: v.literal("account"), id: v.id("accounts") }),
+      v.object({ kind: v.literal("card"), id: v.id("cards") }),
+      v.null()
+    ),
+  },
+  handler: async (ctx, { source }) => {
+    const user = await getCurrentUser(ctx);
+    if (source?.kind === "account") {
+      const account = await ctx.db.get(source.id);
+      if (!account || account.ownerId !== user.clerkId || account.archived) {
+        throw new Error("Esa cuenta no está disponible");
+      }
+    } else if (source?.kind === "card") {
+      const card = await ctx.db.get(source.id);
+      if (!card || card.userId !== user.clerkId || card.archived) {
+        throw new Error("Esa tarjeta no está disponible");
+      }
+    }
+    await ctx.db.patch(user._id, { favoriteSource: source ?? undefined, updatedAt: Date.now() });
+  },
+});
+
 /** Actualiza el tema del usuario. */
 export const updateTheme = mutation({
   args: {

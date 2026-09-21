@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { todayStr } from "@/lib/money";
+import { resolveDefaultSource } from "@/lib/defaultSource";
 import { AccountCardSelect } from "./AccountCardSelect";
 import { AccountTransactionFields } from "./AccountTransactionFields";
 import { CardPurchaseFields } from "./CardPurchaseFields";
@@ -24,13 +25,18 @@ export function TransactionForm({ defaultType = "gasto", initialSourceId, onSucc
   const me = useQuery(api.users.getMe);
 
   const [type]    = useState<TxType>(defaultType);
-  // Estado compartido que sobrevive al cambio entre fuente de cuenta y tarjeta.
-  // Una tarjeta nunca es origen de un ingreso: si llega preseleccionada, se descarta.
-  const [sourceId, setSourceId]       = useState<string>(
-    initialSourceId && !(defaultType === "ingreso" && initialSourceId.startsWith("card:"))
-      ? initialSourceId
-      : ""
-  );
+  // Mientras el usuario no elija, el origen se deriva en cada render: las cuentas
+  // y la favorita pueden llegar después del primer render, y un estado inicial
+  // calculado entonces se quedaría vacío. La regla vive en resolveDefaultSource
+  // (la fuente pedida manda, luego la favorita, luego la única opción posible).
+  const [picked, setPicked] = useState<string | null>(null);
+  const sourceId = picked ?? resolveDefaultSource({
+    type,
+    initial: initialSourceId,
+    favorite: me?.favoriteSource,
+    accountIds: accountList.map((a) => a._id),
+    cardIds: cardList.map((c) => c._id),
+  });
   const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate]               = useState(todayStr);
@@ -62,7 +68,7 @@ export function TransactionForm({ defaultType = "gasto", initialSourceId, onSucc
           id="tx-source"
           ariaLabel={type === "ingreso" ? "Cuenta destino" : "Cuenta o tarjeta"}
           value={sourceId}
-          onValueChange={(v) => setSourceId(v ?? "")}
+          onValueChange={setPicked}
           accounts={accountList}
           cards={cardList}
           showCards={type === "gasto"}

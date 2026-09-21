@@ -13,12 +13,18 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MoneyAmountField } from "./MoneyAmountField";
-import { SourceChip } from "@/components/ui/source-chip";
-import { OVERFLOW_ROW, haptic } from "./shared";
-import { DatePicker } from "@/components/ui/date-picker";
+import { AccountCardSelect } from "./AccountCardSelect";
+import { AppSheetFooter } from "@/components/ui/app-sheet";
 import { toast } from "sonner";
 import { toCents, formatCents, dateStrToTs, todayStr } from "@/lib/money";
-import { ArrowDown, Check, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowDownUp } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { SPRING, haptic } from "./shared";
+import { buildTransferConfirmation } from "@/lib/txConfirmation";
+import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
+import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
+
+const FORM_ID = "tf-form";
 
 interface TransferFormProps {
   onSuccess?: () => void;
@@ -46,6 +52,23 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { phase, confirm } = useSaveConfirmation(onSuccess);
+  const reduce = useReducedMotion();
+  // Cuántas veces se intercambiaron: cada una suma media vuelta al botón
+  const [swaps, setSwaps] = useState(0);
+  const [destSettled, setDestSettled] = useState(false);
+  const [showDesc, setShowDesc]   = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+
+  function swapAccounts() {
+    if (!fromAccountId || !toAccountId) return;
+    haptic();
+    setFromAccountId(toAccountId);
+    setToAccountId(fromAccountId);
+    setSwaps((n) => n + 1);
+    // La tasa se escribió para el sentido anterior: ya no vale
+    setExchangeRate("");
+  }
 
   const fromAccount = allAccounts.find((a) => a._id === fromAccountId);
   const toAccount = allAccounts.find((a) => a._id === toAccountId);
@@ -58,6 +81,11 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
   const hasRate = Number.isFinite(parsedRate) && parsedRate > 0;
   const rateNum = hasRate ? parsedRate : 1;
   const toAmount = needsRate ? Math.round(amountNum * rateNum * 100) / 100 : amountNum;
+
+  // Sin origen aún no se sabe la moneda: el botón vuelve al texto genérico
+  const saveLabel = amountNum > 0 && fromAccount
+    ? `Transferir ${formatCents(toCents(amountNum), fromAccount.currency)}`
+    : "Registrar transferencia";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -89,8 +117,15 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         exchangeRate: needsRate ? rateNum : undefined,
         notes: notes.trim() || undefined,
       });
-      toast.success("Transferencia registrada");
-      onSuccess?.();
+      // Como en gastos e ingresos: la gota en el botón y la cápsula con el trayecto
+      confirm(buildTransferConfirmation({
+        amountCents: toCents(amountNum),
+        currency: fromAccount!.currency,
+        description,
+        fromName: fromAccount!.name,
+        toName: toAccount!.name,
+        received: needsRate ? { amountCents: toCents(toAmount), currency: toAccount!.currency } : undefined,
+      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al transferir");
     } finally {
@@ -99,65 +134,90 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Cuentas — apiladas verticalmente con flecha de ilusión de transferencia */}
-      <div className="space-y-1">
-        <div className="space-y-2">
-          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Origen</span>
-          {/* Fichas, como en el resto del módulo: cada cuenta con su color y su saldo */}
-          <div role="radiogroup" aria-label="Cuenta de origen" className={OVERFLOW_ROW}>
-            {allAccounts.map((a) => (
-              <SourceChip
-                key={a._id}
-                selected={fromAccountId === a._id}
-                onSelect={() => {
-                  haptic();
-                  setFromAccountId(a._id);
+    <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
+      {/* Cuentas: primero solo el origen. Al elegirlo se despliega el destino y,
+          entre los dos, el botón que los intercambia */}
+      <div>
+        <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Origen</span>
+        {/* Sin favorita: la estrella decide el origen de gastos e ingresos, no de transferencias */}
+        <AccountCardSelect
+          id="tf-from"
+          ariaLabel="Cuenta de origen"
+          title="¿De dónde sale?"
+          value={fromAccountId ? `account:${fromAccountId}` : ""}
+          onValueChange={(v) => {
+            const next = v.split(":")[1] ?? "";
+            setFromAccountId(next);
+            // El destino no puede ser la misma cuenta: se suelta en vez de dejar un
+            // valor que el selector de destino ya no muestra
+            if (next === toAccountId) setToAccountId("");
+            if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" }));
+          }}
+          accounts={allAccounts}
+          allowFavorite={false}
+        />
+
+        <AnimatePresence initial={false}>
+          {fromAccountId && (
+            <motion.div
+              key="destino"
+              initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0, y: -10, filter: "blur(6px)" }}
+              animate={{ opacity: 1, height: "auto", y: 0, filter: "blur(0px)" }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0, y: -10, filter: "blur(6px)" }}
+              transition={reduce ? { duration: 0.15 } : { ...SPRING, opacity: { duration: 0.25 }, filter: { duration: 0.3 } }}
+              // Recorta solo mientras cambia de alto: en reposo cortaría la sombra del
+              // botón de vidrio y el anillo de foco
+              style={{ overflow: destSettled ? "visible" : "hidden" }}
+              onAnimationStart={() => setDestSettled(false)}
+              onAnimationComplete={() => setDestSettled(true)}
+            >
+              {/* Intercambio: con solo origen apunta hacia abajo; con las dos cuentas, las invierte */}
+              <div className="flex justify-center py-2">
+                <motion.button
+                  type="button"
+                  onClick={swapAccounts}
+                  disabled={!toAccountId}
+                  aria-label={toAccountId ? "Intercambiar origen y destino" : "El dinero va de origen a destino"}
+                  initial={reduce ? false : { scale: 0.4, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1, rotate: swaps * 180 }}
+                  transition={reduce ? { duration: 0 } : { ...SPRING, delay: 0.08 }}
+                  whileTap={toAccountId ? { scale: 0.88 } : undefined}
+                  className="os-liquid-glass relative grid h-10 w-10 place-items-center rounded-full text-foreground disabled:cursor-default enabled:hover:text-[var(--os-cyan)]"
+                >
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    <motion.span
+                      key={toAccountId ? "swap" : "down"}
+                      initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5 }}
+                      transition={{ duration: 0.18 }}
+                      className="grid place-items-center"
+                    >
+                      {toAccountId
+                        ? <ArrowDownUp className="h-[18px] w-[18px]" strokeWidth={2.25} aria-hidden="true" />
+                        : <ArrowDown className="h-[18px] w-[18px] text-muted-foreground" strokeWidth={2.25} aria-hidden="true" />}
+                    </motion.span>
+                  </AnimatePresence>
+                </motion.button>
+              </div>
+
+              <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Destino</span>
+              <AccountCardSelect
+                id="tf-to"
+                ariaLabel="Cuenta de destino"
+                title="¿A dónde llega?"
+                value={toAccountId ? `account:${toAccountId}` : ""}
+                onValueChange={(v) => {
+                  setToAccountId(v.split(":")[1] ?? "");
                   if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" }));
                 }}
-                color={a.color}
-                name={a.name}
-                detail={formatCents(a.balance, a.currency)}
+                accounts={allAccounts.filter((a) => a._id !== fromAccountId)}
+                allowFavorite={false}
               />
-            ))}
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Flecha hacia abajo — ilusión de flujo de transferencia */}
-        <div className="flex justify-center py-1">
-          <span
-            className="flex items-center justify-center rounded-full"
-            style={{
-              width: 28, height: 28,
-              background: "var(--surface-2)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </span>
-        </div>
-
-        <div className="space-y-2">
-          <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Destino</span>
-          <div role="radiogroup" aria-label="Cuenta de destino" className={OVERFLOW_ROW}>
-            {allAccounts
-              .filter((a) => a._id !== fromAccountId)
-              .map((a) => (
-                <SourceChip
-                  key={a._id}
-                  selected={toAccountId === a._id}
-                  onSelect={() => {
-                    haptic();
-                    setToAccountId(a._id);
-                    if (fieldErrors.accounts) setFieldErrors((fe) => ({ ...fe, accounts: "" }));
-                  }}
-                  color={a.color}
-                  name={a.name}
-                  detail={formatCents(a.balance, a.currency)}
-                />
-              ))}
-          </div>
-        </div>
         {fieldErrors.accounts && (
           <p id="tf-accounts-error" role="alert" className="text-xs text-destructive mt-1.5">
             {fieldErrors.accounts}
@@ -218,51 +278,56 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         </div>
       )}
 
-      {/* Descripción */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tf-desc">Descripción</Label>
-        <Input
-          id="tf-desc"
-          placeholder="Ej: Traslado de ahorros"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-      </div>
+      {/* Lo opcional, plegado (ver FormExtras): la descripción ya dice
+          «Transferencia», la fecha casi siempre es hoy y casi nunca hay nota */}
+      <ExtrasRow>
+        <DateChip id="tf-date" value={date} onChange={setDate} />
+        {!showDesc && <AddChip label="Descripción" onClick={() => setShowDesc(true)} />}
+        {!showNotes && <AddChip label="Nota" onClick={() => setShowNotes(true)} />}
+      </ExtrasRow>
 
-      {/* Fecha */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tf-date">Fecha</Label>
-        <DatePicker id="tf-date" value={date} onChange={setDate} required />
-      </div>
+      <Reveal show={showDesc}>
+        <div>
+          <Label htmlFor="tf-desc" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Descripción
+          </Label>
+          <Input
+            id="tf-desc"
+            // Llega con «Transferencia» escrito: se selecciona para reemplazarlo de una vez
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            placeholder="Ej: Traslado de ahorros"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            style={{ background: "var(--surface-2)" }}
+          />
+        </div>
+      </Reveal>
 
-      {/* Notas */}
-      <div className="space-y-1.5">
-        <Label htmlFor="tf-notes">Notas (opcional)</Label>
-        <Textarea
-          id="tf-notes"
-          rows={2}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
-      </div>
+      <Reveal show={showNotes}>
+        <div>
+          <Label htmlFor="tf-notes" className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Nota
+          </Label>
+          <Textarea
+            id="tf-notes"
+            rows={2}
+            autoFocus
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={500}
+            placeholder="Opcional"
+            style={{ background: "var(--surface-2)" }}
+          />
+        </div>
+      </Reveal>
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-emerald-400 to-teal-500 text-[15px] font-bold text-white shadow-[0_10px_24px_-10px_rgb(16_185_129/0.8)] transition-transform active:scale-[0.98] disabled:opacity-50"
-        style={{
-          padding: "15px 18px",
-          fontSize: 15,
-          background: "linear-gradient(135deg, var(--os-cyan), var(--os-lime))",
-          color: "var(--primary-foreground)",
-          border: "none",
-          cursor: loading ? "not-allowed" : "pointer",
-          boxShadow: "0 8px 20px -6px color-mix(in oklch, var(--os-cyan) 55%, transparent)",
-        }}
-      >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
-        {loading ? "Procesando…" : "Registrar transferencia"}
-      </button>
+      {/* Guardar, en el pie fijo de la hoja (fuera del <form>) */}
+      <AppSheetFooter>
+        <div data-tx-footer>
+          <SaveMovementButton form={FORM_ID} className="" loading={loading} phase={phase} label={saveLabel} />
+        </div>
+      </AppSheetFooter>
     </form>
   );
 }
