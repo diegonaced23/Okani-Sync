@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface DeleteUserDialogProps {
   targetClerkId: string;
@@ -44,7 +45,7 @@ export function DeleteUserDialog({
       onOpenChange(false);
       onDeleted();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar usuario");
+      toast.error(errorMessage(err, "Error al eliminar usuario"));
     } finally {
       setLoading(false);
     }

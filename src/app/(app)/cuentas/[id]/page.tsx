@@ -31,6 +31,7 @@ import { TransactionItem } from "@/components/transactions/TransactionItem";
 import { TX_TYPE_CONFIG } from "@/components/transactions/tx-type-config";
 import { currentMonth, formatCents, formatMonth } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 export default function AccountDetailPage({
   params,
@@ -118,7 +119,7 @@ export default function AccountDetailPage({
       });
       router.replace("/productos?tab=cuentas");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(errorMessage(err, "No se pudo archivar"));
     }
   }
 
@@ -130,7 +131,7 @@ export default function AccountDetailPage({
       toast.success("Cuenta eliminada");
       // La navegación la maneja el efecto cuando `account` pasa a null
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
       setDeleting(false);
     }
   }

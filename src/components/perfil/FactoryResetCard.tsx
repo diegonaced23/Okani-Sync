@@ -14,6 +14,7 @@ import { AlertTriangle, Loader2, RotateCcw } from "lucide-react";
 import { haptic } from "@/lib/ios";
 import { FACTORY_RESET_PHRASE } from "@/lib/constants";
 import { SettingsCard } from "./SettingsCard";
+import { errorMessage } from "@/lib/errorMessage";
 
 /**
  * Nombre legible de cada tabla, en plural. Solo se listan las que el usuario
@@ -87,7 +88,7 @@ export function FactoryResetCard({ index }: { index?: number }) {
       close();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "No se pudo restablecer la cuenta",
+        errorMessage(err, "No se pudo restablecer la cuenta"),
       );
     } finally {
       setLoading(false);

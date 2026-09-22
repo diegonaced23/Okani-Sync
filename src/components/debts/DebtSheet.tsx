@@ -30,6 +30,9 @@ import {
 } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { DEBT_TYPE_META, DEBT_TYPE_ORDER, type Debt, type DebtType } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
+import { buildDebtCreatedConfirmation, buildObligationEditConfirmation } from "@/lib/obligationConfirmation";
+import { showConfirmation } from "@/components/ui/confirmation-capsule";
 
 export function DebtSheet({
   open,
@@ -151,11 +154,17 @@ function DebtForm({
       }
       haptic(12);
       setStatus("done");
-      toast.success(isEdit ? "Deuda actualizada" : `«${name.trim()}» registrada`);
+      showConfirmation(
+        isEdit
+          ? buildObligationEditConfirmation(name)
+          : buildDebtCreatedConfirmation({ name, creditor, amountCents: cents, currency, monthlyPaymentCents: paymentCents || undefined }),
+      );
       setTimeout(onDone, reduce ? 0 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(isEdit ? "No se pudieron guardar los cambios" : "No se pudo registrar la deuda", {
+        description: errorMessage(err, "Revisa tu conexión e inténtalo de nuevo."),
+      });
     }
   }
 
@@ -164,10 +173,14 @@ function DebtForm({
     setBusy(true);
     try {
       await setArchived({ debtId: debt._id, archived: !debt.archived });
-      toast.success(debt.archived ? "Deuda restaurada" : "Deuda archivada");
+      toast.success(debt.archived ? "Deuda restaurada" : "Deuda archivada", {
+        description: debt.archived ? `«${debt.name}» vuelve a tu lista` : `«${debt.name}» queda guardada en Archivadas`,
+      });
       onDone();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(debt.archived ? "No se pudo restaurar la deuda" : "No se pudo archivar la deuda", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
     } finally {
       setBusy(false);
     }
@@ -178,10 +191,12 @@ function DebtForm({
     setBusy(true);
     try {
       await removeDebt({ debtId: debt._id });
-      toast.success("Deuda eliminada");
+      toast.success("Deuda eliminada", { description: `«${debt.name}» y sus abonos se borraron` });
       onDeleted();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error("No se pudo eliminar la deuda", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
       setBusy(false);
     }
   }

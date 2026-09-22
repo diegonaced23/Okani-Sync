@@ -11,6 +11,7 @@ import { SourceThumb } from "@/components/ui/source-chip";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { haptic } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface AccountCardSelectProps {
   id?: string;
@@ -105,7 +106,7 @@ export function AccountCardSelect({
             : { kind: "account", id: rawId as Id<"accounts"> },
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar la favorita");
+      toast.error(errorMessage(err, "No se pudo guardar la favorita"));
     }
   }
 

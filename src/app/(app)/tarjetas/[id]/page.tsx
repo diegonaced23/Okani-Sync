@@ -26,6 +26,7 @@ import { PayCardSheet } from "@/components/cards/PayCardSheet";
 import { PurchaseSheet } from "@/components/cards/PurchaseSheet";
 import { GLASS_SURFACE, haptic, type Purchase } from "@/components/cards/shared";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 export default function CardDetailPage({
   params,
@@ -80,7 +81,7 @@ export default function CardDetailPage({
       });
       router.replace("/productos?tab=tarjetas");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(errorMessage(err, "No se pudo archivar"));
     }
   }
 
@@ -92,7 +93,7 @@ export default function CardDetailPage({
       toast.success("Tarjeta eliminada");
       router.replace("/productos?tab=tarjetas");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
       setDeleting(false);
     }
   }
@@ -105,7 +106,7 @@ export default function CardDetailPage({
       toast.success("Compra eliminada");
       setPurchaseDeleteId(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
     } finally {
       setPurchaseDeleting(false);
     }

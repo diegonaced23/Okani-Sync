@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { formatRelative } from "@/lib/utils";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { AUDIT_ACTION_LABELS } from "@/lib/constants";
+import { errorMessage } from "@/lib/errorMessage";
 
 export default function AdminUserDetailPage({
   params,
@@ -62,7 +63,7 @@ export default function AdminUserDetailPage({
       await updateUser({ targetClerkId: clerkId, role: newRole });
       toast.success("Rol actualizado.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(errorMessage(err, "Error"));
     }
   }
 
@@ -71,7 +72,7 @@ export default function AdminUserDetailPage({
       await updateUser({ targetClerkId: clerkId, active });
       toast.success(active ? "Usuario activado" : "Usuario desactivado");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(errorMessage(err, "Error"));
     }
   }
 
@@ -83,7 +84,7 @@ export default function AdminUserDetailPage({
       toast.success("Nombre actualizado");
       setNameEditing(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(errorMessage(err, "Error"));
     } finally {
       setSavingName(false);
     }
@@ -96,7 +97,7 @@ export default function AdminUserDetailPage({
       await sendAccessEmail({ targetClerkId: clerkId });
       toast.success("Enlace de acceso enviado por correo");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al enviar el enlace");
+      toast.error(errorMessage(err, "Error al enviar el enlace"));
     } finally {
       setGeneratingLink(false);
     }

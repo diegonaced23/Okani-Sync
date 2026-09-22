@@ -18,6 +18,7 @@ import { LoanSheet } from "@/components/debts/LoanSheet";
 import { detailHref, fromDebt, fromLoan, type Obligation, type Side } from "@/components/debts/shared";
 import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 const TABS: { key: Side; label: string }[] = [
   { key: "debo", label: "Debo" },
@@ -85,14 +86,19 @@ export default function DeudasPage({ searchParams }: { searchParams: Promise<{ t
         : setLoanArchived({ loanId: o.id as Id<"loans">, archived: value });
     try {
       await run(archived);
-      toast(`«${o.name}» ${archived ? "archivado" : "restaurado"}`, {
+      const noun = o.kind === "debt" ? "Deuda" : "Préstamo";
+      const done = o.kind === "debt" ? (archived ? "archivada" : "restaurada") : (archived ? "archivado" : "restaurado");
+      toast.success(`${noun} ${done}`, {
+        description: archived ? `«${o.name}» pasa a Archivad${o.kind === "debt" ? "as" : "os"}` : `«${o.name}» vuelve a tu lista`,
         action: {
           label: "Deshacer",
-          onClick: () => { run(!archived).catch(() => toast.error("No se pudo deshacer")); },
+          onClick: () => { run(!archived).catch(() => toast.error("No se pudo deshacer el cambio")); },
         },
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(`No se pudo ${archived ? "archivar" : "restaurar"} «${o.name}»`, {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
     }
   }
 

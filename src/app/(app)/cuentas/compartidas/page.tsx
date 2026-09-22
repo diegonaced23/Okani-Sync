@@ -22,6 +22,7 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { errorMessage } from "@/lib/errorMessage";
 
 const PERMISSION_LABELS: Record<string, string> = {
   viewer: "Visualizador",
@@ -44,7 +45,7 @@ export default function CompartidasPage() {
       await respond({ shareId, accept });
       toast.success(accept ? "Invitación aceptada" : "Invitación rechazada");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(errorMessage(err, "Error"));
     }
   }
 
@@ -59,7 +60,7 @@ export default function CompartidasPage() {
       toast.success("Saliste de la cuenta compartida");
       setLeavingShare(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error");
+      toast.error(errorMessage(err, "Error"));
     }
   }
 

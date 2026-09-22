@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface CreateUserDialogProps {
   open: boolean;
@@ -37,7 +38,7 @@ export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) 
       setEmail(""); setRole("user");
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al enviar la invitación");
+      toast.error(errorMessage(err, "Error al enviar la invitación"));
     } finally {
       setLoading(false);
     }

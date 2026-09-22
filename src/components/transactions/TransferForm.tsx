@@ -23,6 +23,7 @@ import { SPRING, haptic } from "./shared";
 import { buildTransferConfirmation } from "@/lib/txConfirmation";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
+import { errorMessage } from "@/lib/errorMessage";
 
 const FORM_ID = "tf-form";
 
@@ -127,7 +128,7 @@ export function TransferForm({ onSuccess }: TransferFormProps) {
         received: needsRate ? { amountCents: toCents(toAmount), currency: toAccount!.currency } : undefined,
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al transferir");
+      toast.error(errorMessage(err, "Error al transferir"));
     } finally {
       setLoading(false);
     }

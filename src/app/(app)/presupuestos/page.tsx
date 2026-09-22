@@ -35,6 +35,7 @@ import { byProgress, viewOf, type Goal } from "@/components/goals/shared";
 import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
 import { currentMonth, formatMonth } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 type Tab = "presupuestos" | "metas";
 
@@ -119,7 +120,7 @@ export default function PresupuestosPage({
       setDetailBudget(null);
       toast.success(`Presupuesto de «${name}» eliminado`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
     }
   }
 
@@ -131,7 +132,7 @@ export default function PresupuestosPage({
       setDeletingGoal(null);
       toast.success(`Meta «${name}» eliminada`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
     }
   }
 
@@ -141,7 +142,7 @@ export default function PresupuestosPage({
       await reactivateGoal({ goalId: goal._id });
       toast.success(`«${goal.name}» volvió a estar en progreso`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo reactivar");
+      toast.error(errorMessage(err, "No se pudo reactivar"));
     }
   }
 

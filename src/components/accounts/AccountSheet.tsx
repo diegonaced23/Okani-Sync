@@ -31,6 +31,7 @@ import {
   type AccountType,
 } from "./accountTypes";
 import { SPRING, haptic, type Account } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 const OTHER_BANK = "__otro__";
 
@@ -159,7 +160,7 @@ function AccountFields({ account, onDone }: { account: Account | null; onDone: (
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

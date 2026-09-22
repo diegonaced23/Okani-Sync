@@ -26,6 +26,7 @@ import { EmptyState as CardsEmptyState } from "@/components/cards/EmptyState";
 import { dueOf, matchesQuery as cardMatches, type Card } from "@/components/cards/shared";
 import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 type Tab = "cuentas" | "tarjetas";
 
@@ -150,7 +151,7 @@ export default function ProductosPage({
       });
     } catch (err) {
       if (accounts) setAccountItems(accounts);
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(errorMessage(err, "No se pudo archivar"));
     }
   }
 
@@ -163,7 +164,7 @@ export default function ProductosPage({
         include ? `«${account.name}» vuelve a sumar al total` : `«${account.name}» ya no suma al total`
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo cambiar");
+      toast.error(errorMessage(err, "No se pudo cambiar"));
     }
   }
 
@@ -204,7 +205,7 @@ export default function ProductosPage({
       });
     } catch (err) {
       if (cards) setCardItems(cards);
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(errorMessage(err, "No se pudo archivar"));
     }
   }
 

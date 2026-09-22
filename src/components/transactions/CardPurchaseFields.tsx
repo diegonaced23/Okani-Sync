@@ -18,6 +18,7 @@ import { buildTxConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
+import { errorMessage } from "@/lib/errorMessage";
 
 const FORM_ID = "tx-card-form";
 
@@ -114,7 +115,7 @@ export function CardPurchaseFields({
         installments: nInstallments,
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al registrar compra");
+      toast.error(errorMessage(err, "Error al registrar compra"));
     } finally {
       setLoading(false);
     }

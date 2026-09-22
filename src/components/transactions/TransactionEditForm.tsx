@@ -18,6 +18,7 @@ import { X } from "lucide-react";
 import { buildEditConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface TransactionEditFormProps {
   tx: Doc<"transactions">;
@@ -86,7 +87,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         });
         confirm(buildEditConfirmation({ type: tx.type, amountCents: tx.amount, currency: tx.currency, description: desc }));
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Error al actualizar");
+        toast.error(errorMessage(err, "Error al actualizar"));
       } finally {
         setLoading(false);
       }
@@ -102,7 +103,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
         await updateTx({ transactionId: tx._id, description: desc.trim() });
         confirm(buildEditConfirmation({ type: tx.type, amountCents: tx.amount, currency: tx.currency, description: desc }));
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Error al actualizar");
+        toast.error(errorMessage(err, "Error al actualizar"));
       } finally {
         setLoading(false);
       }
@@ -129,7 +130,7 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
       });
       confirm(buildEditConfirmation({ type: tx.type, amountCents: toCents(amountNum), currency: tx.currency, description: desc }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al actualizar");
+      toast.error(errorMessage(err, "Error al actualizar"));
     } finally {
       setLoading(false);
     }

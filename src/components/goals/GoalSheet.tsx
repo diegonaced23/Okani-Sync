@@ -20,6 +20,7 @@ import { FIELD_LABEL, OVERFLOW_ROW, SPRING, haptic, tint } from "@/lib/ios";
 import { dateStrToTs, formatCents, fromCents, toCents, tsToDateStr } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { GOAL_ICONS, monthlyNeeded, type Goal } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 export function GoalSheet({
   open,
@@ -108,7 +109,7 @@ function GoalFields({ goal, onDone }: { goal: Goal | null; onDone: () => void })
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

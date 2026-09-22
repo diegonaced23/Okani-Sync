@@ -20,6 +20,7 @@ import { fromDebt } from "@/components/debts/shared";
 import { EASE_OUT_EXPO, GLASS_SURFACE, haptic } from "@/lib/ios";
 import { calculateLoanAmortization, currentMonth } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 type Tab = "abonos" | "plan" | "simular";
 
@@ -78,14 +79,17 @@ export default function DebtDetailPage({ params }: { params: Promise<{ id: strin
     haptic(15);
     try {
       await setArchived({ debtId, archived });
-      toast(archived ? "Deuda archivada" : "Deuda restaurada", {
+      toast.success(archived ? "Deuda archivada" : "Deuda restaurada", {
+        description: archived ? "Ya no aparece en tu lista ni en las alertas" : "Vuelve a aparecer en tu lista",
         action: {
           label: "Deshacer",
-          onClick: () => { setArchived({ debtId, archived: !archived }).catch(() => toast.error("No se pudo deshacer")); },
+          onClick: () => { setArchived({ debtId, archived: !archived }).catch(() => toast.error("No se pudo deshacer el cambio")); },
         },
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(archived ? "No se pudo archivar la deuda" : "No se pudo restaurar la deuda", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
     }
   }
 
@@ -93,9 +97,11 @@ export default function DebtDetailPage({ params }: { params: Promise<{ id: strin
     try {
       await removePayment({ paymentId: paymentId as Id<"debtPayments"> });
       haptic(15);
-      toast.success("Abono borrado");
+      toast.success("Abono borrado", { description: "El saldo pendiente se ajustó" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo borrar el abono");
+      toast.error("No se pudo borrar el abono", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
       throw err;
     }
   }

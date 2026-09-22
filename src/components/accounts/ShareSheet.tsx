@@ -11,6 +11,7 @@ import { AppSheet, AppSheetFooter } from "@/components/ui/app-sheet";
 import { Input } from "@/components/ui/input";
 import { FIELD_LABEL } from "@/lib/ios";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 import {
   PERMISSION_HINTS,
   PERMISSION_LABELS,
@@ -81,7 +82,7 @@ function ShareFields({
       setTimeout(onDone, reduce ? 0 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo compartir");
+      toast.error(errorMessage(err, "No se pudo compartir"));
     }
   }
 

@@ -2,8 +2,14 @@
 
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import { CheckIcon, InfoIcon, TriangleAlertIcon, XIcon, Loader2Icon } from "lucide-react"
 
+/**
+ * Avisos con el mismo vidrio líquido que la cápsula de confirmación: píldora
+ * translúcida y el icono dentro de una gota de color según el tipo. El material
+ * vive en `.os-toast` (globals.css) y no reutiliza `.os-liquid-glass` porque
+ * Sonner ocupa los ::before/::after del aviso para el gesto de deslizar.
+ */
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme()
 
@@ -15,34 +21,17 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // --toast-offset-bottom en globals.css
       offset={{ bottom: "var(--toast-offset-bottom)" }}
       mobileOffset={{ bottom: "var(--toast-offset-bottom)" }}
+      gap={10}
       icons={{
-        success: (
-          <CircleCheckIcon className="size-4" />
-        ),
-        info: (
-          <InfoIcon className="size-4" />
-        ),
-        warning: (
-          <TriangleAlertIcon className="size-4" />
-        ),
-        error: (
-          <OctagonXIcon className="size-4" />
-        ),
-        loading: (
-          <Loader2Icon className="size-4 animate-spin" />
-        ),
+        success: <CheckIcon strokeWidth={3} />,
+        info: <InfoIcon strokeWidth={2.5} />,
+        warning: <TriangleAlertIcon strokeWidth={2.5} />,
+        error: <XIcon strokeWidth={3} />,
+        loading: <Loader2Icon strokeWidth={2.5} className="animate-spin" />,
       }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
-      }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "os-toast",
         },
       }}
       {...props}

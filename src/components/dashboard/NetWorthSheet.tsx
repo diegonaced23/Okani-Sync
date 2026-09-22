@@ -15,6 +15,7 @@ import { useBalanceHidden } from "@/hooks/use-balance-hidden";
 import { EASE_OUT_EXPO, FIELD_LABEL, GLASS_SURFACE, haptic, tint } from "@/lib/ios";
 import { formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 type SharedAccount = Pick<AccountSummary, "_id" | "name" | "balance" | "currency" | "color">;
 
@@ -65,7 +66,7 @@ export function NetWorthSheet({
     try {
       await fn();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo actualizar");
+      toast.error(errorMessage(err, "No se pudo actualizar"));
     } finally {
       setPending(null);
     }

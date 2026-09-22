@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { BrandLogo } from "./BrandLogo";
 import { CardFace } from "./CardFace";
 import { EASE_OUT_EXPO, SPRING, haptic } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 type Step = 1 | 2;
 type FieldErrors = Partial<Record<"name" | "bank" | "last4" | "limit" | "balance", string>>;
@@ -278,7 +279,7 @@ function CardFields({ card, onDone }: { card: Doc<"cards"> | null; onDone: () =>
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

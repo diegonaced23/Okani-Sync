@@ -10,6 +10,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { AppSheet, AppSheetFooter } from "@/components/ui/app-sheet";
 import { SwipeRow, type SwipeAction } from "@/components/ui/swipe-row";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 import {
   EASE_OUT_EXPO,
   PERMISSION_HINTS,
@@ -48,7 +49,7 @@ export function SharesList({ shares }: { shares: Share[] }) {
       await revoke({ shareId: share._id });
       toast.success(`Acceso de ${labelOf(share)} revocado`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo revocar");
+      toast.error(errorMessage(err, "No se pudo revocar"));
     }
   }
 
@@ -191,7 +192,7 @@ function PermissionFields({ share, onDone }: { share: Share; onDone: () => void 
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo cambiar");
+      toast.error(errorMessage(err, "No se pudo cambiar"));
     }
   }
 

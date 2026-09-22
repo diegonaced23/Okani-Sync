@@ -12,6 +12,7 @@ import { CategoryIcon } from "@/components/ui/category-icon";
 import { ACCOUNT_COLORS, CATEGORY_ICONS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { CategoryPreview, ColorPicker, IconPicker, TypeSegmented } from "./pickers";
+import { errorMessage } from "@/lib/errorMessage";
 import {
   OVERFLOW_ROW,
   SUGGESTIONS,
@@ -129,7 +130,7 @@ function CategoryForm({
       setTimeout(onDone, reduce ? 0 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

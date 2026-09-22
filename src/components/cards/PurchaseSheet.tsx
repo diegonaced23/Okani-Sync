@@ -25,6 +25,7 @@ import {
 } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { EASE_OUT_EXPO, SPRING, haptic, tint, type Purchase } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 /** Números de cuotas que ofrecen los bancos; el resto se escribe a mano. */
 const COMMON_INSTALLMENTS = [1, 3, 6, 12, 24, 36];
@@ -168,7 +169,7 @@ function PurchaseFields({
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

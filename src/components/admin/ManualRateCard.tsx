@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { CURRENCIES } from "@/lib/constants";
+import { errorMessage } from "@/lib/errorMessage";
 
 /**
  * Fija una tasa manual entre dos monedas.
@@ -45,7 +46,7 @@ export function ManualRateCard({ index = 0 }: { index?: number }) {
       toast.success(`Tasa manual ${from} → ${to} guardada`);
       setRate("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar la tasa");
+      toast.error(errorMessage(err, "No se pudo guardar la tasa"));
     } finally {
       setGuardando(false);
     }

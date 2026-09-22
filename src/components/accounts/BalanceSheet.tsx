@@ -11,6 +11,7 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { formatCents, fromCents, toCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { haptic, tint, type Account } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 /**
  * Poner el saldo en la cifra que dice el banco. Hay dos caminos y la diferencia
@@ -85,7 +86,7 @@ function BalanceFields({ account, onDone }: { account: Account; onDone: () => vo
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo actualizar");
+      toast.error(errorMessage(err, "No se pudo actualizar"));
     }
   }
 

@@ -14,6 +14,7 @@ import { haptic, tint } from "@/lib/ios";
 import { formatCents, fromCents, toCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { viewOf, type Goal } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 type Mode = "abonar" | "retirar";
 
@@ -92,7 +93,7 @@ function FundsForm({ goal, onDone }: { goal: Goal; onDone: () => void }) {
       setTimeout(onDone, reduce ? 0 : reaches ? 1500 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo registrar");
+      toast.error(errorMessage(err, "No se pudo registrar"));
     }
   }
 

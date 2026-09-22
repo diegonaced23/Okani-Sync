@@ -18,6 +18,7 @@ import { FIELD_LABEL, OVERFLOW_ROW, haptic, tint } from "@/lib/ios";
 import { formatCents, formatMonth, fromCents, toCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { type Budget, ratioOf } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 /** Atajos de umbral: los porcentajes que la gente elige de verdad. */
 const THRESHOLDS = [60, 70, 80, 90, 95];
@@ -134,7 +135,7 @@ function BudgetFields({
       setTimeout(onDone, reduce ? 0 : 480);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

@@ -17,6 +17,9 @@ import { FIELD_LABEL, OVERFLOW_ROW, haptic, tint } from "@/lib/ios";
 import { dateStrToTs, formatCents, fromCents, toCents, todayStr } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { progressOf, type Obligation } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
+import { buildPaymentConfirmation } from "@/lib/obligationConfirmation";
+import { showConfirmation } from "@/components/ui/confirmation-capsule";
 
 /**
  * Registrar un abono: pagar una deuda o recibir un cobro de un préstamo. El anillo
@@ -103,13 +106,21 @@ function PaymentForm({ o, onDone }: { o: Obligation; onDone: () => void }) {
       }
       haptic(settles ? 40 : 12);
       setStatus(settles ? "settled" : "done");
-      toast.success(settles
-        ? isDebt ? `¡«${o.name}» quedó saldada!` : `¡${o.counterpart} te pagó todo!`
-        : isDebt ? "Abono registrado" : "Cobro registrado");
+      showConfirmation(buildPaymentConfirmation({
+        kind: o.kind,
+        name: o.name,
+        counterpart: o.counterpart,
+        amountCents: cents,
+        currency: o.currency,
+        balanceCents: o.currentBalance,
+        originalAmountCents: o.originalAmount,
+      }));
       setTimeout(onDone, reduce ? 0 : settles ? 1400 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo registrar");
+      toast.error(isDebt ? "No se pudo registrar el abono" : "No se pudo registrar el cobro", {
+        description: errorMessage(err, "Revisa tu conexión e inténtalo de nuevo."),
+      });
     }
   }
 

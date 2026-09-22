@@ -21,6 +21,9 @@ import { FIELD_LABEL, OVERFLOW_ROW, haptic, tint } from "@/lib/ios";
 import { dateStrToTs, formatCents, fromCents, toCents, todayStr, tsToDateStr } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { initialOf, type Loan } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
+import { buildLoanCreatedConfirmation, buildObligationEditConfirmation } from "@/lib/obligationConfirmation";
+import { showConfirmation } from "@/components/ui/confirmation-capsule";
 
 export function LoanSheet({
   open,
@@ -115,11 +118,17 @@ function LoanForm({ loan, onDone, onDeleted }: { loan: Loan | null; onDone: () =
       }
       haptic(12);
       setStatus("done");
-      toast.success(isEdit ? "Préstamo actualizado" : `Préstamo a ${borrower.trim()} registrado`);
+      showConfirmation(
+        isEdit
+          ? buildObligationEditConfirmation(loanName)
+          : buildLoanCreatedConfirmation({ borrower, amountCents: cents, currency, accountName: selectedAccount?.name }),
+      );
       setTimeout(onDone, reduce ? 0 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(isEdit ? "No se pudieron guardar los cambios" : "No se pudo registrar el préstamo", {
+        description: errorMessage(err, "Revisa tu conexión e inténtalo de nuevo."),
+      });
     }
   }
 
@@ -128,10 +137,14 @@ function LoanForm({ loan, onDone, onDeleted }: { loan: Loan | null; onDone: () =
     setBusy(true);
     try {
       await setArchived({ loanId: loan._id, archived: !loan.archived });
-      toast.success(loan.archived ? "Préstamo restaurado" : "Préstamo archivado");
+      toast.success(loan.archived ? "Préstamo restaurado" : "Préstamo archivado", {
+        description: loan.archived ? `«${loan.name}» vuelve a tu lista` : `«${loan.name}» queda guardado en Archivados`,
+      });
       onDone();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(loan.archived ? "No se pudo restaurar el préstamo" : "No se pudo archivar el préstamo", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
     } finally {
       setBusy(false);
     }
@@ -142,10 +155,12 @@ function LoanForm({ loan, onDone, onDeleted }: { loan: Loan | null; onDone: () =
     setBusy(true);
     try {
       await removeLoan({ loanId: loan._id });
-      toast.success("Préstamo eliminado");
+      toast.success("Préstamo eliminado", { description: `«${loan.name}» y sus cobros se borraron` });
       onDeleted();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error("No se pudo eliminar el préstamo", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
       setBusy(false);
     }
   }

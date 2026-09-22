@@ -14,6 +14,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { formatRelative } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 const ROL_LABEL: Record<string, string> = {
   admin: "Administrador",
@@ -62,7 +63,7 @@ export function PendingInvitationsCard({ index = 0 }: { index?: number }) {
       await createByAdmin({ email: inv.email, role: inv.role });
       toast.success("Enlace de acceso reenviado por correo");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo reenviar el acceso");
+      toast.error(errorMessage(err, "No se pudo reenviar el acceso"));
     } finally {
       setOcupada(null);
     }
@@ -77,7 +78,7 @@ export function PendingInvitationsCard({ index = 0 }: { index?: number }) {
       await revoke({ invitationId: id });
       toast.success("Invitación revocada");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo revocar");
+      toast.error(errorMessage(err, "No se pudo revocar"));
     } finally {
       setOcupada(null);
     }

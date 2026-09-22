@@ -19,6 +19,7 @@ import { X } from "lucide-react";
 import { buildEditConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface CardPurchaseEditFormProps {
   purchase: Doc<"cardPurchases">;
@@ -122,7 +123,7 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
         description,
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al actualizar");
+      toast.error(errorMessage(err, "Error al actualizar"));
     } finally {
       setLoading(false);
     }

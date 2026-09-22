@@ -19,6 +19,7 @@ import { InstallmentSchedule } from "@/components/cards/InstallmentSchedule";
 import { PayCardSheet } from "@/components/cards/PayCardSheet";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { CardPurchaseEditForm } from "./CardPurchaseEditForm";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface CardPurchaseDetailSheetProps {
   purchaseId: Id<"cardPurchases"> | null;
@@ -79,7 +80,7 @@ export function CardPurchaseDetailSheet({
       setDeleteOpen(false);
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(errorMessage(err, "Error al eliminar"));
     } finally {
       setDeleting(false);
     }

@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatStatCount } from "@/lib/adminHealth";
 import { formatRelative } from "@/lib/utils";
 import { STATS_COUNT_CAP, STATS_COUNT_CAP_LABEL } from "@/lib/constants";
+import { errorMessage } from "@/lib/errorMessage";
 
 /** Mismo bloque de cifra que UsersSummaryCard.tsx / UserUsageCard.tsx — misma forma visual en todo el panel. */
 function Cifra({ valor, etiqueta }: { valor: string; etiqueta: string }) {
@@ -63,7 +64,7 @@ export function VolumeCard({ index = 0 }: { index?: number }) {
       const { users: lanzados } = await recomputeNow({});
       toast.success(`Recálculo lanzado para ${lanzados} ${lanzados === 1 ? "usuario" : "usuarios"}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo recalcular");
+      toast.error(errorMessage(err, "No se pudo recalcular"));
     } finally {
       setRecalculando(false);
     }

@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { TransactionDetail } from "./TransactionDetail";
 import { TransactionEditForm } from "./TransactionEditForm";
+import { errorMessage } from "@/lib/errorMessage";
 
 interface TransactionDetailSheetProps {
   transaction: Doc<"transactions"> | null;
@@ -79,7 +80,7 @@ export function TransactionDetailSheet({
       setDeleteOpen(false);
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(errorMessage(err, "Error al eliminar"));
     } finally {
       setLoading(false);
     }

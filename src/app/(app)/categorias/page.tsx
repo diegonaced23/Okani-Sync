@@ -25,6 +25,7 @@ import {
 } from "@/components/categories/shared";
 import { currentMonth, formatCents, formatMonth } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 const TABS: { key: CategoryTab; label: string }[] = [
   { key: "gasto", label: "Gastos" },
@@ -158,7 +159,7 @@ export default function CategoriasPage() {
       });
     } catch (err) {
       if (categories) setItems(categories.filter((c) => inTab(c, tab)));
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(errorMessage(err, "No se pudo archivar"));
     }
   }
 
@@ -168,7 +169,7 @@ export default function CategoriasPage() {
       haptic();
       toast.success(`«${cat.name}» restaurada`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo restaurar");
+      toast.error(errorMessage(err, "No se pudo restaurar"));
     }
   }
 
@@ -179,7 +180,7 @@ export default function CategoriasPage() {
       haptic(15);
       toast.success(added > 0 ? `${added} categorías agregadas` : "Ya tienes todas las sugeridas");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudieron agregar");
+      toast.error(errorMessage(err, "No se pudieron agregar"));
     } finally {
       setSeeding(false);
     }
@@ -198,7 +199,7 @@ export default function CategoriasPage() {
       await removeCategory({ categoryId: deletingCat._id });
       toast.success("Categoría eliminada");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
       throw err;
     }
   }
@@ -214,7 +215,7 @@ export default function CategoriasPage() {
         result?.willContinue ? "Migrando movimientos…" : "Movimientos migrados y categoría eliminada"
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo migrar");
+      toast.error(errorMessage(err, "No se pudo migrar"));
       throw err;
     }
   }

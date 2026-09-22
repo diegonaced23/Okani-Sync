@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EASE_OUT_EXPO, tint } from "@/lib/ios";
 import { formatCents, formatMonth } from "@/lib/money";
 import { STATE_TEXT, STATE_TONE, type Budget, paceOf, ratioOf, stateOf, thresholdOf, toneOf } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 /**
  * Detalle del presupuesto: cómo va el gasto contra el ritmo del mes y en qué se
@@ -82,7 +83,7 @@ function DetailBody({
       onDeleted();
     } catch (err) {
       setBusy(false);
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
     }
   }
 

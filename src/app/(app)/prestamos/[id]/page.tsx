@@ -15,6 +15,7 @@ import { ActionButton, BackButton, DetailHero, PaymentHistory } from "@/componen
 import { fromLoan } from "@/components/debts/shared";
 import { FIELD_LABEL, GLASS_SURFACE, haptic } from "@/lib/ios";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 const BACK = "/deudas?tab=prestamos";
 
@@ -59,14 +60,17 @@ export default function LoanDetailPage({ params }: { params: Promise<{ id: strin
     haptic(15);
     try {
       await setArchived({ loanId, archived });
-      toast(archived ? "Préstamo archivado" : "Préstamo restaurado", {
+      toast.success(archived ? "Préstamo archivado" : "Préstamo restaurado", {
+        description: archived ? "Ya no aparece en tu lista ni en las alertas" : "Vuelve a aparecer en tu lista",
         action: {
           label: "Deshacer",
-          onClick: () => { setArchived({ loanId, archived: !archived }).catch(() => toast.error("No se pudo deshacer")); },
+          onClick: () => { setArchived({ loanId, archived: !archived }).catch(() => toast.error("No se pudo deshacer el cambio")); },
         },
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo archivar");
+      toast.error(archived ? "No se pudo archivar el préstamo" : "No se pudo restaurar el préstamo", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
     }
   }
 
@@ -74,9 +78,11 @@ export default function LoanDetailPage({ params }: { params: Promise<{ id: strin
     try {
       await removeRepayment({ repaymentId: repaymentId as Id<"loanRepayments"> });
       haptic(15);
-      toast.success("Abono borrado");
+      toast.success("Cobro borrado", { description: "El saldo por cobrar se ajustó" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo borrar el abono");
+      toast.error("No se pudo borrar el cobro", {
+        description: errorMessage(err, "Inténtalo de nuevo en un momento."),
+      });
       throw err;
     }
   }

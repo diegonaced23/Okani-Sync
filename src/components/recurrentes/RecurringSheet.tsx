@@ -25,6 +25,7 @@ import {
   type SelectableFrequency,
 } from "@/lib/recurrence";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 import {
   FREQUENCY_LABELS,
   SUGGESTIONS,
@@ -226,7 +227,7 @@ function RecurringForm({
       setTimeout(onDone, reduce ? 0 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo guardar");
+      toast.error(errorMessage(err, "No se pudo guardar"));
     }
   }
 

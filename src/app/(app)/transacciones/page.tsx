@@ -38,6 +38,7 @@ import {
 } from "@/components/transactions/shared";
 import { currentMonth, formatCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 // ─── Tipos de filtro ───────────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ export default function TransaccionesPage() {
       toast.success("Movimiento eliminado");
       setDeletingTx(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
     } finally {
       setDeleting(false);
     }

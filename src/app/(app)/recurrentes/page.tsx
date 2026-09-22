@@ -21,6 +21,7 @@ import {
 } from "@/components/recurrentes/shared";
 import { EASE_OUT_EXPO, GLASS_SURFACE, SPRING, haptic } from "@/lib/ios";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 type Filter = "todos" | RecurringKind;
 
@@ -122,7 +123,7 @@ export default function RecurrentesPage() {
         },
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo actualizar");
+      toast.error(errorMessage(err, "No se pudo actualizar"));
     }
   }
 
@@ -140,7 +141,7 @@ export default function RecurrentesPage() {
         },
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo eliminar");
+      toast.error(errorMessage(err, "No se pudo eliminar"));
     }
   }
 

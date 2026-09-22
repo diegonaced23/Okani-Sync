@@ -20,6 +20,7 @@ import { PiggyBank } from "lucide-react";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
+import { errorMessage } from "@/lib/errorMessage";
 
 const FORM_ID = "tx-form";
 
@@ -120,7 +121,7 @@ export function AccountTransactionFields({
         accountName: accountList.find((a) => a._id === accountId)?.name,
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al guardar");
+      toast.error(errorMessage(err, "Error al guardar"));
     } finally {
       setLoading(false);
     }

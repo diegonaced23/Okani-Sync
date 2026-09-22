@@ -11,6 +11,7 @@ import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { MAX_AVATAR_SIZE_BYTES, ALLOWED_AVATAR_MIME_TYPES, MAX_USER_NAME_LENGTH } from "@/lib/constants";
 import { EASE_OUT_EXPO, GLASS_SURFACE, haptic } from "@/lib/ios";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/errorMessage";
 
 export function AvatarCard({ me }: { me: Doc<"users"> & { avatarUrl: string | null } }) {
   const reduce = useReducedMotion();
@@ -48,7 +49,7 @@ export function AvatarCard({ me }: { me: Doc<"users"> & { avatarUrl: string | nu
       toast.success("Nombre actualizado");
       setEditingName(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "No se pudo actualizar el nombre");
+      toast.error(errorMessage(error, "No se pudo actualizar el nombre"));
     } finally {
       setSavingName(false);
     }

@@ -16,6 +16,7 @@ import { FIELD_LABEL, OVERFLOW_ROW } from "@/lib/ios";
 import { formatCents, fromCents, simulateFIFOPayment, toCents, todayStr } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { EASE_OUT_EXPO, haptic, tint, usageOf, usageTone, type Card } from "./shared";
+import { errorMessage } from "@/lib/errorMessage";
 
 /**
  * Pagar la tarjeta. El anillo anticipa cómo queda el cupo con el monto escrito y
@@ -150,7 +151,7 @@ function PayFields({
       setTimeout(onDone, reduce ? 0 : settles ? 1400 : 520);
     } catch (err) {
       setStatus("idle");
-      toast.error(err instanceof Error ? err.message : "No se pudo registrar el pago");
+      toast.error(errorMessage(err, "No se pudo registrar el pago"));
     }
   }
 
