@@ -16,6 +16,7 @@ import {
 } from "./lib/transactionEffects";
 import { getUserRateMap, convertAmount } from "./lib/money";
 import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
+import { mergeRecent } from "./lib/recent";
 import {
   ACCRUAL_EXPENSE_TYPES,
   isAccrualExpense,
@@ -132,10 +133,42 @@ export const listRecent = query({
 
     const enriched: TxWithEffectiveDate[] = [...nonCardTxs, ...enrichedCardTxs];
 
-    // Re-ordenar por fecha efectiva porque las gasto_tarjeta tenían fechas futuras.
-    enriched.sort((a, b) => b.date - a.date);
+    // Compras a cuotas recientes: aún sin movimiento hasta su primer corte (ver mergeRecent)
+    const recentPurchases = (
+      await Promise.all(
+        (["activa", "pagada"] as const).map((status) =>
+          ctx.db
+            .query("cardPurchases")
+            .withIndex("by_user_status_purchaseDate", (q) => q.eq("userId", clerkId).eq("status", status))
+            .order("desc")
+            .take(safeLimit)
+        )
+      )
+    ).flat();
+    const purchaseRows = await Promise.all(
+      recentPurchases
+        .filter((p) => p.totalInstallments > 1)
+        .map(async (p) => {
+          const first = await ctx.db
+            .query("cardInstallments")
+            .withIndex("by_purchase", (q) => q.eq("purchaseId", p._id))
+            .first();
+          return {
+            _id: p._id,
+            purchaseDate: p.purchaseDate,
+            totalInstallments: p.totalInstallments,
+            billsAtCutoff: first?.interestBilling === "at_cutoff",
+            description: p.description,
+            totalAmount: p.totalAmount,
+            currency: p.currency,
+            cardId: p.cardId,
+            categoryId: p.categoryId,
+          };
+        })
+    );
 
-    return enriched.slice(0, safeLimit);
+    // Re-ordenar por fecha efectiva: las gasto_tarjeta antiguas tenían fechas futuras
+    return mergeRecent(enriched, purchaseRows, safeLimit);
   },
 });
 

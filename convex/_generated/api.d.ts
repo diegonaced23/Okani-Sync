@@ -59,6 +59,7 @@ import type * as lib_money from "../lib/money.js";
 import type * as lib_notify from "../lib/notify.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_rateLimit from "../lib/rateLimit.js";
+import type * as lib_recent from "../lib/recent.js";
 import type * as lib_seedUserData from "../lib/seedUserData.js";
 import type * as lib_transactionEffects from "../lib/transactionEffects.js";
 import type * as lib_txClassification from "../lib/txClassification.js";
@@ -133,6 +134,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notify": typeof lib_notify;
   "lib/permissions": typeof lib_permissions;
   "lib/rateLimit": typeof lib_rateLimit;
+  "lib/recent": typeof lib_recent;
   "lib/seedUserData": typeof lib_seedUserData;
   "lib/transactionEffects": typeof lib_transactionEffects;
   "lib/txClassification": typeof lib_txClassification;

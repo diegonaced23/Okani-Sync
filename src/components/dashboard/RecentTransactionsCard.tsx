@@ -4,6 +4,8 @@ import { memo, useState, useEffect } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight, CreditCard, Plus } from "lucide-react";
+import type { FunctionReturnType } from "convex/server";
+import type { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CategoryIcon } from "@/components/ui/category-icon";
@@ -16,8 +18,11 @@ import { useNewTransactionModal } from "@/contexts/new-transaction-modal";
 
 type Category = Pick<Doc<"categories">, "_id" | "name" | "icon" | "color">;
 
+/** Un movimiento, o una compra a cuotas que aún no tiene movimiento (ver `mergeRecent`). */
+type RecentItem = FunctionReturnType<typeof api.transactions.listRecent>[number];
+
 interface RecentTransactionsCardProps {
-  transactions: Doc<"transactions">[] | undefined;
+  transactions: RecentItem[] | undefined;
   categories: Category[] | undefined;
   accountNames: Record<string, string>;
   cards: Pick<Doc<"cards">, "_id" | "name" | "lastFourDigits">[] | undefined;
@@ -86,7 +91,7 @@ export const RecentTransactionsCard = memo(function RecentTransactionsCard({
   }, [fresh]);
 
   // Agrupar por día conservando el orden (ya vienen del más reciente al más antiguo)
-  const groups: { day: number; items: Doc<"transactions">[] }[] = [];
+  const groups: { day: number; items: RecentItem[] }[] = [];
   for (const tx of transactions ?? []) {
     const day = startOfDay(tx.date);
     const last = groups[groups.length - 1];
@@ -191,10 +196,15 @@ function SeeAll() {
 }
 
 function sourceLabel(
-  tx: Doc<"transactions">,
+  tx: RecentItem,
   accountNames: Record<string, string>,
   cardMap: Map<string, { name: string; lastFourDigits: string }>,
 ) {
+  if (tx.kind === "purchase") {
+    const card = cardMap.get(tx.cardId);
+    const cuotas = `${tx.totalInstallments} cuotas`;
+    return card ? `${cuotas} · ${card.name} ···${card.lastFourDigits}` : cuotas;
+  }
   if (tx.type === "transferencia") {
     const from = accountNames[tx.accountId ?? ""];
     const to = accountNames[tx.toAccountId ?? ""];
@@ -208,20 +218,22 @@ function sourceLabel(
 }
 
 function Row({ tx, category, source, viaCard, hidden, highlight }: {
-  tx: Doc<"transactions">;
+  tx: RecentItem;
   category?: Category;
   source?: string;
   viaCard: boolean;
   hidden: boolean;
   highlight: boolean;
 }) {
-  const config = TX_TYPE_CONFIG[tx.type] ?? TX_TYPE_CONFIG.gasto;
+  // Una compra a cuotas se pinta como un gasto con tarjeta, por su valor total
+  const type = tx.kind === "purchase" ? "gasto_tarjeta" : tx.type;
+  const config = TX_TYPE_CONFIG[type] ?? TX_TYPE_CONFIG.gasto;
   const TypeIcon = config.icon;
 
   // Solo los ingresos llevan color; los gastos van en el color del texto
   let sign = config.sign;
-  let isIncome = tx.type === "ingreso";
-  if (tx.type === "transferencia" && tx.transferDirection) {
+  let isIncome = type === "ingreso";
+  if (tx.kind === "tx" && tx.type === "transferencia" && tx.transferDirection) {
     isIncome = tx.transferDirection === "in";
     sign = isIncome ? "+" : "−";
   }
