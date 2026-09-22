@@ -4,14 +4,14 @@ import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { calculateInstallment } from "./lib/money";
+import { calculateInstallment, convertAmount, getUserRateMap } from "./lib/money";
 import { assertValidMonth, getLegacyInterestsCategoryId, monthRange, toMonthString } from "./lib/utils";
 import { applyBudgetDelta } from "./lib/transactionEffects";
 import { categoryRotationDeltas } from "./lib/cardBudget";
 import { balanceScheduleToPrincipal, cuotaChargeDates } from "./lib/cardSchedule";
 import { billInstallment, billDueInstallmentsForCard, cuotaDescription } from "./lib/cardBilling";
 import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
-import { installmentDue, installmentRemaining } from "../src/lib/cardPayments";
+import { installmentDue, installmentRemaining, isNotYetExpensed } from "../src/lib/cardPayments";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +64,62 @@ export const listByPurchaseMonth = query({
         q.eq("userId", clerkId).eq("status", "activa").gte("purchaseDate", start).lt("purchaseDate", end)
       )
       .collect();
+  },
+});
+
+/**
+ * Compras con tarjeta del mes que todavía no cuentan como gasto.
+ *
+ * Una cuota cuenta como gasto cuando se factura (en el corte), así que una
+ * compra a cuotas de hoy puede no aparecer en «Gastos del mes» hasta el mes
+ * siguiente. El dashboard muestra este total aparte para que se vea sin contarlo
+ * dos veces: suma el capital de las cuotas aún no registradas como gasto, de las
+ * compras hechas en `month`, convertido a la moneda preferida. Las compras sin
+ * tasa de cambio quedan fuera y se avisa con `missingRate`.
+ */
+export const pendingBilling = query({
+  args: { month: v.string() },
+  handler: async (ctx, { month }) => {
+    assertValidMonth(month);
+    const user = await getCurrentUser(ctx);
+    const { rateMap, preferredCurrency } = await getUserRateMap(ctx, user);
+    const { start, end } = monthRange(month);
+
+    const purchases = (
+      await Promise.all(
+        (["activa", "pagada"] as const).map((status) =>
+          ctx.db
+            .query("cardPurchases")
+            .withIndex("by_user_status_purchaseDate", (q) =>
+              q.eq("userId", user.clerkId).eq("status", status).gte("purchaseDate", start).lt("purchaseDate", end)
+            )
+            .collect()
+        )
+      )
+    ).flat();
+
+    let amount = 0;
+    let count = 0;
+    let missingRate = false;
+    for (const purchase of purchases) {
+      const installments = await ctx.db
+        .query("cardInstallments")
+        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+        .collect();
+      const pending = installments
+        .filter((i) => isNotYetExpensed(i, month))
+        .reduce((s, i) => s + (i.principalAmount ?? i.amount), 0);
+      if (pending <= 0) continue;
+      const { converted, hasRate } = convertAmount(pending, purchase.currency, preferredCurrency, rateMap);
+      if (!hasRate) {
+        missingRate = true;
+        continue;
+      }
+      amount += converted;
+      count += 1;
+    }
+
+    return { currency: preferredCurrency, amount, count, missingRate };
   },
 });
 

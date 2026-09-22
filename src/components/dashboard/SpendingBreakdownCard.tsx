@@ -2,7 +2,7 @@
 
 import { memo, useId, useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CreditCard } from "lucide-react";
 import { useBalanceHidden } from "@/hooks/use-balance-hidden";
 import { GLASS_SURFACE } from "@/lib/ios";
 import { formatCents } from "@/lib/money";
@@ -24,6 +24,8 @@ interface SpendingBreakdownCardProps {
   bySource: { name: string; amount: number }[] | undefined;
   currency: string;
   monthName: string;
+  /** Compras con tarjeta del mes que aún no cuentan como gasto (se facturan en el corte) */
+  pendingCard?: { amount: number; count: number; currency: string };
 }
 
 // Paleta fija para las barras de "fuente": los colores de cuenta son gradientes
@@ -152,6 +154,7 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
   bySource,
   currency,
   monthName,
+  pendingCard,
 }: SpendingBreakdownCardProps) {
   const [tab, setTab] = useState<Breakdown>("categoria");
   const baseId = useId();
@@ -176,6 +179,26 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
   // importe del desglose seguían visibles con los saldos ocultos.
   const money = (cents: number) => (balanceHidden ? "$ ••••••" : formatCents(cents, currency));
   const activeTab = TABS.find((t) => t.key === tab)!;
+
+  // Las compras a cuotas cuentan como gasto al facturarse en el corte: sin esta
+  // línea, una compra de hoy no aparecería en ninguna parte hasta el mes siguiente.
+  // Va aparte, y no sumada al total, para no contarla dos veces cuando se facture.
+  const pendingLine =
+    pendingCard && pendingCard.amount > 0 && pendingCard.currency === currency ? (
+      <div className="mt-3 flex items-start gap-2.5 rounded-[14px] px-3 py-2.5" style={{ background: "var(--surface-2, var(--muted))" }}>
+        <CreditCard className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-semibold text-foreground">Compras con tarjeta por facturar</span>
+            <span className="font-mono-num text-xs font-bold tabular-nums text-foreground">{money(pendingCard.amount)}</span>
+          </div>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            {pendingCard.count === 1 ? "1 compra de" : `${pendingCard.count} compras de`} {monthName}. Cada cuota cuenta como
+            gasto cuando la tarjeta la factura en su corte.
+          </p>
+        </div>
+      </div>
+    ) : null;
 
   return (
     <div className={cn("rounded-[22px] p-4", GLASS_SURFACE)}>
@@ -236,9 +259,12 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
         className="os-enter"
       >
         {rows.length === 0 ? (
-          <div className="h-56 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">Sin gastos en {monthName}.</p>
-          </div>
+          <>
+            <div className={cn("flex items-center justify-center", pendingLine ? "h-32" : "h-56")}>
+              <p className="text-sm text-muted-foreground">Sin gastos en {monthName}.</p>
+            </div>
+            {pendingLine}
+          </>
         ) : (
           <>
             <BreakdownBars
@@ -257,6 +283,8 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
                 {money(total)}
               </span>
             </div>
+
+            {pendingLine}
 
             {/* Era la única tarjeta sin salida: ni a reportes ni a movimientos */}
             <div className="mt-3 flex justify-end">

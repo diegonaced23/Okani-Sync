@@ -48,6 +48,7 @@ export default function DashboardPage() {
   const sharedAccounts = useQuery(api.accounts.listSharedWithMe);
   const spending         = useQuery(api.transactions.spendingByCategory, { month: today });
   const spendingBySource = useQuery(api.transactions.spendingBySource, { month: today });
+  const pendingCard      = useQuery(api.cardPurchases.pendingBilling, { month: today });
   const trend      = useQuery(api.transactions.monthlySummary, { months: last6 });
   const recent     = useQuery(api.transactions.listRecent, { limit: 5 });
   const categories = useQuery(api.categories.list, {});
@@ -238,6 +239,7 @@ export default function DashboardPage() {
           bySource={spendingBySource}
           currency={currency}
           monthName={monthName}
+          pendingCard={pendingCard}
         />
       </section>
 

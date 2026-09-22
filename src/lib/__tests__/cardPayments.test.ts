@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocatePayments, installmentDue, installmentRemaining, simulateCardPayment, totalPaidFor } from "../cardPayments";
+import { allocatePayments, installmentDue, installmentRemaining, isNotYetExpensed, simulateCardPayment, totalPaidFor } from "../cardPayments";
 
 describe("installmentDue", () => {
   const cuota = { amount: 416_106, principalAmount: 392_106, interestAmount: 24_000 };
@@ -94,5 +94,24 @@ describe("simulateCardPayment", () => {
 
   it("el monto se limita a la deuda", () => {
     expect(simulateCardPayment([nueva("a", 1)], 416_106, 9_000_000).newBalance).toBe(0);
+  });
+});
+
+describe("isNotYetExpensed", () => {
+  const sep = "2026-09";
+  const oct15 = new Date(2026, 9, 15, 23, 59).getTime();
+  const sep10 = new Date(2026, 8, 10, 12).getTime();
+
+  it("una cuota del modelo nuevo sin facturar todavía no es gasto", () => {
+    expect(isNotYetExpensed({ interestBilling: "at_cutoff", dueDate: oct15 }, sep)).toBe(true);
+  });
+
+  it("facturada ya es gasto", () => {
+    expect(isNotYetExpensed({ interestBilling: "at_cutoff", dueDate: sep10, billedAt: 1 }, sep)).toBe(false);
+  });
+
+  it("una cuota antigua es gasto del mes de su fecha: si cae en un mes posterior, aún no cuenta", () => {
+    expect(isNotYetExpensed({ dueDate: oct15 }, sep)).toBe(true);
+    expect(isNotYetExpensed({ dueDate: sep10 }, sep)).toBe(false);
   });
 });
