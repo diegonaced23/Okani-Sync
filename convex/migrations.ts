@@ -63,8 +63,13 @@ async function migrateCard(ctx: MutationCtx, card: Doc<"cards">, now: number, dr
       .collect()
   ).filter((i) => i.interestBilling === undefined);
 
-  const legacyInterestsCat = await getLegacyInterestsCategoryId(ctx, card.userId);
-  const interestCat = dryRun ? legacyInterestsCat : await ensureInterestCategory(ctx, card.userId, card);
+  const legacyInterestsCatId = await getLegacyInterestsCategoryId(ctx, card.userId);
+  // Cuándo apareció esa categoría: el código anterior mandaba el interés de una
+  // compra a ella solo si YA existía al crear la compra. Las compras anteriores
+  // (habituales: la categoría se creó con la migración `ensureSystemCategories`)
+  // tienen el interés dentro de la categoría de la compra.
+  const legacyInterestsCat = legacyInterestsCatId ? await ctx.db.get(legacyInterestsCatId) : null;
+  const interestCat = dryRun ? legacyInterestsCatId : await ensureInterestCategory(ctx, card.userId, card);
   const purchases = new Map<Id<"cardPurchases">, Doc<"cardPurchases"> | null>();
 
   let billed = 0;
@@ -79,7 +84,11 @@ async function migrateCard(ctx: MutationCtx, card: Doc<"cards">, now: number, dr
     const interest = inst.principalAmount === undefined ? 0 : (inst.interestAmount ?? 0);
     // Dónde puso el modelo anterior el interés en el presupuesto: en la categoría
     // de sistema si existía; si no, junto al capital en la categoría de la compra.
-    const interestInSystemCat = !!(purchase?.hasInterest && legacyInterestsCat);
+    const interestInSystemCat = !!(
+      purchase?.hasInterest &&
+      legacyInterestsCat &&
+      legacyInterestsCat._creationTime <= purchase.createdAt
+    );
 
     const txs = await ctx.db
       .query("transactions")
@@ -134,7 +143,7 @@ async function migrateCard(ctx: MutationCtx, card: Doc<"cards">, now: number, dr
           await applyBudgetDelta(ctx, card.userId, cuotaTx.categoryId, cuotaTx.month, -fromCategory, cuotaTx.currency);
         }
         if (interestInSystemCat && interest > 0) {
-          await applyBudgetDelta(ctx, card.userId, legacyInterestsCat!, cuotaTx.month, -interest, cuotaTx.currency);
+          await applyBudgetDelta(ctx, card.userId, legacyInterestsCat!._id, cuotaTx.month, -interest, cuotaTx.currency);
         }
         await ctx.db.delete(cuotaTx._id);
       }
