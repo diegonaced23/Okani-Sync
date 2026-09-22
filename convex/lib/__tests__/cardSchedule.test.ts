@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { balanceScheduleToPrincipal, cuotaChargeDates } from "../cardSchedule";
+import { balanceScheduleToPrincipal, cuotaChargeDates, cuotaExpenseDates } from "../cardSchedule";
 import { calculateInstallment } from "../money";
 
 const at = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h).getTime();
@@ -57,5 +57,23 @@ describe("balanceScheduleToPrincipal", () => {
   it("si ya cuadra, no cambia nada", () => {
     const { schedule } = calculateInstallment(9_000, 0, 3);
     expect(balanceScheduleToPrincipal(schedule, 9_000)).toEqual(schedule);
+  });
+});
+
+describe("cuotaExpenseDates", () => {
+  it("la primera cuota es gasto el día de la compra, y cada una la sigue mes a mes", () => {
+    expect(cuotaExpenseDates(at(2026, 9, 20), 3)).toEqual([at(2026, 9, 20), at(2026, 10, 20), at(2026, 11, 20)]);
+  });
+
+  it("no depende del corte: una compra después del corte sigue siendo gasto de su mes", () => {
+    expect(cuotaExpenseDates(at(2026, 9, 25), 1)).toEqual([at(2026, 9, 25)]);
+  });
+
+  it("una compra el 31 cae en el último día real de los meses cortos", () => {
+    const [ene, feb, mar] = cuotaExpenseDates(at(2027, 1, 31), 3);
+    expect(new Date(feb).getMonth()).toBe(1);
+    expect(new Date(feb).getDate()).toBe(28);
+    expect(new Date(ene).getDate()).toBe(31);
+    expect(new Date(mar).getDate()).toBe(31);
   });
 });

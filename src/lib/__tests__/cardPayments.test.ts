@@ -99,19 +99,20 @@ describe("simulateCardPayment", () => {
 
 describe("isNotYetExpensed", () => {
   const sep = "2026-09";
-  const oct15 = new Date(2026, 9, 15, 23, 59).getTime();
-  const sep10 = new Date(2026, 8, 10, 12).getTime();
+  const oct20 = new Date(2026, 9, 20, 12).getTime();
+  const sep20 = new Date(2026, 8, 20, 12).getTime();
 
-  it("una cuota del modelo nuevo sin facturar todavía no es gasto", () => {
-    expect(isNotYetExpensed({ interestBilling: "at_cutoff", dueDate: oct15 }, sep)).toBe(true);
+  it("una cuota del modelo nuevo cuenta cuando se registra su gasto, no cuando se factura", () => {
+    // Comprada el 20 de septiembre, se factura en el corte de octubre: ya es gasto de septiembre
+    expect(isNotYetExpensed({ interestBilling: "at_cutoff", expenseDate: sep20, dueDate: oct20, expensedAt: 1 }, sep)).toBe(false);
   });
 
-  it("facturada ya es gasto", () => {
-    expect(isNotYetExpensed({ interestBilling: "at_cutoff", dueDate: sep10, billedAt: 1 }, sep)).toBe(false);
+  it("una cuota futura todavía no es gasto", () => {
+    expect(isNotYetExpensed({ interestBilling: "at_cutoff", expenseDate: oct20, dueDate: oct20 }, sep)).toBe(true);
   });
 
   it("una cuota antigua es gasto del mes de su fecha: si cae en un mes posterior, aún no cuenta", () => {
-    expect(isNotYetExpensed({ dueDate: oct15 }, sep)).toBe(true);
-    expect(isNotYetExpensed({ dueDate: sep10 }, sep)).toBe(false);
+    expect(isNotYetExpensed({ dueDate: oct20 }, sep)).toBe(true);
+    expect(isNotYetExpensed({ dueDate: sep20 }, sep)).toBe(false);
   });
 });

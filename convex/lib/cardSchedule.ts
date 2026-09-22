@@ -1,4 +1,21 @@
 /**
+ * Las dos fechas de una cuota, que responden preguntas distintas:
+ *
+ * - **Cuándo gasté** (`cuotaExpenseDates`): el día de la compra, y cada cuota un
+ *   mes después. Es la fecha del movimiento, la que decide en qué mes del
+ *   dashboard y de qué presupuesto sale. No depende del banco: si compraste el
+ *   20 de septiembre, gastaste en septiembre.
+ * - **Cuándo se factura** (`cuotaChargeDates`): el corte en que la cuota entra al
+ *   extracto. Decide el reparto del saldo de la tarjeta (`cardStatement.ts`) y
+ *   cuándo se cobra su interés.
+ *
+ * Las dos pueden caer en meses distintos —una compra del 20 con corte el 10 se
+ * gasta en septiembre y se factura en octubre— y está bien: son cosas distintas.
+ */
+
+import { addMonths } from "./money";
+
+/**
  * Fecha en que se carga cada cuota de una compra a la tarjeta.
  *
  * `dueDate` de una cuota significa «cuándo entra al extracto», no la fecha límite
@@ -48,4 +65,14 @@ export function balanceScheduleToPrincipal<
     ...schedule.slice(0, -1),
     { ...last, principalAmount: last.principalAmount + diff, amount: last.amount + diff, remainingPrincipal: 0 },
   ];
+}
+
+
+/**
+ * Fecha en que cada cuota cuenta como gasto: el día de la compra, más un mes por
+ * cuota. `addMonths` recorta al último día real del mes destino, así que una
+ * compra del 31 de enero da el 28 de febrero y no se corre a marzo.
+ */
+export function cuotaExpenseDates(purchaseDate: number, installments: number): number[] {
+  return Array.from({ length: installments }, (_, k) => addMonths(purchaseDate, k));
 }

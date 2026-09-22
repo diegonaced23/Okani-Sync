@@ -23,7 +23,8 @@ import { normalizeEmail } from "../src/lib/email";
 import { applyBudgetDelta } from "./lib/transactionEffects";
 import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
 import { ensureInterestCategory } from "./lib/cardBilling";
-import { getLegacyInterestsCategoryId } from "./lib/utils";
+import { getLegacyInterestsCategoryId, toMonthString } from "./lib/utils";
+import { cuotaExpenseDates } from "./lib/cardSchedule";
 
 // ─── Tarjetas: modelo de intereses al facturar (fase 3) ──────────────────────
 //
@@ -299,6 +300,103 @@ export const migrateLegacySystemCategories = internalMutation({
       `migrateLegacySystemCategories: ${JSON.stringify({ interestsConverted, paymentDeleted, paymentKept, isDone: page.isDone })}`
     );
     return { interestsConverted, paymentDeleted, paymentKept, isDone: page.isDone };
+  },
+});
+
+// ─── Tarjetas: la cuota es gasto en su mes, no en el del corte ───────────────
+
+/**
+ * Rellena la fecha de gasto de las cuotas ya creadas.
+ *
+ * Al principio la cuota se registraba como gasto en el corte, así que una compra
+ * del 20 de septiembre con corte el 10 no aparecía en septiembre. Ahora cada
+ * cuota tiene dos fechas: la del gasto (la compra más un mes por cuota) y la del
+ * corte, que solo decide el extracto y el cobro del interés (ver
+ * `lib/cardSchedule.ts`).
+ *
+ * Esta migración:
+ * - pone `expenseDate` a las cuotas que no la tienen;
+ * - si la cuota ya tenía su movimiento con la fecha del corte, lo mueve a la
+ *   fecha de gasto y traslada lo que había sumado al presupuesto de ese mes.
+ *
+ * Las cuotas cuya fecha de gasto ya pasó y aún no tienen movimiento las registra
+ * el cron `billCardInstallments` en su siguiente ejecución. Idempotente.
+ *
+ *   npx convex run migrations:backfillCuotaExpenseDates '{"dryRun": true}'
+ */
+export const backfillCuotaExpenseDates = internalMutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor = null, dryRun = false, batchSize = 20 }) => {
+    const now = Date.now();
+    const page = await ctx.db.query("cardPurchases").order("asc").paginate({ cursor, numItems: batchSize });
+
+    let conFecha = 0;
+    let movimientosMovidos = 0;
+    let mesesCambiados = 0;
+
+    for (const purchase of page.page) {
+      const installments = await ctx.db
+        .query("cardInstallments")
+        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+        .collect();
+      const expenseDates = cuotaExpenseDates(purchase.purchaseDate, purchase.totalInstallments);
+
+      for (const inst of installments) {
+        if (inst.interestBilling !== "at_cutoff") continue;
+        const expenseDate = inst.expenseDate ?? expenseDates[inst.installmentNumber - 1] ?? inst.dueDate;
+
+        const txs = await ctx.db
+          .query("transactions")
+          .withIndex("by_card_installment", (q) => q.eq("cardId", inst.cardId).eq("cardInstallmentId", inst._id))
+          .collect();
+        const cuotaTx = txs.find((t) => t.cardChargeKind === "cuota");
+
+        if (inst.expenseDate === undefined) {
+          conFecha++;
+          if (!dryRun) {
+            await ctx.db.patch(inst._id, {
+              expenseDate,
+              // Si ya tiene su movimiento, el gasto ya está registrado
+              expensedAt: cuotaTx ? (inst.billedAt ?? now) : undefined,
+            });
+          }
+        }
+
+        if (cuotaTx && cuotaTx.date !== expenseDate) {
+          movimientosMovidos++;
+          const nuevoMes = toMonthString(expenseDate);
+          if (nuevoMes !== cuotaTx.month) mesesCambiados++;
+          if (!dryRun) {
+            if (nuevoMes !== cuotaTx.month && cuotaTx.categoryId) {
+              await applyBudgetDelta(ctx, cuotaTx.userId, cuotaTx.categoryId, cuotaTx.month, -cuotaTx.amount, cuotaTx.currency);
+              await applyBudgetDelta(ctx, cuotaTx.userId, cuotaTx.categoryId, nuevoMes, cuotaTx.amount, cuotaTx.currency);
+            }
+            await ctx.db.patch(cuotaTx._id, { date: expenseDate, month: nuevoMes, updatedAt: now });
+          }
+        }
+      }
+    }
+
+    if (!dryRun && !page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillCuotaExpenseDates, {
+        cursor: page.continueCursor,
+        batchSize,
+      });
+    }
+
+    return {
+      dryRun,
+      compras: page.page.length,
+      conFecha,
+      movimientosMovidos,
+      mesesCambiados,
+      isDone: page.isDone,
+      nextCursor: page.isDone ? null : page.continueCursor,
+    };
   },
 });
 

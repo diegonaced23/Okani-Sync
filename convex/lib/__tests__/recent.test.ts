@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mergeRecent } from "../recent";
 
-const tx = (id: string, date: number) => ({ _id: id, date, description: id });
+const tx = (id: string, date: number, extra: Record<string, unknown> = {}) => ({ _id: id, date, description: id, ...extra });
 const purchase = (id: string, purchaseDate: number, totalInstallments: number, billsAtCutoff = true) => ({
   _id: id,
   purchaseDate,
@@ -34,5 +34,26 @@ describe("mergeRecent", () => {
   it("ordena de lo más reciente a lo más antiguo y respeta el límite", () => {
     const rows = mergeRecent([tx("a", 1), tx("c", 3)], [purchase("b", 2, 2)], 2);
     expect(rows.map((r) => r._id)).toEqual(["c", "b"]);
+  });
+});
+
+describe("mergeRecent: una compra a cuotas no se duplica", () => {
+  const compra = purchase("tv", 10, 3);
+  const cuota1 = tx("cuota1", 10, { cardPurchaseId: "tv", cardChargeKind: "cuota" });
+  const interes = tx("interes1", 12, { cardPurchaseId: "tv", cardChargeKind: "interes" });
+
+  it("con la compra en la lista, su cuota no se repite: la compra ya dice el total y cuántas cuotas", () => {
+    const rows = mergeRecent([cuota1], [compra], 5);
+    expect(rows.map((r) => r._id)).toEqual(["tv"]);
+  });
+
+  it("el interés sí se muestra: es plata aparte, no parte del precio de la compra", () => {
+    const rows = mergeRecent([cuota1, interes], [compra], 5);
+    expect(rows.map((r) => r._id)).toEqual(["interes1", "tv"]);
+  });
+
+  it("sin la compra en la lista (meses siguientes), la cuota se muestra normal", () => {
+    const rows = mergeRecent([cuota1], [], 5);
+    expect(rows.map((r) => r._id)).toEqual(["cuota1"]);
   });
 });

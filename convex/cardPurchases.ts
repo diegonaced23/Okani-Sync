@@ -8,8 +8,8 @@ import { calculateInstallment, convertAmount, getUserRateMap } from "./lib/money
 import { assertValidMonth, getLegacyInterestsCategoryId, monthRange, toMonthString } from "./lib/utils";
 import { applyBudgetDelta } from "./lib/transactionEffects";
 import { categoryRotationDeltas } from "./lib/cardBudget";
-import { balanceScheduleToPrincipal, cuotaChargeDates } from "./lib/cardSchedule";
-import { billInstallment, billDueInstallmentsForCard, cuotaDescription } from "./lib/cardBilling";
+import { balanceScheduleToPrincipal, cuotaChargeDates, cuotaExpenseDates } from "./lib/cardSchedule";
+import { expenseInstallment, billDueInstallmentsForCard, cuotaDescription } from "./lib/cardBilling";
 import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
 import { installmentDue, installmentRemaining, isNotYetExpensed } from "../src/lib/cardPayments";
 
@@ -68,14 +68,14 @@ export const listByPurchaseMonth = query({
 });
 
 /**
- * Compras con tarjeta del mes que todavía no cuentan como gasto.
+ * Cuotas de las compras del mes que caen en meses siguientes.
  *
- * Una cuota cuenta como gasto cuando se factura (en el corte), así que una
- * compra a cuotas de hoy puede no aparecer en «Gastos del mes» hasta el mes
- * siguiente. El dashboard muestra este total aparte para que se vea sin contarlo
- * dos veces: suma el capital de las cuotas aún no registradas como gasto, de las
- * compras hechas en `month`, convertido a la moneda preferida. Las compras sin
- * tasa de cambio quedan fuera y se avisa con `missingRate`.
+ * Una compra a cuotas es gasto mes a mes: la primera cuota ya está en el gasto
+ * del mes y las demás irán cayendo. El dashboard muestra este total aparte, sin
+ * sumarlo, para que se vea lo que falta sin contarlo dos veces cuando llegue su
+ * mes. Suma el capital de las cuotas aún no registradas, de las compras hechas en
+ * `month`, convertido a la moneda preferida. Las compras sin tasa de cambio
+ * quedan fuera y se avisa con `missingRate`.
  */
 export const pendingBilling = query({
   args: { month: v.string() },
@@ -194,7 +194,10 @@ async function buildSchedule(
   const { card, purchase, recurringId } = args;
   const rate = purchase.hasInterest ? (purchase.interestRate ?? 0) : 0;
   const result = scheduleFor(purchase.totalAmount, rate, purchase.totalInstallments);
+  // Dos fechas por cuota: cuándo es gasto (la compra + N meses) y cuándo se
+  // factura (el corte). Ver `lib/cardSchedule.ts`.
   const dates = cuotaChargeDates(purchase.purchaseDate, card.cutoffDay, purchase.totalInstallments);
+  const expenseDates = cuotaExpenseDates(purchase.purchaseDate, purchase.totalInstallments);
   const now = Date.now();
 
   for (const item of result.schedule) {
@@ -209,6 +212,7 @@ async function buildSchedule(
       interestAmount: item.interestAmount,
       remainingPrincipal: item.remainingPrincipal,
       dueDate,
+      expenseDate: expenseDates[item.installmentNumber - 1],
       month: toMonthString(dueDate),
       paid: false,
       paidAmount: 0,
@@ -223,16 +227,16 @@ async function buildSchedule(
     updatedAt: now,
   });
 
-  // La recurrente marca su propio movimiento; el resto lo factura el helper común
+  // La recurrente marca su propio movimiento; el resto lo pone al día el helper común
   if (recurringId) {
     const insts = await ctx.db
       .query("cardInstallments")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
       .collect();
     for (const inst of insts) {
-      if (inst.dueDate > now) continue;
+      if ((inst.expenseDate ?? inst.dueDate) > now) continue;
       const fresh = await ctx.db.get(card._id);
-      if (fresh) await billInstallment(ctx, { inst, purchase, card: fresh, now, recurringId });
+      if (fresh) await expenseInstallment(ctx, { inst, purchase, card: fresh, now, recurringId });
     }
   }
   await billDueInstallmentsForCard(ctx, card._id, now);

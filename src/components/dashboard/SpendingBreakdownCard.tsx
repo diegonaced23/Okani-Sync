@@ -24,7 +24,7 @@ interface SpendingBreakdownCardProps {
   bySource: { name: string; amount: number }[] | undefined;
   currency: string;
   monthName: string;
-  /** Compras con tarjeta del mes que aún no cuentan como gasto (se facturan en el corte) */
+  /** Cuotas de las compras del mes que caen en meses siguientes */
   pendingCard?: { amount: number; count: number; currency: string };
 }
 
@@ -180,21 +180,21 @@ export const SpendingBreakdownCard = memo(function SpendingBreakdownCard({
   const money = (cents: number) => (balanceHidden ? "$ ••••••" : formatCents(cents, currency));
   const activeTab = TABS.find((t) => t.key === tab)!;
 
-  // Las compras a cuotas cuentan como gasto al facturarse en el corte: sin esta
-  // línea, una compra de hoy no aparecería en ninguna parte hasta el mes siguiente.
-  // Va aparte, y no sumada al total, para no contarla dos veces cuando se facture.
+  // Una compra a cuotas es gasto mes a mes: la primera cuota ya está en el total
+  // de arriba y el resto irá cayendo. Esta línea dice cuánto falta, aparte del
+  // total, para no contarlo dos veces cuando llegue su mes.
   const pendingLine =
     pendingCard && pendingCard.amount > 0 && pendingCard.currency === currency ? (
       <div className="mt-3 flex items-start gap-2.5 rounded-[14px] px-3 py-2.5" style={{ background: "var(--surface-2, var(--muted))" }}>
         <CreditCard className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs font-semibold text-foreground">Compras con tarjeta por facturar</span>
+            <span className="text-xs font-semibold text-foreground">Cuotas pendientes de estas compras</span>
             <span className="font-mono-num text-xs font-bold tabular-nums text-foreground">{money(pendingCard.amount)}</span>
           </div>
           <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-            {pendingCard.count === 1 ? "1 compra de" : `${pendingCard.count} compras de`} {monthName}. Cada cuota cuenta como
-            gasto cuando la tarjeta la factura en su corte.
+            De {pendingCard.count === 1 ? "1 compra a cuotas de" : `${pendingCard.count} compras a cuotas de`} {monthName}.
+            Cada cuota cuenta como gasto en su mes.
           </p>
         </div>
       </div>

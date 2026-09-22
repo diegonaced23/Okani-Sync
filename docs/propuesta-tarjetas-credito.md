@@ -258,6 +258,7 @@ El cupo disponible el 22 de septiembre es 3.800.000: el banco descuenta la compr
   - Se quitó el tipo «cargo»: una cuota de manejo se registra como compra de contado en «Gastos financieros».
   - El cron va por el despachador (no con latido propio): es idempotente, así que un día perdido se factura al siguiente.
   - Los presupuestos se corrigen con deltas exactos en vez de recalcularse desde cero.
+- **Corrección posterior (decisión del 22 de septiembre):** la cuota es gasto en el mes de la COMPRA, no en el del corte. Anclarlo todo al corte hacía desaparecer del mes las compras hechas después del corte (con corte el 10, todo lo comprado del 11 al 30 salía del mes). Ahora cada cuota tiene dos fechas: `expenseDate` (la compra más un mes por cuota) decide el mes del movimiento y del presupuesto, y `dueDate` (el corte) decide el extracto y cuándo se cobra el interés. El dashboard responde «en qué se me va la plata» por mes natural; el detalle de la tarjeta responde «cuánto pago y cuándo», por ciclo. Las cuotas ya creadas se reanclan con `migrations:backfillCuotaExpenseDates`.
 - **Pendiente:** las etiquetas «Vence» de los cronogramas muestran la fecha de cargo, no la de pago; la alerta `cuota_proxima` avisa 3 días antes del cargo. Pago automático y abono a capital son la fase 4.
 
 ## Fuentes

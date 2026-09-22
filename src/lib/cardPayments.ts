@@ -99,17 +99,18 @@ export function simulateCardPayment<
 
 /**
  * Si la cuota todavía no cuenta como gasto en `month` («YYYY-MM»): lo que el
- * dashboard muestra aparte como «compras con tarjeta por facturar».
- * - Modelo nuevo: el gasto se registra al facturarse, así que no cuenta mientras
- *   no tenga `billedAt`.
+ * dashboard muestra aparte como cuotas que caerán en meses siguientes.
+ * - Modelo nuevo: el gasto se registra en la fecha de gasto de la cuota (la
+ *   compra más un mes por cuota), no en el corte; mientras no tenga `expensedAt`,
+ *   no cuenta.
  * - Modelo anterior: el gasto ya existe, con la fecha de la cuota; cuenta en el
  *   mes de esa fecha, así que no cuenta aún si cae en un mes posterior.
  */
 export function isNotYetExpensed(
-  inst: { interestBilling?: "at_cutoff"; billedAt?: number; dueDate: number },
+  inst: { interestBilling?: "at_cutoff"; expensedAt?: number; expenseDate?: number; billedAt?: number; dueDate: number },
   month: string
 ): boolean {
-  if (inst.interestBilling === "at_cutoff") return inst.billedAt === undefined;
+  if (inst.interestBilling === "at_cutoff") return inst.expensedAt === undefined;
   const d = new Date(inst.dueDate);
   const dueMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   return dueMonth > month;

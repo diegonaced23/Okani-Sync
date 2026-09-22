@@ -256,8 +256,18 @@ export default function TransaccionesPage() {
   // Movimientos y compras en una sola lista, por fecha descendente y agrupados por
   // día. La etiqueta de cada día se calcula aquí una vez, no en cada render.
   const groupedByDay = useMemo(() => {
+    // Una compra a cuotas se ve una vez: el registro de la compra, con su monto
+    // total y cuántas cuotas. Su cuota de este mes no se repite debajo (sería la
+    // misma compra dos veces con montos distintos); en los meses siguientes ya no
+    // hay registro de compra y se ven las cuotas. Los totales no cambian: siguen
+    // sumando la cuota, que es lo que se gasta este mes.
+    const shownPurchases = new Set(filteredPurchases.map((p) => p._id as string));
+    const visibleTxs = filteredTxs.filter(
+      (tx) => !(tx.cardChargeKind === "cuota" && tx.cardPurchaseId && shownPurchases.has(tx.cardPurchaseId))
+    );
+
     const allItems: { date: number; item: ListItem }[] = [
-      ...filteredTxs.map((tx) => ({ date: tx.date, item: { kind: "tx" as const, item: tx } })),
+      ...visibleTxs.map((tx) => ({ date: tx.date, item: { kind: "tx" as const, item: tx } })),
       ...filteredPurchases.map((p) => ({
         date: p.purchaseDate,
         item: { kind: "purchase" as const, item: p },

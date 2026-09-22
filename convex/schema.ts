@@ -300,14 +300,20 @@ export default defineSchema({
     // fase 3). Sin él, la cuota es del modelo anterior y su interés ya estaba en la
     // deuda desde la compra. La migración `migrateCardInterestModel` lo pone.
     interestBilling: v.optional(v.literal("at_cutoff")),
-    // Cuándo se facturó: se registraron su gasto y su interés. Lo pone el cron
-    // `billCardInstallments` (o la compra misma si la cuota ya tocaba).
+    // Cuándo la cuota cuenta como gasto: el día de la compra más un mes por cuota.
+    // Es la fecha del movimiento, y NO depende del corte (ver lib/cardSchedule.ts).
+    expenseDate: v.optional(v.number()),
+    // Cuándo se registró ese gasto.
+    expensedAt: v.optional(v.number()),
+    // Cuándo entró al extracto y se cobró su interés (en el corte de `dueDate`).
+    // Lo pone el cron `billCardInstallments`, o la compra misma si ya tocaba.
     billedAt: v.optional(v.number()),
     transactionId: v.optional(v.id("transactions")),
     createdAt: v.number(),
   })
     .index("by_purchase", ["purchaseId"])
     .index("by_billing_due", ["interestBilling", "billedAt", "dueDate"])
+    .index("by_expense_due", ["interestBilling", "expensedAt", "expenseDate"])
     .index("by_user_month", ["userId", "month"])
     .index("by_card_month", ["cardId", "month"])
     .index("by_user_paid", ["userId", "paid"]),
