@@ -10,6 +10,7 @@ import { AccountCard } from "@/components/accounts/AccountCard";
 import { CardFace } from "@/components/cards/CardFace";
 import { CardTilt } from "@/components/cards/CardTilt";
 import { formatCents } from "@/lib/money";
+import { formatCardBalance } from "@/lib/cardCycle";
 import { cn } from "@/lib/utils";
 import { useBalanceHidden } from "@/hooks/use-balance-hidden";
 
@@ -101,7 +102,7 @@ function MiniCard({ card, hidden }: { card: Doc<"cards">; hidden: boolean }) {
       <Link
         href={`/tarjetas/${card._id}`}
         className="block h-full rounded-[20px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={hidden ? `${card.name}, saldos ocultos` : `${card.name}, disponible ${formatCents(available, card.currency)} de ${formatCents(card.creditLimit, card.currency)}`}
+        aria-label={hidden ? `${card.name}, saldos ocultos` : `${card.name}, saldo ${formatCardBalance(card.currentBalance, card.currency)}, disponible ${formatCents(available, card.currency)} de ${formatCents(card.creditLimit, card.currency)}`}
       >
         <CardTilt className="h-full">
           <CardFace
@@ -112,9 +113,10 @@ function MiniCard({ card, hidden }: { card: Doc<"cards">; hidden: boolean }) {
             color={card.color}
             trailing={
               <span className="flex-shrink-0 text-right leading-tight">
-                <span className="block text-[9px] font-semibold uppercase tracking-[0.1em] opacity-75">Disponible</span>
+                {/* La deuda en negativo, como el saldo de una cuenta; el medidor, el cupo que queda */}
+                <span className="block text-[9px] font-semibold uppercase tracking-[0.1em] opacity-75">Saldo</span>
                 <span className="block font-mono-num text-[13px] font-bold">
-                  {hidden ? MASK : formatCents(available, card.currency)}
+                  {hidden ? MASK : formatCardBalance(card.currentBalance, card.currency)}
                 </span>
                 {/* Medidor del cupo disponible, del ancho del monto */}
                 <span aria-hidden className="mt-1 block h-[3px] w-full overflow-hidden rounded-full bg-current/25">

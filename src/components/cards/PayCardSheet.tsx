@@ -13,7 +13,8 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { SourceChip } from "@/components/ui/source-chip";
 import { FIELD_LABEL, OVERFLOW_ROW } from "@/lib/ios";
-import { formatCents, fromCents, simulateFIFOPayment, toCents, todayStr } from "@/lib/money";
+import { formatCents, fromCents, toCents, todayStr } from "@/lib/money";
+import { installmentRemaining, simulateCardPayment } from "@/lib/cardPayments";
 import { cn } from "@/lib/utils";
 import { EASE_OUT_EXPO, haptic, tint, usageOf, usageTone, type Card } from "./shared";
 import { errorMessage } from "@/lib/errorMessage";
@@ -23,8 +24,9 @@ import { errorMessage } from "@/lib/errorMessage";
  * el desglose muestra qué cuotas quedan saldadas (FIFO), antes de confirmar.
  *
  * `minimumPayment` y `totalPayment` llegan por props desde la página: el detalle ya
- * los calculó y así la hoja no puede contradecirlo — antes se resuscribía a
- * `getPaymentSummary`, que define el pago mínimo sobre otro ciclo.
+ * los calculó y así la hoja no puede contradecirlo. (Existía además
+ * `cards.getPaymentSummary`, que definía el pago mínimo sobre otro ciclo; se borró
+ * para que quede una sola definición: la de `cards.getCardDetailData`.)
  *
  * Son opcionales porque la hoja también se abre desde el detalle de una compra, que
  * no tiene el ciclo de la tarjeta cargado: ahí no se ofrecen esos atajos en vez de
@@ -91,7 +93,7 @@ function PayFields({
   const [amount, setAmount] = useState(() => String(fromCents(card.currentBalance)));
   // todayStr() usa hora local; toISOString() daría fecha UTC que puede diferir un día
   const [date, setDate] = useState(todayStr);
-  const [accountId, setAccountId] = useState<Id<"accounts"> | null>(null);
+  const [accountChoice, setAccountChoice] = useState<Id<"accounts"> | null>(null);
   const [showFifo, setShowFifo] = useState(false);
   const [status, setStatus] = useState<"idle" | "saving" | "done" | "settled">("idle");
 
@@ -105,6 +107,11 @@ function PayFields({
     () => (accounts ?? []).filter((a) => a.currency === card.currency),
     [accounts, card.currency]
   );
+  // Sin elección, sale la cuenta de cobro de la tarjeta, si sigue disponible
+  // (una cuenta archivada o borrada no aparece en la lista y no se preselecciona).
+  const accountId =
+    accountChoice ??
+    (sameCurrency.some((a) => a._id === card.billingAccountId) ? card.billingAccountId! : null);
 
   const usage = usageOf(card);
   const afterUsage = card.creditLimit > 0
@@ -114,7 +121,7 @@ function PayFields({
 
   const fifo = useMemo(() => {
     if (!allInstallments || applied <= 0) return null;
-    return simulateFIFOPayment(allInstallments, card.currentBalance, applied);
+    return simulateCardPayment(allInstallments, card.currentBalance, applied);
   }, [allInstallments, card.currentBalance, applied]);
 
   const quick = [
@@ -124,7 +131,10 @@ function PayFields({
     ...(totalPayment !== undefined && totalPayment > 0 && totalPayment !== minimumPayment
       ? [{ label: "Pago total", value: totalPayment }]
       : []),
-    ...(card.currentBalance > 0 ? [{ label: "Todo el saldo", value: card.currentBalance }] : []),
+    // «Pago total» ya es la deuda entera cuando no hay intereses por cobrar: no repetirlo
+    ...(card.currentBalance > 0 && totalPayment !== card.currentBalance
+      ? [{ label: "Todo el saldo", value: card.currentBalance }]
+      : []),
   ];
 
   const canSubmit =
@@ -262,7 +272,7 @@ function PayFields({
               <SourceChip
                 key={a._id}
                 selected={accountId === a._id}
-                onSelect={() => { haptic(); setAccountId(a._id); }}
+                onSelect={() => { haptic(); setAccountChoice(a._id); }}
                 color={a.color}
                 name={a.name}
                 detail={formatCents(a.balance, a.currency)}
@@ -366,7 +376,7 @@ function FifoItem({
   currency,
   paid,
 }: {
-  inst: { description: string; dueDate: number; amount: number };
+  inst: Parameters<typeof installmentRemaining>[0] & { description: string; dueDate: number };
   currency: string;
   paid?: boolean;
 }) {
@@ -387,7 +397,8 @@ function FifoItem({
         className="shrink-0 font-mono-num text-sm font-bold tabular-nums"
         style={paid ? { color: "var(--os-lime-text)" } : undefined}
       >
-        {formatCents(inst.amount, currency)}
+        {/* Lo que la cuota debe hoy: sin intereses aún no cobrados ni lo ya abonado */}
+        {formatCents(installmentRemaining(inst), currency)}
       </span>
     </li>
   );

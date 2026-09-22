@@ -2,7 +2,7 @@ import type { MutationCtx } from "../_generated/server";
 import type { Id, Doc } from "../_generated/dataModel";
 import { recomputeInstallmentsPaid } from "./cardHelpers";
 import { buildRateMap, convertAmount } from "./money";
-import { getSystemInterestsCategoryId } from "./utils";
+import { getLegacyInterestsCategoryId } from "./utils";
 
 // ─── Helpers de delta ─────────────────────────────────────────────────────────
 
@@ -182,27 +182,37 @@ export async function deleteTransactionWithEffects(
     await applyCardDelta(ctx, tx.cardId, -tx.amount);
   }
 
-  // Revertir gasto_tarjeta: balance de tarjeta + presupuesto (split principal/interés) + cuota
+  // Revertir gasto_tarjeta
   if (tx.type === "gasto_tarjeta") {
-    if (tx.cardId) await applyCardDelta(ctx, tx.cardId, -tx.amount);
+    if (tx.cardChargeKind) {
+      // Modelo nuevo (capital o interés de una cuota). Solo llega aquí al borrar la
+      // tarjeta entera: `transactions.remove` no deja borrar un movimiento suelto de
+      // una cuota, porque el cronograma lo gestiona la compra.
+      // - El interés entró a la deuda al facturarse → sale con él.
+      // - El capital entró a la deuda con la compra, no con este movimiento → no se toca.
+      if (tx.cardChargeKind === "interes" && tx.cardId) await applyCardDelta(ctx, tx.cardId, -tx.amount);
+      if (tx.categoryId) await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount, tx.currency);
+    } else {
+      // Modelo anterior: la cuota entera (capital + interés) estaba en la deuda y en
+      // el presupuesto, con el interés en la categoría de sistema de intereses.
+      if (tx.cardId) await applyCardDelta(ctx, tx.cardId, -tx.amount);
 
-    // Leer la cuota antes de eliminarla para obtener el split principal/interés
-    let principalAmount = tx.amount;
-    let interestAmount = 0;
-    if (tx.cardInstallmentId) {
-      const inst = await ctx.db.get(tx.cardInstallmentId);
-      if (inst) {
-        principalAmount = inst.principalAmount ?? tx.amount;
-        interestAmount = inst.interestAmount ?? 0;
-        await ctx.db.delete(inst._id);
+      let principalAmount = tx.amount;
+      let interestAmount = 0;
+      if (tx.cardInstallmentId) {
+        const inst = await ctx.db.get(tx.cardInstallmentId);
+        if (inst) {
+          principalAmount = inst.principalAmount ?? tx.amount;
+          interestAmount = inst.interestAmount ?? 0;
+          await ctx.db.delete(inst._id);
+        }
       }
-    }
 
-    if (tx.categoryId) {
-      await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -principalAmount, tx.currency);
-    }
-    if (interestAmount > 0) {
-      const interestsCatId = await getSystemInterestsCategoryId(ctx, tx.userId);
+      const interestsCatId = interestAmount > 0 ? await getLegacyInterestsCategoryId(ctx, tx.userId) : undefined;
+      if (tx.categoryId) {
+        const toRevert = interestsCatId ? principalAmount : tx.amount;
+        await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -toRevert, tx.currency);
+      }
       if (interestsCatId) {
         await applyBudgetDelta(ctx, tx.userId, interestsCatId, tx.month, -interestAmount, tx.currency);
       }

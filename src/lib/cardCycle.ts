@@ -2,6 +2,8 @@
 // para mostrar en el formulario las fechas reales que calculará el backend.
 // Si cambia la lógica allá, hay que replicarla aquí.
 
+import { formatCents } from "./money";
+
 export type CardBrand = "visa" | "mastercard" | "amex" | "diners" | "otro";
 
 export const CARD_BRANDS: readonly { value: CardBrand; label: string }[] = [
@@ -85,4 +87,13 @@ export function eaToMonthly(ea: number): number {
 /** m.v. → E.A.: (1 + mv)^12 − 1 */
 export function monthlyToEa(mv: number): number {
   return Math.pow(1 + mv, 12) - 1;
+}
+
+/**
+ * Saldo de la tarjeta como el de una cuenta: la deuda en negativo, igual que en
+ * todas las apps del mercado. Signo menos tipográfico (U+2212), el mismo de las
+ * confirmaciones de movimientos.
+ */
+export function formatCardBalance(currentBalance: number, currency: string): string {
+  return currentBalance > 0 ? `−${formatCents(currentBalance, currency)}` : formatCents(0, currency);
 }

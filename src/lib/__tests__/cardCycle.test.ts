@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  autoCardName, eaToMonthly, getNextCutoffTs, getNextPaymentTs, getPrevCutoffTs, monthlyToEa,
+  autoCardName, eaToMonthly, formatCardBalance, getNextCutoffTs, getNextPaymentTs, getPrevCutoffTs, monthlyToEa,
 } from "../cardCycle";
+import { formatCents } from "../money";
 import { dueOf } from "@/components/cards/shared";
 
 const ymd = (ts: number) => {
@@ -123,5 +124,15 @@ describe("dueOf", () => {
     for (const day of [1, 5, 6, 15, 25, 26, 28]) {
       expect(dueOf(card, new Date(2026, 9, day, 12).getTime()).days).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe("formatCardBalance", () => {
+  it("muestra la deuda en negativo, con el signo menos tipográfico, como el saldo de una cuenta", () => {
+    expect(formatCardBalance(122_400_000, "COP")).toBe(`−${formatCents(122_400_000, "COP")}`);
+  });
+
+  it("sin deuda no hay signo", () => {
+    expect(formatCardBalance(0, "COP")).toBe(formatCents(0, "COP"));
   });
 });

@@ -1,5 +1,6 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { allocatePayments, installmentDue, totalPaidFor } from "../../src/lib/cardPayments";
 
 /**
  * Calcula las fechas de inicio y fin del ciclo de facturación actual
@@ -61,63 +62,54 @@ export function getNextPaymentTs(paymentDay: number, nextCutoffTs: number): numb
 }
 
 /**
- * Recalcula `cardInstallments.paid` para una tarjeta usando FIFO por dueDate.
- * Compara el total pagado (totalCargado - currentBalance) contra el cronograma.
- * Se invoca tras cualquier pago o reversión de pago.
+ * Recalcula lo abonado a cada cuota a partir de la deuda de la tarjeta.
+ *
+ * Lo pagado se deduce (lo que cargaron las cuotas menos lo que aún se debe) y se
+ * reparte de la más antigua a la más nueva con `allocatePayments`, la misma
+ * función que usa la vista previa de la hoja de pago. Guarda `paidAmount`, y de
+ * él `paid`; y en cada compra, cuántas cuotas van pagadas y si ya está saldada.
+ * Se invoca tras cualquier pago, reversión, facturación o cambio de compras.
  */
-export async function recomputeInstallmentsPaid(
-  ctx: MutationCtx,
-  cardId: Id<"cards">
-) {
+export async function recomputeInstallmentsPaid(ctx: MutationCtx, cardId: Id<"cards">) {
   const card = await ctx.db.get(cardId);
   if (!card) return;
-
-  // Total cargado = suma de todas las txs gasto_tarjeta de la tarjeta
-  const gastosTarjeta = await ctx.db
-    .query("transactions")
-    .withIndex("by_card", (q) => q.eq("cardId", cardId))
-    .filter((q) => q.eq(q.field("type"), "gasto_tarjeta"))
-    .collect();
-  const totalCargado = gastosTarjeta.reduce((s, t) => s + t.amount, 0);
-  const totalPagado = Math.max(0, totalCargado - card.currentBalance);
 
   const installments = await ctx.db
     .query("cardInstallments")
     .withIndex("by_card_month", (q) => q.eq("cardId", cardId))
     .collect();
 
-  // Ordenar por dueDate asc para FIFO
-  const sorted = [...installments].sort((a, b) => a.dueDate - b.dueDate);
+  const items = installments.map((i) => ({ due: installmentDue(i), dueDate: i.dueDate }));
+  const paidAmounts = allocatePayments(items, totalPaidFor(items, card.currentBalance));
 
-  let acumulado = 0;
   const now = Date.now();
-  for (const inst of sorted) {
-    const shouldBePaid = acumulado + inst.amount <= totalPagado;
-    if (shouldBePaid !== inst.paid) {
+  const paidByPurchase = new Map<string, number>();
+  for (let idx = 0; idx < installments.length; idx++) {
+    const inst = installments[idx];
+    const paidAmount = paidAmounts[idx];
+    // Pagada = no debe nada hoy. Una cuota futura con su capital abonado queda
+    // pagada; si al facturarse le llega un interés, vuelve a deber ese interés.
+    const paid = paidAmount >= items[idx].due;
+    if (paid) paidByPurchase.set(inst.purchaseId, (paidByPurchase.get(inst.purchaseId) ?? 0) + 1);
+    if (paidAmount !== inst.paidAmount || paid !== inst.paid) {
       await ctx.db.patch(inst._id, {
-        paid: shouldBePaid,
-        paidAt: shouldBePaid ? now : undefined,
+        paidAmount,
+        paid,
+        paidAt: paid ? (inst.paidAt ?? now) : undefined,
       });
     }
-    if (shouldBePaid) acumulado += inst.amount;
   }
 
-  // Actualizar paidInstallments y status en cardPurchases
   const purchases = await ctx.db
     .query("cardPurchases")
     .withIndex("by_card", (q) => q.eq("cardId", cardId))
     .collect();
   for (const purchase of purchases) {
-    const purchaseInsts = sorted.filter((i) => i.purchaseId === purchase._id);
-    const paidCount = purchaseInsts.filter((i) => i.paid).length;
-    const fullyPaid = paidCount >= purchase.totalInstallments;
-    const newStatus = fullyPaid ? "pagada" : "activa";
-    if (paidCount !== purchase.paidInstallments || newStatus !== purchase.status) {
-      await ctx.db.patch(purchase._id, {
-        paidInstallments: paidCount,
-        status: newStatus,
-        updatedAt: now,
-      });
+    if (purchase.status === "cancelada") continue;
+    const paidCount = paidByPurchase.get(purchase._id) ?? 0;
+    const status = paidCount >= purchase.totalInstallments ? "pagada" : "activa";
+    if (paidCount !== purchase.paidInstallments || status !== purchase.status) {
+      await ctx.db.patch(purchase._id, { paidInstallments: paidCount, status, updatedAt: now });
     }
   }
 }

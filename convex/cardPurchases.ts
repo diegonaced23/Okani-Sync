@@ -2,9 +2,16 @@ import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
-import { calculateInstallment, addMonths } from "./lib/money";
-import { toMonthString, assertValidMonth, monthRange, getSystemInterestsCategoryId } from "./lib/utils";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { calculateInstallment } from "./lib/money";
+import { assertValidMonth, getLegacyInterestsCategoryId, monthRange, toMonthString } from "./lib/utils";
 import { applyBudgetDelta } from "./lib/transactionEffects";
+import { categoryRotationDeltas } from "./lib/cardBudget";
+import { balanceScheduleToPrincipal, cuotaChargeDates } from "./lib/cardSchedule";
+import { billInstallment, billDueInstallmentsForCard, cuotaDescription } from "./lib/cardBilling";
+import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
+import { installmentDue, installmentRemaining } from "../src/lib/cardPayments";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -81,6 +88,162 @@ export const getWithInstallments = query({
   },
 });
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** interestRate es decimal (0.08 = 8%): fuera de rango daría cuotas astronómicas. */
+function assertInterestRate(hasInterest: boolean, interestRate: number | undefined) {
+  if (
+    hasInterest &&
+    interestRate !== undefined &&
+    (interestRate < 0 || !Number.isFinite(interestRate) || interestRate > 2)
+  ) {
+    throw new Error("La tasa de interés debe ser un decimal entre 0 y 2 (0% a 200%)");
+  }
+}
+
+/**
+ * Cronograma de una compra con el capital cuadrado a centavo (ver
+ * `balanceScheduleToPrincipal`) y los totales que salen de él.
+ */
+function scheduleFor(totalAmount: number, rate: number, installments: number) {
+  const result = calculateInstallment(totalAmount, rate, installments);
+  const schedule = balanceScheduleToPrincipal(result.schedule, totalAmount);
+  const totalWithInterest = schedule.reduce((s, i) => s + i.amount, 0);
+  return {
+    schedule,
+    amountPerInstallment: result.amountPerInstallment,
+    totalWithInterest,
+    totalInterest: totalWithInterest - totalAmount,
+  };
+}
+
+/**
+ * Crea el cronograma de una compra y factura lo que ya tocaba.
+ *
+ * - Las fechas de cargo salen del ciclo de la tarjeta (`cuotaChargeDates`): de
+ *   contado, el día de la compra; a cuotas, cada corte a partir del de la compra.
+ * - La deuda sube por el CAPITAL. El interés de cada cuota se suma cuando se
+ *   factura (ver `lib/cardBilling.ts`).
+ * - Las cuotas cuyo cargo ya pasó (de contado, o una compra con fecha atrasada)
+ *   se facturan aquí mismo: su gasto aparece de inmediato.
+ */
+async function buildSchedule(
+  ctx: MutationCtx,
+  args: {
+    card: Doc<"cards">;
+    purchase: Doc<"cardPurchases">;
+    recurringId?: Id<"recurringTransactions">;
+  }
+) {
+  const { card, purchase, recurringId } = args;
+  const rate = purchase.hasInterest ? (purchase.interestRate ?? 0) : 0;
+  const result = scheduleFor(purchase.totalAmount, rate, purchase.totalInstallments);
+  const dates = cuotaChargeDates(purchase.purchaseDate, card.cutoffDay, purchase.totalInstallments);
+  const now = Date.now();
+
+  for (const item of result.schedule) {
+    const dueDate = dates[item.installmentNumber - 1];
+    await ctx.db.insert("cardInstallments", {
+      userId: purchase.userId,
+      purchaseId: purchase._id,
+      cardId: card._id,
+      installmentNumber: item.installmentNumber,
+      amount: item.amount,
+      principalAmount: item.principalAmount,
+      interestAmount: item.interestAmount,
+      remainingPrincipal: item.remainingPrincipal,
+      dueDate,
+      month: toMonthString(dueDate),
+      paid: false,
+      paidAmount: 0,
+      interestBilling: "at_cutoff",
+      createdAt: now,
+    });
+  }
+
+  await ctx.db.patch(card._id, {
+    currentBalance: card.currentBalance + purchase.totalAmount,
+    availableCredit: Math.max(0, card.creditLimit - (card.currentBalance + purchase.totalAmount)),
+    updatedAt: now,
+  });
+
+  // La recurrente marca su propio movimiento; el resto lo factura el helper común
+  if (recurringId) {
+    const insts = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+      .collect();
+    for (const inst of insts) {
+      if (inst.dueDate > now) continue;
+      const fresh = await ctx.db.get(card._id);
+      if (fresh) await billInstallment(ctx, { inst, purchase, card: fresh, now, recurringId });
+    }
+  }
+  await billDueInstallmentsForCard(ctx, card._id, now);
+  await recomputeInstallmentsPaid(ctx, card._id);
+
+  return result;
+}
+
+/**
+ * Categoría donde el modelo anterior puso el interés de una cuota en el
+ * presupuesto (la de sistema, si existía). Solo para revertir datos sin migrar.
+ */
+async function legacyInterestBudgetCategory(
+  ctx: MutationCtx,
+  purchase: Doc<"cardPurchases">
+): Promise<Id<"categories"> | undefined> {
+  return purchase.hasInterest ? getLegacyInterestsCategoryId(ctx, purchase.userId) : undefined;
+}
+
+/**
+ * Borra los movimientos y el cronograma de una compra, devolviendo lo que cada
+ * movimiento había sumado al presupuesto. Devuelve lo que la compra aún debía
+ * (para descontarlo de la deuda de la tarjeta).
+ */
+async function deleteSchedule(ctx: MutationCtx, purchase: Doc<"cardPurchases">): Promise<number> {
+  const installments = await ctx.db
+    .query("cardInstallments")
+    .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+    .collect();
+  const legacyInterestCat = await legacyInterestBudgetCategory(ctx, purchase);
+
+  let outstanding = 0;
+  // Secuencial: applyBudgetDelta hace read-modify-write sobre el mismo presupuesto (cat+mes)
+  for (const inst of installments) {
+    outstanding += installmentRemaining(inst);
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
+      .collect();
+    for (const tx of txs) {
+      if (tx.cardChargeKind) {
+        // Modelo nuevo: cada movimiento sumó su monto entero a su categoría
+        if (tx.categoryId) await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -tx.amount, tx.currency);
+      } else {
+        // Modelo anterior: la cuota entera, con el interés en la categoría de intereses
+        const interest = legacyInterestCat ? (inst.interestAmount ?? 0) : 0;
+        if (tx.categoryId) await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, -(tx.amount - interest), tx.currency);
+        if (legacyInterestCat && interest > 0) await applyBudgetDelta(ctx, tx.userId, legacyInterestCat, tx.month, -interest, tx.currency);
+      }
+      await ctx.db.delete(tx._id);
+    }
+    await ctx.db.delete(inst._id);
+  }
+  return outstanding;
+}
+
+async function adjustCardBalance(ctx: MutationCtx, cardId: Id<"cards">, delta: number) {
+  const card = await ctx.db.get(cardId);
+  if (!card) return;
+  const currentBalance = Math.max(0, card.currentBalance + delta);
+  await ctx.db.patch(cardId, {
+    currentBalance,
+    availableCredit: Math.max(0, card.creditLimit - currentBalance),
+    updatedAt: Date.now(),
+  });
+}
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export const createPurchase = mutation({
@@ -93,7 +256,9 @@ export const createPurchase = mutation({
     hasInterest: v.boolean(),
     interestRate: v.optional(v.number()), // decimal, ej: 0.08
     purchaseDate: v.number(),
-    firstInstallmentDate: v.number(),
+    /** Ya no se usa: las fechas de las cuotas salen del ciclo de la tarjeta.
+     *  Se acepta para no romper clientes que aún lo envían. */
+    firstInstallmentDate: v.optional(v.number()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -103,19 +268,14 @@ export const createPurchase = mutation({
     if (!card || card.userId !== user.clerkId) {
       throw new Error("Tarjeta no encontrada");
     }
-
-    // interestRate es decimal (ej: 0.08 = 8%); validar rango para prevenir cuotas astronómicas
-    if (
-      args.hasInterest &&
-      args.interestRate !== undefined &&
-      (args.interestRate < 0 || !Number.isFinite(args.interestRate) || args.interestRate > 2)
-    ) {
-      throw new Error("La tasa de interés debe ser un decimal entre 0 y 2 (0% a 200%)");
+    assertInterestRate(args.hasInterest, args.interestRate);
+    if (!Number.isInteger(args.totalInstallments) || args.totalInstallments < 1) {
+      throw new Error("El número de cuotas debe ser al menos 1");
     }
 
     const rate = args.hasInterest ? (args.interestRate ?? 0) : 0;
-    const result = calculateInstallment(args.totalAmount, rate, args.totalInstallments);
-
+    const result = scheduleFor(args.totalAmount, rate, args.totalInstallments);
+    const dates = cuotaChargeDates(args.purchaseDate, card.cutoffDay, args.totalInstallments);
     const now = Date.now();
 
     const purchaseId = await ctx.db.insert("cardPurchases", {
@@ -133,79 +293,15 @@ export const createPurchase = mutation({
       totalInterest: result.totalInterest,
       currency: card.currency,
       purchaseDate: args.purchaseDate,
-      firstInstallmentDate: args.firstInstallmentDate,
+      firstInstallmentDate: dates[0],
       status: "activa",
       notes: args.notes,
       createdAt: now,
       updatedAt: now,
     });
 
-    // Resolver categoría de intereses una vez antes del bucle
-    const interestsCatId = args.hasInterest
-      ? await getSystemInterestsCategoryId(ctx, user.clerkId)
-      : undefined;
-
-    // Generar cronograma de cuotas + tx gasto_tarjeta por cada una
-    for (const item of result.schedule) {
-      const dueDate = addMonths(args.firstInstallmentDate, item.installmentNumber - 1);
-      const instMonth = toMonthString(dueDate);
-
-      const installmentId = await ctx.db.insert("cardInstallments", {
-        userId: user.clerkId,
-        purchaseId,
-        cardId: args.cardId,
-        installmentNumber: item.installmentNumber,
-        amount: item.amount,
-        principalAmount: item.principalAmount,
-        interestAmount: item.interestAmount,
-        remainingPrincipal: item.remainingPrincipal,
-        dueDate,
-        month: instMonth,
-        paid: false,
-        createdAt: now,
-      });
-
-      const desc = args.totalInstallments > 1
-        ? `${args.description} — Cuota ${item.installmentNumber}/${args.totalInstallments}`
-        : args.description;
-
-      // Crear movimiento visible en el módulo de Movimientos (no descuenta cuenta)
-      await ctx.db.insert("transactions", {
-        userId: user.clerkId,
-        type: "gasto_tarjeta",
-        amount: item.amount,
-        description: desc,
-        date: dueDate,
-        month: instMonth,
-        currency: card.currency,
-        cardId: args.cardId,
-        cardInstallmentId: installmentId,
-        cardPurchaseId: purchaseId,
-        categoryId: args.categoryId,
-        status: "completada",
-        isRecurring: false,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      // Presupuesto: principal → categoría del gasto, interés → "Gastos financieros"
-      if (args.categoryId) {
-        const principalBudget = interestsCatId ? item.principalAmount : item.amount;
-        await applyBudgetDelta(ctx, user.clerkId, args.categoryId, instMonth, principalBudget, card.currency);
-      }
-      if (interestsCatId && item.interestAmount > 0) {
-        await applyBudgetDelta(ctx, user.clerkId, interestsCatId, instMonth, item.interestAmount, card.currency);
-      }
-    }
-
-    // Actualizar saldo y cupo de la tarjeta (aumenta la deuda)
-    const newBalance = card.currentBalance + result.totalWithInterest;
-    await ctx.db.patch(args.cardId, {
-      currentBalance: newBalance,
-      availableCredit: Math.max(0, card.creditLimit - newBalance),
-      updatedAt: now,
-    });
-
+    const purchase = (await ctx.db.get(purchaseId))!;
+    await buildSchedule(ctx, { card, purchase });
     return purchaseId;
   },
 });
@@ -220,15 +316,19 @@ export const updatePurchase = mutation({
     /** true deja la compra sin nota. Igual que `clearCategory`: en un patch parcial,
      *  omitir el campo significa «no tocar», así que vaciar el textarea no borraba nada. */
     clearNotes: v.optional(v.boolean()),
-    // Financieros — solo cuando paidInstallments === 0
+    // Financieros — solo mientras no haya pagos ni intereses cobrados
     totalAmount: v.optional(v.number()),
     totalInstallments: v.optional(v.number()),
     hasInterest: v.optional(v.boolean()),
     interestRate: v.optional(v.number()),
     purchaseDate: v.optional(v.number()),
+    /** Ya no se usa: las fechas de las cuotas salen del ciclo de la tarjeta. */
     firstInstallmentDate: v.optional(v.number()),
   },
-  handler: async (ctx, { purchaseId, clearCategory, clearNotes, ...fields }) => {
+  handler: async (ctx, { purchaseId, clearCategory, clearNotes, ...allFields }) => {
+    // `firstInstallmentDate` se ignora: las fechas salen del ciclo de la tarjeta
+    const { firstInstallmentDate, ...fields } = allFields;
+    void firstInstallmentDate;
     if (clearNotes && fields.notes !== undefined) {
       throw new Error("No se puede escribir y borrar la nota a la vez");
     }
@@ -245,126 +345,50 @@ export const updatePurchase = mutation({
       (fields.totalAmount !== undefined && fields.totalAmount !== purchase.totalAmount) ||
       (fields.totalInstallments !== undefined && fields.totalInstallments !== purchase.totalInstallments) ||
       (fields.hasInterest !== undefined && fields.hasInterest !== purchase.hasInterest) ||
-      (fields.firstInstallmentDate !== undefined && fields.firstInstallmentDate !== purchase.firstInstallmentDate) ||
+      (fields.purchaseDate !== undefined && fields.purchaseDate !== purchase.purchaseDate) ||
       (fields.interestRate !== undefined &&
         Math.abs(fields.interestRate - (purchase.interestRate ?? 0)) > 0.00001);
 
-    if (financialChanged && purchase.paidInstallments > 0) {
-      throw new Error(
-        "No se pueden modificar los datos financieros cuando ya hay cuotas pagadas"
-      );
-    }
-
     if (financialChanged) {
-      const totalAmount = fields.totalAmount ?? purchase.totalAmount;
-      const totalInstallments = fields.totalInstallments ?? purchase.totalInstallments;
-      const hasInterest = fields.hasInterest ?? purchase.hasInterest;
-      const interestRate = hasInterest ? (fields.interestRate ?? purchase.interestRate ?? 0) : 0;
-      const firstInstallmentDate = fields.firstInstallmentDate ?? purchase.firstInstallmentDate;
-      const finalCategoryId = clearCategory ? undefined : (fields.categoryId ?? purchase.categoryId);
-
-      const result = calculateInstallment(totalAmount, interestRate, totalInstallments);
+      const card = await ctx.db.get(purchase.cardId);
+      if (!card) throw new Error("Tarjeta no encontrada");
 
       const oldInstallments = await ctx.db
         .query("cardInstallments")
         .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
         .collect();
-
-      const updateInterestsCatId = hasInterest
-        ? await getSystemInterestsCategoryId(ctx, user.clerkId)
-        : undefined;
-
-      // Revertir presupuesto y eliminar txs gasto_tarjeta de cuotas anteriores.
-      // Usa split principal/interés para revertir correctamente compras post-2.5.
-      //
-      // applyBudgetDelta hace read-modify-write sobre el mismo doc de presupuesto (cat+mes),
-      // así que debe quedar secuencial para evitar lost updates entre cuotas del mismo mes.
-      for (const inst of oldInstallments) {
-        if (purchase.categoryId) {
-          const principalToRevert = updateInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
-          await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -principalToRevert, purchase.currency);
-        }
-        if (updateInterestsCatId && (inst.interestAmount ?? 0) > 0) {
-          await applyBudgetDelta(ctx, user.clerkId, updateInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
-        }
-      }
-
-      // Los deletes sí son independientes entre cuotas (cada tx e inst tienen _id distinto),
-      // por lo que se pueden paralelizar con Promise.all sin riesgo de lost update.
-      await Promise.all(
-        oldInstallments.map(async (inst) => {
-          const oldTxs = await ctx.db
-            .query("transactions")
-            .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
-            .collect();
-          await Promise.all(oldTxs.map((tx) => ctx.db.delete(tx._id)));
-          await ctx.db.delete(inst._id);
-        })
+      // Rehacer el cronograma borra lo facturado. Se permite mientras no haya nada
+      // que perder: ni abonos a la compra ni intereses ya cobrados.
+      const anyPaid = oldInstallments.some((i) => i.paid || (i.paidAmount ?? 0) > 0);
+      const interestCharged = oldInstallments.some(
+        (i) => i.interestBilling === "at_cutoff" && i.billedAt !== undefined && (i.interestAmount ?? 0) > 0
       );
-
-      // Generar nuevas cuotas + txs gasto_tarjeta con split de presupuesto
-      for (const item of result.schedule) {
-        const dueDate = addMonths(firstInstallmentDate, item.installmentNumber - 1);
-        const instMonth = toMonthString(dueDate);
-
-        const installmentId = await ctx.db.insert("cardInstallments", {
-          userId: user.clerkId,
-          purchaseId,
-          cardId: purchase.cardId,
-          installmentNumber: item.installmentNumber,
-          amount: item.amount,
-          principalAmount: item.principalAmount,
-          interestAmount: item.interestAmount,
-          remainingPrincipal: item.remainingPrincipal,
-          dueDate,
-          month: instMonth,
-          paid: false,
-          createdAt: now,
-        });
-
-        const desc = totalInstallments > 1
-          ? `${fields.description?.trim() ?? purchase.description} — Cuota ${item.installmentNumber}/${totalInstallments}`
-          : (fields.description?.trim() ?? purchase.description);
-
-        await ctx.db.insert("transactions", {
-          userId: user.clerkId,
-          type: "gasto_tarjeta",
-          amount: item.amount,
-          description: desc,
-          date: dueDate,
-          month: instMonth,
-          currency: purchase.currency,
-          cardId: purchase.cardId,
-          cardInstallmentId: installmentId,
-          cardPurchaseId: purchaseId,
-          categoryId: finalCategoryId,
-          status: "completada",
-          isRecurring: false,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        if (finalCategoryId) {
-          const principalBudget = updateInterestsCatId ? item.principalAmount : item.amount;
-          await applyBudgetDelta(ctx, user.clerkId, finalCategoryId, instMonth, principalBudget, purchase.currency);
-        }
-        if (updateInterestsCatId && item.interestAmount > 0) {
-          await applyBudgetDelta(ctx, user.clerkId, updateInterestsCatId, instMonth, item.interestAmount, purchase.currency);
-        }
+      if (anyPaid || purchase.paidInstallments > 0) {
+        throw new Error("No se pueden modificar los datos financieros cuando ya hay cuotas pagadas");
+      }
+      if (interestCharged) {
+        throw new Error("No se pueden modificar los datos financieros: esta compra ya tiene intereses cobrados");
       }
 
-      // Ajustar saldo de la tarjeta por la diferencia
-      const card = await ctx.db.get(purchase.cardId);
-      if (card) {
-        const diff = result.totalWithInterest - purchase.totalWithInterest;
-        const newBalance = Math.max(0, card.currentBalance + diff);
-        await ctx.db.patch(purchase.cardId, {
-          currentBalance: newBalance,
-          availableCredit: Math.max(0, card.creditLimit - newBalance),
-          updatedAt: now,
-        });
+      const totalAmount = fields.totalAmount ?? purchase.totalAmount;
+      const totalInstallments = fields.totalInstallments ?? purchase.totalInstallments;
+      const hasInterest = fields.hasInterest ?? purchase.hasInterest;
+      const interestRate = hasInterest ? (fields.interestRate ?? purchase.interestRate ?? 0) : undefined;
+      assertInterestRate(hasInterest, interestRate);
+      if (!Number.isInteger(totalInstallments) || totalInstallments < 1) {
+        throw new Error("El número de cuotas debe ser al menos 1");
       }
+      const purchaseDate = fields.purchaseDate ?? purchase.purchaseDate;
+      const finalCategoryId = clearCategory ? undefined : (fields.categoryId ?? purchase.categoryId);
 
+      // Lo que la compra había cargado a la deuda (en el modelo anterior, con
+      // todo el interés; en el nuevo, el capital) sale antes de volver a cargar.
+      const oldCharge = oldInstallments.reduce((s, i) => s + installmentDue(i), 0);
+      await deleteSchedule(ctx, purchase);
+      await adjustCardBalance(ctx, card._id, -oldCharge);
+
+      const result = scheduleFor(totalAmount, interestRate ?? 0, totalInstallments);
+      const dates = cuotaChargeDates(purchaseDate, card.cutoffDay, totalInstallments);
       await ctx.db.patch(purchaseId, {
         description: fields.description?.trim() ?? purchase.description,
         categoryId: finalCategoryId,
@@ -375,78 +399,77 @@ export const updatePurchase = mutation({
         paidInstallments: 0,
         amountPerInstallment: result.amountPerInstallment,
         hasInterest,
-        interestRate: hasInterest ? interestRate : undefined,
+        interestRate,
         totalInterest: result.totalInterest,
-        purchaseDate: fields.purchaseDate ?? purchase.purchaseDate,
-        firstInstallmentDate,
+        purchaseDate,
+        firstInstallmentDate: dates[0],
+        status: "activa",
         updatedAt: now,
       });
-    } else {
-      const patch: Record<string, unknown> = { updatedAt: now };
-      if (fields.description !== undefined) patch.description = fields.description.trim();
-      if (clearCategory) patch.categoryId = undefined;
-      else if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
-      // undefined en un patch de Convex borra el campo
-      if (clearNotes) patch.notes = undefined;
-      else if (fields.notes !== undefined) patch.notes = fields.notes;
-      await ctx.db.patch(purchaseId, patch);
 
-      // Si cambió la categoría, rotar el presupuesto a la nueva y actualizar txs
-      const categoryChanged = clearCategory || (fields.categoryId !== undefined && fields.categoryId !== purchase.categoryId);
-      if (categoryChanged) {
-        const installments = await ctx.db
-          .query("cardInstallments")
-          .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+      const fresh = (await ctx.db.get(purchaseId))!;
+      const freshCard = (await ctx.db.get(card._id))!;
+      await buildSchedule(ctx, { card: freshCard, purchase: fresh });
+      return;
+    }
+
+    const patch: Record<string, unknown> = { updatedAt: now };
+    if (fields.description !== undefined) patch.description = fields.description.trim();
+    if (clearCategory) patch.categoryId = undefined;
+    else if (fields.categoryId !== undefined) patch.categoryId = fields.categoryId;
+    // undefined en un patch de Convex borra el campo
+    if (clearNotes) patch.notes = undefined;
+    else if (fields.notes !== undefined) patch.notes = fields.notes;
+    await ctx.db.patch(purchaseId, patch);
+
+    const installments = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+      .collect();
+
+    // Si cambió la categoría, mover el presupuesto y los movimientos de capital
+    const categoryChanged =
+      clearCategory || (fields.categoryId !== undefined && fields.categoryId !== purchase.categoryId);
+    if (categoryChanged) {
+      const newCatId = clearCategory ? undefined : fields.categoryId;
+      for (const inst of installments) {
+        const txs = await ctx.db
+          .query("transactions")
+          .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
           .collect();
-
-        const newCatId = clearCategory ? undefined : fields.categoryId;
-        const rotateCatInterestsCatId = purchase.hasInterest
-          ? await getSystemInterestsCategoryId(ctx, user.clerkId)
-          : undefined;
-
-        for (const inst of installments) {
-          if (purchase.categoryId) {
-            const principalToRevert = rotateCatInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
-            await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -principalToRevert, purchase.currency);
+        for (const tx of txs) {
+          // El interés se queda en su categoría: solo el capital viaja con la compra
+          if (tx.cardChargeKind === "interes") continue;
+          const legacyInterestCat = tx.cardChargeKind ? undefined : await legacyInterestBudgetCategory(ctx, purchase);
+          // Secuencial: applyBudgetDelta hace read-modify-write sobre el mismo presupuesto (cat+mes)
+          const deltas = categoryRotationDeltas({
+            installments: [{ month: tx.month, amount: tx.amount, principalAmount: tx.cardChargeKind ? tx.amount : inst.principalAmount }],
+            oldCategoryId: purchase.categoryId,
+            newCategoryId: newCatId,
+            interestsCategoryId: tx.cardChargeKind ? undefined : legacyInterestCat,
+          });
+          for (const d of deltas) {
+            await applyBudgetDelta(ctx, user.clerkId, d.categoryId, d.month, d.delta, purchase.currency);
           }
-          if (rotateCatInterestsCatId && (inst.interestAmount ?? 0) > 0) {
-            await applyBudgetDelta(ctx, user.clerkId, rotateCatInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
-          }
-          if (newCatId) {
-            const principalToApply = rotateCatInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
-            await applyBudgetDelta(ctx, user.clerkId, newCatId, inst.month, principalToApply, purchase.currency);
-          }
-          if (rotateCatInterestsCatId && newCatId && (inst.interestAmount ?? 0) > 0) {
-            await applyBudgetDelta(ctx, user.clerkId, rotateCatInterestsCatId, inst.month, inst.interestAmount!, purchase.currency);
-          }
-          // Actualizar categoryId en las txs gasto_tarjeta
-          const txs = await ctx.db
-            .query("transactions")
-            .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
-            .collect();
-          for (const tx of txs) {
-            await ctx.db.patch(tx._id, { categoryId: newCatId, updatedAt: now });
-          }
+          await ctx.db.patch(tx._id, { categoryId: newCatId, updatedAt: now });
         }
       }
+    }
 
-      // Si cambió la descripción (sin cambio financiero), actualizar txs gasto_tarjeta
-      if (fields.description !== undefined) {
-        const installments = await ctx.db
-          .query("cardInstallments")
-          .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
+    // Si cambió la descripción, actualizar los movimientos de la compra
+    if (fields.description !== undefined) {
+      const renamed = { ...purchase, description: fields.description.trim() };
+      for (const inst of installments) {
+        const txs = await ctx.db
+          .query("transactions")
+          .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
           .collect();
-        for (const inst of installments) {
-          const desc = purchase.totalInstallments > 1
-            ? `${fields.description.trim()} — Cuota ${inst.installmentNumber}/${purchase.totalInstallments}`
-            : fields.description.trim();
-          const txs = await ctx.db
-            .query("transactions")
-            .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
-            .collect();
-          for (const tx of txs) {
-            await ctx.db.patch(tx._id, { description: desc, updatedAt: now });
-          }
+        for (const tx of txs) {
+          const base = cuotaDescription(renamed, inst.installmentNumber);
+          await ctx.db.patch(tx._id, {
+            description: tx.cardChargeKind === "interes" ? `Intereses — ${base}` : base,
+            updatedAt: now,
+          });
         }
       }
     }
@@ -463,56 +486,19 @@ export const deletePurchase = mutation({
       throw new Error("Compra no encontrada");
     }
 
-    const installments = await ctx.db
-      .query("cardInstallments")
-      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchaseId))
-      .collect();
-
-    const unpaidDebt = installments
-      .filter((i) => !i.paid)
-      .reduce((sum, i) => sum + i.amount, 0);
-
-    const deleteInterestsCatId = purchase.hasInterest
-      ? await getSystemInterestsCategoryId(ctx, user.clerkId)
-      : undefined;
-
-    // Revertir presupuesto con split principal/interés y eliminar txs gasto_tarjeta
-    for (const inst of installments) {
-      if (purchase.categoryId) {
-        const principalToRevert = deleteInterestsCatId ? (inst.principalAmount ?? inst.amount) : inst.amount;
-        await applyBudgetDelta(ctx, user.clerkId, purchase.categoryId, inst.month, -principalToRevert, purchase.currency);
-      }
-      if (deleteInterestsCatId && (inst.interestAmount ?? 0) > 0) {
-        await applyBudgetDelta(ctx, user.clerkId, deleteInterestsCatId, inst.month, -(inst.interestAmount!), purchase.currency);
-      }
-      const txs = await ctx.db
-        .query("transactions")
-        .withIndex("by_card_installment", (q) => q.eq("cardId", purchase.cardId).eq("cardInstallmentId", inst._id))
-        .collect();
-      for (const tx of txs) await ctx.db.delete(tx._id);
-      await ctx.db.delete(inst._id);
-    }
-
-    // Reducir deuda de la tarjeta por las cuotas no pagadas (las pagadas ya redujeron la deuda)
-    const card = await ctx.db.get(purchase.cardId);
-    if (card) {
-      const newBalance = Math.max(0, card.currentBalance - unpaidDebt);
-      await ctx.db.patch(purchase.cardId, {
-        currentBalance: newBalance,
-        availableCredit: card.creditLimit - newBalance,
-        updatedAt: Date.now(),
-      });
-    }
-
+    // Sale de la deuda lo que la compra aún debía; lo ya pagado queda pagado
+    const outstanding = await deleteSchedule(ctx, purchase);
+    await adjustCardBalance(ctx, purchase.cardId, -outstanding);
     await ctx.db.delete(purchaseId);
+    await recomputeInstallmentsPaid(ctx, purchase.cardId);
   },
 });
 
 /**
- * Crea una compra de 1 cuota desde una transacción recurrente (sin auth check).
- * Equivale a createPurchase con totalInstallments=1, llamada internamente por el procesador de recurrentes.
+ * Interna: crea la compra recurrente con tarjeta Y avanza nextOccurrence en una sola
+ * mutación atómica, eliminando la ventana de fallo entre ambas operaciones.
  */
-export const createFromRecurring = internalMutation({
+export const processRecurringCardOccurrence = internalMutation({
   args: {
     userId: v.string(),
     cardId: v.id("cards"),
@@ -520,13 +506,12 @@ export const createFromRecurring = internalMutation({
     description: v.string(),
     amount: v.number(),
     date: v.number(),
-    recurringId: v.optional(v.id("recurringTransactions")),
+    recurringId: v.id("recurringTransactions"),
+    nextOccurrence: v.number(),
   },
   handler: async (ctx, args) => {
     const card = await ctx.db.get(args.cardId);
     if (!card || card.userId !== args.userId) return;
-
-    const month = toMonthString(args.date);
     const now = Date.now();
 
     const purchaseId = await ctx.db.insert("cardPurchases", {
@@ -549,141 +534,8 @@ export const createFromRecurring = internalMutation({
       updatedAt: now,
     });
 
-    const installmentId = await ctx.db.insert("cardInstallments", {
-      userId: args.userId,
-      purchaseId,
-      cardId: args.cardId,
-      installmentNumber: 1,
-      amount: args.amount,
-      principalAmount: args.amount,
-      interestAmount: 0,
-      remainingPrincipal: 0,
-      dueDate: args.date,
-      month,
-      paid: false,
-      createdAt: now,
-    });
-
-    await ctx.db.insert("transactions", {
-      userId: args.userId,
-      type: "gasto_tarjeta",
-      amount: args.amount,
-      description: args.description,
-      date: args.date,
-      month,
-      currency: card.currency,
-      cardId: args.cardId,
-      cardInstallmentId: installmentId,
-      cardPurchaseId: purchaseId,
-      categoryId: args.categoryId,
-      status: "completada",
-      isRecurring: true,
-      recurringId: args.recurringId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    if (args.categoryId) {
-      await applyBudgetDelta(ctx, args.userId, args.categoryId, month, args.amount, card.currency);
-    }
-
-    const newBalance = card.currentBalance + args.amount;
-    await ctx.db.patch(args.cardId, {
-      currentBalance: newBalance,
-      availableCredit: Math.max(0, card.creditLimit - newBalance),
-      updatedAt: now,
-    });
-  },
-});
-
-/**
- * Interna: crea la compra recurrente con tarjeta Y avanza nextOccurrence en una sola
- * mutación atómica, eliminando la ventana de fallo entre ambas operaciones.
- */
-export const processRecurringCardOccurrence = internalMutation({
-  args: {
-    userId: v.string(),
-    cardId: v.id("cards"),
-    categoryId: v.optional(v.id("categories")),
-    description: v.string(),
-    amount: v.number(),
-    date: v.number(),
-    recurringId: v.id("recurringTransactions"),
-    nextOccurrence: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const { recurringId, nextOccurrence, ...purchaseArgs } = args;
-    const card = await ctx.db.get(purchaseArgs.cardId);
-    if (!card || card.userId !== purchaseArgs.userId) return;
-
-    const month = toMonthString(purchaseArgs.date);
-    const now = Date.now();
-
-    const purchaseId = await ctx.db.insert("cardPurchases", {
-      userId: purchaseArgs.userId,
-      cardId: purchaseArgs.cardId,
-      categoryId: purchaseArgs.categoryId,
-      description: purchaseArgs.description,
-      totalAmount: purchaseArgs.amount,
-      totalWithInterest: purchaseArgs.amount,
-      totalInstallments: 1,
-      paidInstallments: 0,
-      amountPerInstallment: purchaseArgs.amount,
-      hasInterest: false,
-      totalInterest: 0,
-      currency: card.currency,
-      purchaseDate: purchaseArgs.date,
-      firstInstallmentDate: purchaseArgs.date,
-      status: "activa",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const installmentId = await ctx.db.insert("cardInstallments", {
-      userId: purchaseArgs.userId,
-      purchaseId,
-      cardId: purchaseArgs.cardId,
-      installmentNumber: 1,
-      amount: purchaseArgs.amount,
-      principalAmount: purchaseArgs.amount,
-      interestAmount: 0,
-      remainingPrincipal: 0,
-      dueDate: purchaseArgs.date,
-      month,
-      paid: false,
-      createdAt: now,
-    });
-
-    await ctx.db.insert("transactions", {
-      userId: purchaseArgs.userId,
-      type: "gasto_tarjeta",
-      amount: purchaseArgs.amount,
-      description: purchaseArgs.description,
-      date: purchaseArgs.date,
-      month,
-      currency: card.currency,
-      cardId: purchaseArgs.cardId,
-      cardInstallmentId: installmentId,
-      cardPurchaseId: purchaseId,
-      categoryId: purchaseArgs.categoryId,
-      status: "completada",
-      isRecurring: true,
-      recurringId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    if (purchaseArgs.categoryId) {
-      await applyBudgetDelta(ctx, purchaseArgs.userId, purchaseArgs.categoryId, month, purchaseArgs.amount, card.currency);
-    }
-
-    const newBalance = card.currentBalance + purchaseArgs.amount;
-    await ctx.db.patch(purchaseArgs.cardId, {
-      currentBalance: newBalance,
-      availableCredit: Math.max(0, card.creditLimit - newBalance),
-      updatedAt: now,
-    });
-
-    await ctx.db.patch(recurringId, { nextOccurrence, updatedAt: now });
+    const purchase = (await ctx.db.get(purchaseId))!;
+    await buildSchedule(ctx, { card, purchase, recurringId: args.recurringId });
+    await ctx.db.patch(args.recurringId, { nextOccurrence: args.nextOccurrence, updatedAt: now });
   },
 });

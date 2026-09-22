@@ -26,6 +26,7 @@ import {
 } from "@/lib/recurrence";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 import {
   FREQUENCY_LABELS,
   SUGGESTIONS,
@@ -143,10 +144,7 @@ function RecurringForm({
   const card = effectiveSource?.kind === "card" ? cards?.find((c) => c._id === effectiveSource.id) : undefined;
   const currency = account?.currency ?? card?.currency ?? recurring?.currency ?? "COP";
 
-  // Las del sistema ("Pago de tarjeta", …) las asigna la app, no el usuario
-  const kindCategories = (categories ?? []).filter(
-    (c) => !c.isSystem && (c.type === kind || c.type === "ambos")
-  );
+  const kindCategories = selectableCategories(categories ?? [], kind);
   const category = kindCategories.find((c) => c._id === categoryId);
   const tone = category?.color ?? KIND_TONE[kind];
 

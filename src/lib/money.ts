@@ -260,51 +260,6 @@ export function todayStr(): string {
   return tsToDateStr(Date.now());
 }
 
-// ─── Simulación FIFO de pago de tarjeta ──────────────────────────────────────
-
-/**
- * Simula qué cuotas quedan saldadas si se aplica `paymentAmount` al saldo
- * de una tarjeta, replicando la lógica FIFO de `recomputeInstallmentsPaid`.
- *
- * No escribe nada a la base de datos — es pura y usable en el cliente.
- *
- * @param allInstallments - Todas las cuotas de la tarjeta (pagadas + pendientes),
- *   necesarias para calcular `totalCargado` y determinar la posición FIFO.
- * @param currentBalance  - Saldo actual de la tarjeta (centavos).
- * @param paymentAmount   - Monto a pagar (centavos). Se clampea a `currentBalance`.
- */
-export function simulateFIFOPayment<
-  T extends { amount: number; dueDate: number; paid: boolean },
->(
-  allInstallments: T[],
-  currentBalance: number,
-  paymentAmount: number,
-): { newlyPaid: T[]; stillUnpaid: T[]; newBalance: number } {
-  const effectivePayment = Math.min(paymentAmount, currentBalance);
-  const newBalance = Math.max(0, currentBalance - effectivePayment);
-
-  // totalCargado ≡ Σ gasto_tarjeta.amount (cada cuota tiene su tx gasto_tarjeta)
-  const totalCargado = allInstallments.reduce((s, i) => s + i.amount, 0);
-  const newTotalPagado = Math.max(0, totalCargado - newBalance);
-
-  // FIFO: ordenar por dueDate ascendente y marcar las primeras que caben
-  const sorted = [...allInstallments].sort((a, b) => a.dueDate - b.dueDate);
-  let acumulado = 0;
-  const willBePaid = new Set<number>();
-  for (let i = 0; i < sorted.length; i++) {
-    if (acumulado + sorted[i].amount <= newTotalPagado) {
-      willBePaid.add(i);
-      acumulado += sorted[i].amount;
-    }
-  }
-
-  return {
-    newlyPaid:   sorted.filter((inst, i) => !inst.paid && willBePaid.has(i)),
-    stillUnpaid: sorted.filter((inst, i) => !inst.paid && !willBePaid.has(i)),
-    newBalance,
-  };
-}
-
 /**
  * Retorna el string "YYYY-MM" para el timestamp dado.
  * Usa la zona horaria local del navegador.

@@ -34,6 +34,7 @@ import {
   SEARCH_CAP,
   SPRING,
   haptic,
+  isFromCardPurchase,
   totalsByCurrency,
 } from "@/components/transactions/shared";
 import { currentMonth, formatCents } from "@/lib/money";
@@ -87,7 +88,7 @@ export default function TransaccionesPage() {
   // Sin esto cada render crearía una función nueva por fila y el memo de TransactionRow
   // no serviría de nada.
   const handleTransactionPress = useCallback((tx: Doc<"transactions">) => {
-    if (tx.cardPurchaseId) {
+    if (isFromCardPurchase(tx)) {
       setSelectedPurchaseId(tx.cardPurchaseId as Id<"cardPurchases">);
       setPurchaseDetailOpen(true);
     } else {

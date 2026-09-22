@@ -56,6 +56,7 @@ const HORARIOS_ESPERADOS: Record<CronJobId, Record<string, unknown>> = {
   sendWeeklySummary:            { type: "cron",    cron: "0 14 * * 1" },
   sendMonthlySummary:           { type: "cron",    cron: "0 13 1 * *" },
   recomputeUserStats:           { type: "daily",   hourUTC: 3,  minuteUTC: 0 },
+  billCardInstallments:         { type: "daily",   hourUTC: 5,  minuteUTC: 30 },
 };
 
 describe("CRON_JOBS", () => {

@@ -15,19 +15,24 @@ export function canEditTx(tx: Pick<Transaction, "type">): boolean {
 }
 
 /**
- * Una reasignación de saldo no se borra: el backend lo rechaza, porque deshacerla
- * dejaría el saldo sin explicación. Se corrige creando otra.
+ * Lo que el backend no deja borrar:
+ * - Una reasignación de saldo: deshacerla dejaría el saldo sin explicación. Se
+ *   corrige creando otra.
+ * - Una cuota de una compra con tarjeta, o su interés: son parte del cronograma
+ *   de la compra. Se quitan editando o eliminando la compra.
  */
-export function canDeleteTx(tx: Pick<Transaction, "type">): boolean {
-  return tx.type !== "ajuste";
+export function canDeleteTx(tx: Pick<Transaction, "type"> & { cardInstallmentId?: unknown }): boolean {
+  if (tx.type === "ajuste") return false;
+  return !(tx.type === "gasto_tarjeta" && tx.cardInstallmentId);
 }
 
 /**
  * Las filas que nacen de una compra a cuotas no se tocan desde la lista: al abrirlas
- * se llega a la compra, que es donde viven sus acciones.
+ * se llega a la compra, que es donde viven sus acciones. El interés de una cuota
+ * es la excepción: abre su propio detalle, donde se ajusta al monto del extracto.
  */
-export function isFromCardPurchase(tx: Pick<Transaction, "cardPurchaseId">): boolean {
-  return !!tx.cardPurchaseId;
+export function isFromCardPurchase(tx: Pick<Transaction, "cardPurchaseId" | "cardChargeKind">): boolean {
+  return !!tx.cardPurchaseId && tx.cardChargeKind !== "interes";
 }
 
 /** Dirección del movimiento según la configuración de tipos: "+" entra, "−" sale. */

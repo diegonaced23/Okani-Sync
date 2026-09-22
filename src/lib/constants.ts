@@ -31,7 +31,6 @@ export interface DefaultCategory {
   type: "ingreso" | "gasto";
   color: string;
   icon: string;
-  isSystem?: boolean;
 }
 
 export const DEFAULT_CATEGORIES: DefaultCategory[] = [
@@ -44,6 +43,7 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
   { name: "Entretenimiento", type: "gasto", color: "#EC4899", icon: "music" },
   { name: "Educación", type: "gasto", color: "#10B981", icon: "book-open" },
   { name: "Ropa", type: "gasto", color: "#F97316", icon: "shirt" },
+  { name: "Gastos financieros", type: "gasto", color: "#6366F1", icon: "percent" },
   { name: "Otros gastos", type: "gasto", color: "#6B7280", icon: "circle-ellipsis" },
   // Ingresos
   { name: "Salario", type: "ingreso", color: "#4ADE80", icon: "briefcase" },
@@ -53,13 +53,17 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
   { name: "Otros ingresos", type: "ingreso", color: "#6B7280", icon: "circle-ellipsis" },
 ];
 
-export const SYSTEM_CATEGORY_PAYMENT_NAME = "Pago de tarjeta";
-export const SYSTEM_CATEGORY_INTERESTS_NAME = "Gastos financieros";
-
-export const SYSTEM_CATEGORIES: DefaultCategory[] = [
-  { name: SYSTEM_CATEGORY_PAYMENT_NAME,   type: "gasto", color: "#F97316", icon: "credit-card", isSystem: true },
-  { name: SYSTEM_CATEGORY_INTERESTS_NAME, type: "gasto", color: "#6366F1", icon: "percent",     isSystem: true },
-];
+/**
+ * Categoría de los intereses de las tarjetas. Es una categoría normal (editable,
+ * archivable, con presupuesto): cada tarjeta guarda su id en
+ * `cards.interestCategoryId`, y esta definición solo se usa para crearla cuando
+ * falta (ver `ensureInterestCategory` en convex/lib/cardBilling.ts). Antes era
+ * una de dos «categorías de sistema»; la otra, «Pago de tarjeta», desapareció:
+ * pagar la tarjeta no es un gasto, y el tipo `pago_tarjeta` ya da la etiqueta.
+ */
+export const INTEREST_CATEGORY: DefaultCategory = DEFAULT_CATEGORIES.find(
+  (c) => c.name === "Gastos financieros"
+)!;
 
 // ─── Colores de categorías / deudas (sólidos) ────────────────────────────────
 

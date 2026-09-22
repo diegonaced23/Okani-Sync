@@ -14,12 +14,13 @@ import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { addMonthsClamped, fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
+import { fromCents, toCents, dateStrToTs, tsToDateStr, parseMoneyInput } from "@/lib/money";
 import { X } from "lucide-react";
 import { buildEditConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 
 interface CardPurchaseEditFormProps {
   purchase: Doc<"cardPurchases">;
@@ -53,9 +54,7 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
   const [fieldErrors, setFieldErrors]         = useState<Record<string, string>>({});
   const { phase, confirm } = useSaveConfirmation(onSuccess);
 
-  const filteredCategories = (categories ?? []).filter(
-    (c) => c.type === "gasto" || c.type === "ambos"
-  );
+  const filteredCategories = selectableCategories(categories ?? [], "gasto", purchase.categoryId);
 
   async function handleSave() {
     const errors: Record<string, string> = {};
@@ -105,14 +104,8 @@ export function CardPurchaseEditForm({ purchase, onSuccess, onCancel }: CardPurc
                 : {}),
               ...(interestToggled ? { hasInterest } : {}),
               ...((rateTouched || interestToggled) && hasInterest ? { interestRate: rate } : {}),
-              ...(newDate !== purchase.purchaseDate
-                ? {
-                    purchaseDate: newDate,
-                    // La primera cuota cae un mes después de la compra, igual que al
-                    // crearla. Sin esto, mover la fecha dejaba el cronograma donde estaba.
-                    firstInstallmentDate: addMonthsClamped(newDate, 1),
-                  }
-                : {}),
+              // Mover la fecha rehace el cronograma: el backend recalcula las cuotas desde el corte
+              ...(newDate !== purchase.purchaseDate ? { purchaseDate: newDate } : {}),
             }
           : {}),
       });

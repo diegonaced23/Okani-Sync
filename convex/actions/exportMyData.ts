@@ -22,7 +22,7 @@ const MONEY_FIELDS: Record<string, readonly string[]> = {
   categories: [],
   cards: ["creditLimit", "currentBalance", "availableCredit", "minimumPayment"],
   cardPurchases: ["totalAmount", "totalWithInterest", "amountPerInstallment", "totalInterest"],
-  cardInstallments: ["amount", "principalAmount", "interestAmount", "remainingPrincipal"],
+  cardInstallments: ["amount", "principalAmount", "interestAmount", "remainingPrincipal", "paidAmount"],
   transactions: ["amount", "toAmount"],
   recurringTransactions: ["amount"],
   budgets: ["amount", "spent"],

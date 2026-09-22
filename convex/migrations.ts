@@ -1,217 +1,297 @@
 /**
- * Migraciones de datos — se ejecutan una sola vez desde el Convex Dashboard o CLI:
- *   npx convex run migrations:migrateCardPurchasesToGastoTarjeta
- *   npx convex run migrations:ensureSystemCategories
- *   npx convex run migrations:consolidateLegacyPayments
+ * Migraciones de datos — se ejecutan desde el Convex Dashboard o CLI.
  *
- * Todas las funciones son idempotentes: se pueden correr más de una vez sin duplicar datos.
+ *   # Ensayo: no escribe nada, devuelve qué haría con un lote de tarjetas
+ *   npx convex run migrations:migrateCardInterestModel '{"dryRun": true}'
+ *   # De verdad: recorre todas las tarjetas por lotes y luego las categorías
+ *   npx convex run migrations:migrateCardInterestModel
+ *   npx convex run migrations:normalizeInvitationEmails
+ *
+ * Todas son idempotentes: se pueden correr más de una vez sin duplicar datos.
+ *
+ * Las migraciones de tarjetas de modelos anteriores (crear un gasto_tarjeta por
+ * cuota, consolidar pagos antiguos, crear las categorías de sistema) se quitaron:
+ * ya se corrieron, y volver a correrlas sobre el modelo actual rompería datos
+ * (la primera, por ejemplo, recrearía con el interés incluido las cuotas que aún
+ * no se han facturado).
  */
-import { internalMutation } from "./_generated/server";
+import { internalMutation, type MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeEmail } from "../src/lib/email";
+import { applyBudgetDelta } from "./lib/transactionEffects";
+import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
+import { ensureInterestCategory } from "./lib/cardBilling";
+import { getLegacyInterestsCategoryId } from "./lib/utils";
 
-const SYSTEM_CATEGORIES = [
-  { name: "Pago de tarjeta",   type: "gasto" as const, color: "#F97316", icon: "credit-card" },
-  { name: "Gastos financieros", type: "gasto" as const, color: "#6366F1", icon: "percent"     },
-];
+// ─── Tarjetas: modelo de intereses al facturar (fase 3) ──────────────────────
+//
+// Antes: la deuda subía por la cuota entera (capital + interés de todo el plazo)
+// al comprar, y cada cuota tenía desde el principio un gasto_tarjeta por la cuota
+// entera, con fecha futura. Ahora: la deuda sube por el capital, y cada cuota se
+// factura en su corte con dos movimientos, capital e interés (lib/cardBilling.ts).
+//
+// Por cada cuota sin migrar (sin `interestBilling`):
+// - Ya facturada (su fecha pasó) o ya pagada: su gasto_tarjeta se queda con el
+//   capital y se crea el movimiento de interés. La deuda no cambia: ese interés
+//   ya estaba en ella. Una cuota futura ya pagada se trata como facturada porque
+//   el usuario ya pagó su interés.
+// - Pendiente: se borra su gasto_tarjeta futuro (lo creará el cron en su corte),
+//   se devuelve lo que sumó al presupuesto y se RESTA su interés de la deuda,
+//   porque el banco aún no lo ha cobrado.
+// Luego se reparten los pagos (paidAmount) y a los pagos de la tarjeta se les
+// quita la categoría «Pago de tarjeta».
 
-// ─── Crear/actualizar categorías de sistema para todos los usuarios ───────────
-// Idempotente: comprueba cada categoría por nombre antes de insertar.
-// Ejecutar cada vez que se añada una nueva categoría de sistema.
+type CardReport = {
+  cardId: Id<"cards">;
+  installments: number;
+  billed: number;
+  pending: number;
+  interestRemoved: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  /** false si el saldo quedaría negativo y se recortó a 0: revisar a mano. */
+  consistent: boolean;
+};
 
-export const ensureSystemCategories = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const users = await ctx.db.query("users").collect();
-    let created = 0;
+async function migrateCard(ctx: MutationCtx, card: Doc<"cards">, now: number, dryRun: boolean): Promise<CardReport> {
+  const installments = (
+    await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_card_month", (q) => q.eq("cardId", card._id))
+      .collect()
+  ).filter((i) => i.interestBilling === undefined);
 
-    for (const user of users) {
-      for (const sysCat of SYSTEM_CATEGORIES) {
-        const existing = await ctx.db
-          .query("categories")
-          .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
-          .filter((q) =>
-            q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), sysCat.name))
-          )
-          .first();
+  const legacyInterestsCat = await getLegacyInterestsCategoryId(ctx, card.userId);
+  const interestCat = dryRun ? legacyInterestsCat : await ensureInterestCategory(ctx, card.userId, card);
+  const purchases = new Map<Id<"cardPurchases">, Doc<"cardPurchases"> | null>();
 
-        if (!existing) {
-          const now = Date.now();
-          await ctx.db.insert("categories", {
-            userId: user.clerkId,
-            name: sysCat.name,
-            type: sysCat.type,
-            color: sysCat.color,
-            icon: sysCat.icon,
-            isDefault: false,
-            isSystem: true,
-            archived: false,
+  let billed = 0;
+  let pending = 0;
+  let interestRemoved = 0;
+
+  for (const inst of installments) {
+    if (!purchases.has(inst.purchaseId)) purchases.set(inst.purchaseId, await ctx.db.get(inst.purchaseId));
+    const purchase = purchases.get(inst.purchaseId) ?? null;
+
+    const principal = inst.principalAmount ?? inst.amount;
+    const interest = inst.principalAmount === undefined ? 0 : (inst.interestAmount ?? 0);
+    // Dónde puso el modelo anterior el interés en el presupuesto: en la categoría
+    // de sistema si existía; si no, junto al capital en la categoría de la compra.
+    const interestInSystemCat = !!(purchase?.hasInterest && legacyInterestsCat);
+
+    const txs = await ctx.db
+      .query("transactions")
+      .withIndex("by_card_installment", (q) => q.eq("cardId", card._id).eq("cardInstallmentId", inst._id))
+      .collect();
+    const cuotaTx = txs.find((t) => t.cardChargeKind === undefined);
+    const isBilled = inst.dueDate <= now || inst.paid;
+
+    if (isBilled) {
+      billed++;
+      if (dryRun) continue;
+      if (cuotaTx) {
+        await ctx.db.patch(cuotaTx._id, { amount: principal, cardChargeKind: "cuota", updatedAt: now });
+        if (interest > 0 && interestCat && !txs.some((t) => t.cardChargeKind === "interes")) {
+          await ctx.db.insert("transactions", {
+            userId: card.userId,
+            type: "gasto_tarjeta",
+            cardChargeKind: "interes",
+            amount: interest,
+            description: `Intereses — ${cuotaTx.description}`,
+            date: cuotaTx.date,
+            month: cuotaTx.month,
+            currency: cuotaTx.currency,
+            cardId: card._id,
+            cardInstallmentId: inst._id,
+            cardPurchaseId: inst.purchaseId,
+            categoryId: interestCat,
+            status: "completada",
+            isRecurring: false,
             createdAt: now,
             updatedAt: now,
           });
-          created++;
+          // El interés ya estaba en el presupuesto: solo se mueve si no estaba en
+          // la categoría de intereses (usuarios sin la de sistema)
+          if (!interestInSystemCat) {
+            if (cuotaTx.categoryId) {
+              await applyBudgetDelta(ctx, card.userId, cuotaTx.categoryId, cuotaTx.month, -interest, cuotaTx.currency);
+            }
+            await applyBudgetDelta(ctx, card.userId, interestCat, cuotaTx.month, interest, cuotaTx.currency);
+          }
         }
       }
+      await ctx.db.patch(inst._id, { interestBilling: "at_cutoff", billedAt: now, transactionId: cuotaTx?._id });
+    } else {
+      pending++;
+      interestRemoved += interest;
+      if (dryRun) continue;
+      if (cuotaTx) {
+        // Devolver lo que sumó al presupuesto, como lo sumó el modelo anterior
+        if (cuotaTx.categoryId) {
+          const fromCategory = interestInSystemCat ? principal : cuotaTx.amount;
+          await applyBudgetDelta(ctx, card.userId, cuotaTx.categoryId, cuotaTx.month, -fromCategory, cuotaTx.currency);
+        }
+        if (interestInSystemCat && interest > 0) {
+          await applyBudgetDelta(ctx, card.userId, legacyInterestsCat!, cuotaTx.month, -interest, cuotaTx.currency);
+        }
+        await ctx.db.delete(cuotaTx._id);
+      }
+      await ctx.db.patch(inst._id, { interestBilling: "at_cutoff", transactionId: undefined });
     }
+  }
 
-    return { usersProcessed: users.length, categoriesCreated: created };
-  },
-});
+  const expected = card.currentBalance - interestRemoved;
+  const balanceAfter = Math.max(0, expected);
+  if (!dryRun) {
+    if (interestRemoved > 0) {
+      await ctx.db.patch(card._id, {
+        currentBalance: balanceAfter,
+        availableCredit: Math.max(0, card.creditLimit - balanceAfter),
+        updatedAt: now,
+      });
+    }
+    await recomputeInstallmentsPaid(ctx, card._id);
 
-// ─── Paso 2: Generar gasto_tarjeta para cada cardInstallment sin tx asociada ──
+    // Pagar la tarjeta no es un gasto: sin categoría
+    const payments = await ctx.db
+      .query("transactions")
+      .withIndex("by_card", (q) => q.eq("cardId", card._id))
+      .filter((q) => q.eq(q.field("type"), "pago_tarjeta"))
+      .collect();
+    for (const p of payments) {
+      if (p.categoryId) await ctx.db.patch(p._id, { categoryId: undefined, updatedAt: now });
+    }
+  }
 
-export const migrateCardPurchasesToGastoTarjeta = internalMutation({
+  return {
+    cardId: card._id,
+    installments: installments.length,
+    billed,
+    pending,
+    interestRemoved,
+    balanceBefore: card.currentBalance,
+    balanceAfter,
+    consistent: expected === balanceAfter,
+  };
+}
+
+export const migrateCardInterestModel = internalMutation({
   args: {
-    cursor: v.optional(v.string()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    dryRun: v.optional(v.boolean()),
     batchSize: v.optional(v.number()),
   },
-  handler: async (ctx, { cursor, batchSize = 50 }) => {
-    const query = ctx.db.query("cardPurchases").order("asc");
-    const page = cursor
-      ? await query.paginate({ cursor, numItems: batchSize })
-      : await query.paginate({ cursor: null, numItems: batchSize });
+  handler: async (ctx, { cursor = null, dryRun = false, batchSize = 3 }) => {
+    const now = Date.now();
+    const page = await ctx.db.query("cards").order("asc").paginate({ cursor, numItems: batchSize });
 
-    let txsCreated = 0;
+    const reports: CardReport[] = [];
+    for (const card of page.page) {
+      const report = await migrateCard(ctx, card, now, dryRun);
+      reports.push(report);
+      console.log(`migrateCardInterestModel${dryRun ? " (ensayo)" : ""}: ${JSON.stringify(report)}`);
+    }
 
-    for (const purchase of page.page) {
-      const installments = await ctx.db
-        .query("cardInstallments")
-        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
-        .collect();
-
-      for (const inst of installments) {
-        // Verificar idempotencia: no crear si ya existe una gasto_tarjeta con este cardInstallmentId
-        const existing = await ctx.db
-          .query("transactions")
-          .withIndex("by_card", (q) => q.eq("cardId", inst.cardId))
-          .filter((q) => q.eq(q.field("cardInstallmentId"), inst._id))
-          .filter((q) => q.eq(q.field("type"), "gasto_tarjeta"))
-          .first();
-
-        if (existing) continue;
-
-        const desc = purchase.totalInstallments > 1
-          ? `${purchase.description} — Cuota ${inst.installmentNumber}/${purchase.totalInstallments}`
-          : purchase.description;
-
-        const now = Date.now();
-        await ctx.db.insert("transactions", {
-          userId: purchase.userId,
-          type: "gasto_tarjeta",
-          amount: inst.amount,
-          description: desc,
-          date: inst.dueDate,
-          month: inst.month,
-          currency: purchase.currency,
-          cardId: inst.cardId,
-          cardInstallmentId: inst._id,
-          cardPurchaseId: purchase._id,
-          categoryId: purchase.categoryId,
-          status: "completada",
-          isRecurring: false,
-          createdAt: now,
-          updatedAt: now,
+    // En ensayo no se encadena: quien lo corre ve el lote y decide
+    if (!dryRun) {
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(0, internal.migrations.migrateCardInterestModel, {
+          cursor: page.continueCursor,
+          batchSize,
         });
-        txsCreated++;
+      } else {
+        await ctx.scheduler.runAfter(0, internal.migrations.migrateLegacySystemCategories, {});
       }
     }
 
     return {
-      txsCreated,
+      dryRun,
+      reports,
+      inconsistent: reports.filter((r) => !r.consistent).map((r) => r.cardId),
       isDone: page.isDone,
       nextCursor: page.isDone ? null : page.continueCursor,
     };
   },
 });
 
-// ─── Paso 3: Consolidar pago_tarjeta legacy (con cardInstallmentId) ───────────
+/**
+ * Último paso: las categorías de sistema dejan de serlo.
+ * - «Gastos financieros» pasa a ser una categoría normal (editable, archivable).
+ * - «Pago de tarjeta» se elimina: pagar la tarjeta no es un gasto. Sus
+ *   presupuestos (que nunca podían sumar nada) se borran y las recurrentes que la
+ *   usaran quedan sin categoría. Si algún gasto normal la tiene —el fallo que la
+ *   fase 1 cerró—, se conserva como categoría normal para no tocar ese gasto.
+ */
+export const migrateLegacySystemCategories = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { cursor = null }) => {
+    const page = await ctx.db.query("users").order("asc").paginate({ cursor, numItems: 20 });
+    const now = Date.now();
+    let interestsConverted = 0;
+    let paymentDeleted = 0;
+    let paymentKept = 0;
 
-export const consolidateLegacyPayments = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, { cursor, batchSize = 50 }) => {
-    // Buscar txs pago_tarjeta que todavía tengan cardInstallmentId (son del modelo viejo)
-    const query = ctx.db.query("transactions").order("asc");
+    for (const user of page.page) {
+      const system = await ctx.db
+        .query("categories")
+        .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+        .filter((q) => q.eq(q.field("isSystem"), true))
+        .collect();
 
-    const allWithFilter = cursor
-      ? await query.paginate({ cursor, numItems: batchSize * 5 })
-      : await query.paginate({ cursor: null, numItems: batchSize * 5 });
+      for (const cat of system) {
+        if (cat.name !== "Pago de tarjeta") {
+          await ctx.db.patch(cat._id, { isSystem: undefined, isDefault: true, updatedAt: now });
+          interestsConverted++;
+          continue;
+        }
 
-    const legacyPayments = allWithFilter.page.filter(
-      (tx) => tx.type === "pago_tarjeta" && tx.cardInstallmentId !== undefined
+        const refs = await ctx.db
+          .query("transactions")
+          .withIndex("by_user_category_month", (q) => q.eq("userId", user.clerkId).eq("categoryId", cat._id))
+          .collect();
+        let otherRefs = 0;
+        for (const tx of refs) {
+          if (tx.type === "pago_tarjeta") await ctx.db.patch(tx._id, { categoryId: undefined, updatedAt: now });
+          else otherRefs++;
+        }
+
+        const budgets = await ctx.db
+          .query("budgets")
+          .withIndex("by_user_category_month", (q) => q.eq("userId", user.clerkId).eq("categoryId", cat._id))
+          .collect();
+        for (const b of budgets) await ctx.db.delete(b._id);
+
+        const recurring = await ctx.db
+          .query("recurringTransactions")
+          .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
+          .collect();
+        for (const r of recurring) {
+          if (r.categoryId === cat._id) await ctx.db.patch(r._id, { categoryId: undefined, updatedAt: now });
+        }
+
+        if (otherRefs > 0) {
+          await ctx.db.patch(cat._id, { isSystem: undefined, updatedAt: now });
+          paymentKept++;
+        } else {
+          await ctx.db.delete(cat._id);
+          paymentDeleted++;
+        }
+      }
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.migrations.migrateLegacySystemCategories, {
+        cursor: page.continueCursor,
+      });
+    }
+    console.log(
+      `migrateLegacySystemCategories: ${JSON.stringify({ interestsConverted, paymentDeleted, paymentKept, isDone: page.isDone })}`
     );
-
-    // Agrupar por (userId, cardId, month) para consolidar
-    const groups = new Map<string, typeof legacyPayments>();
-    for (const tx of legacyPayments) {
-      const key = `${tx.userId}|${tx.cardId ?? ""}|${tx.month}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(tx);
-    }
-
-    let consolidated = 0;
-
-    for (const [, txs] of groups) {
-      if (txs.length === 0) continue;
-
-      const totalAmount = txs.reduce((s, t) => s + t.amount, 0);
-      const first = txs[0];
-      const now = Date.now();
-
-      // Buscar si ya existe un pago_tarjeta consolidado (sin cardInstallmentId) del mismo grupo
-      const existingConsolidated = await ctx.db
-        .query("transactions")
-        .withIndex("by_card", (q) => q.eq("cardId", first.cardId!))
-        .filter((q) => q.eq(q.field("type"), "pago_tarjeta"))
-        .filter((q) => q.eq(q.field("month"), first.month))
-        .filter((q) => q.eq(q.field("cardInstallmentId"), undefined))
-        .first();
-
-      if (!existingConsolidated) {
-        // Buscar categoría sistema del usuario
-        const sysCat = await ctx.db
-          .query("categories")
-          .withIndex("by_user", (q) => q.eq("userId", first.userId))
-          .filter((q) => q.eq(q.field("isSystem"), true))
-          .first();
-
-        await ctx.db.insert("transactions", {
-          userId: first.userId,
-          type: "pago_tarjeta",
-          amount: totalAmount,
-          description: "Pago de tarjeta (histórico)",
-          date: first.date,
-          month: first.month,
-          currency: first.currency,
-          accountId: first.accountId,
-          cardId: first.cardId,
-          categoryId: sysCat?._id,
-          status: "completada",
-          isRecurring: false,
-          createdAt: now,
-          updatedAt: now,
-        });
-        consolidated++;
-      }
-
-      // Eliminar las txs antiguas con cardInstallmentId
-      for (const tx of txs) {
-        await ctx.db.delete(tx._id);
-      }
-    }
-
-    return {
-      groupsConsolidated: consolidated,
-      legacyPaymentsRemoved: legacyPayments.length,
-      isDone: allWithFilter.isDone,
-      nextCursor: allWithFilter.isDone ? null : allWithFilter.continueCursor,
-    };
+    return { interestsConverted, paymentDeleted, paymentKept, isDone: page.isDone };
   },
 });
-
-// ─── Paso 4: Normalizar el correo de las invitaciones ya guardadas ──────────
 
 /**
  * Pasa a minúsculas el correo de las invitaciones ya guardadas.

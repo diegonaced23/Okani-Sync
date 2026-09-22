@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { CreditCard, Pencil, Archive } from "lucide-react";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { formatCents } from "@/lib/money";
+import { formatCardBalance } from "@/lib/cardCycle";
 import { cn } from "@/lib/utils";
 import { CardFace } from "./CardFace";
 import {
@@ -33,6 +34,7 @@ export function CardHero({
   billedCount,
   billedAmount,
   currentCycleCount,
+  statement,
   isPaymentOverdue,
   onPay,
   onEdit,
@@ -46,6 +48,13 @@ export function CardHero({
   billedAmount: number;
   /** Cuotas que caen en el ciclo que aún no cierra */
   currentCycleCount: number;
+  /** El saldo repartido como en Money Manager (`computeStatement` del backend) */
+  statement: {
+    porPagar: number;
+    enCurso: number;
+    cuotasPorFacturar: number;
+    sinDetalle: number;
+  };
   isPaymentOverdue: boolean;
   onPay: () => void;
   onEdit: () => void;
@@ -100,10 +109,10 @@ export function CardHero({
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-              {owes ? "Debes en esta tarjeta" : "Sin deuda"}
+              {owes ? "Saldo de la tarjeta" : "Sin deuda"}
             </p>
             <p className="mt-1 truncate font-mono-num text-[30px] font-extrabold leading-none tracking-tight text-foreground tabular-nums">
-              {formatCents(card.currentBalance, card.currency)}
+              {formatCardBalance(card.currentBalance, card.currency)}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
               Disponible{" "}
@@ -131,6 +140,27 @@ export function CardHero({
             </span>
           </ProgressRing>
         </div>
+
+        {/* De dónde sale el saldo: extracto cerrado, ciclo abierto y cuotas futuras */}
+        {owes && (
+          <dl className="grid grid-cols-3 gap-2">
+            <StatementFigure label="Por pagar" hint="Extracto cerrado" value={statement.porPagar} currency={card.currency} />
+            <StatementFigure label="En curso" hint="Próximo extracto" value={statement.enCurso} currency={card.currency} />
+            <StatementFigure label="Por facturar" hint="Cuotas futuras" value={statement.cuotasPorFacturar} currency={card.currency} />
+            {statement.sinDetalle > 0 && (
+              <div className="col-span-3">
+                <p className="px-1 text-xs text-muted-foreground">
+                  Otros{" "}
+                  <strong className="font-mono-num tabular-nums text-foreground">
+                    {formatCents(statement.sinDetalle, card.currency)}
+                  </strong>{" "}
+                  no vienen de compras registradas (por ejemplo, la deuda que tenía la tarjeta al agregarla),
+                  así que no se sabe en qué extracto caen.
+                </p>
+              </div>
+            )}
+          </dl>
+        )}
 
         {/* Qué toca pagar */}
         {owes && (
@@ -209,6 +239,28 @@ export function CardHero({
         </div>
       </div>
     </motion.section>
+  );
+}
+
+function StatementFigure({
+  label,
+  hint,
+  value,
+  currency,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  currency: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-[16px] bg-background/50 px-3 py-2.5 dark:bg-white/5">
+      <dt className="text-[11px] font-bold text-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate font-mono-num text-sm font-bold tabular-nums text-foreground">
+        {formatCents(value, currency)}
+      </dd>
+      <dd className="truncate text-[10px] text-muted-foreground">{hint}</dd>
+    </div>
   );
 }
 

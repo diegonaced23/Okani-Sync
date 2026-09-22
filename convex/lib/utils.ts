@@ -38,36 +38,22 @@ export function assertValidMonth(month: string): void {
   }
 }
 
-// Nombres canónicos de las categorías de sistema — usados para lookup por nombre.
-export const SYSTEM_CATEGORY_PAYMENT_NAME   = "Pago de tarjeta";
-export const SYSTEM_CATEGORY_INTERESTS_NAME = "Gastos financieros";
-
-/** Resuelve el ID de la categoría sistema "Pago de tarjeta" para el usuario dado. */
-export async function getSystemPaymentCategoryId(
+/**
+ * La categoría de sistema «Gastos financieros» del modelo anterior de tarjetas.
+ *
+ * Solo sirve para revertir o migrar movimientos de antes de la fase 3, cuyo
+ * interés se sumó al presupuesto de esa categoría. Lo nuevo usa
+ * `cards.interestCategoryId` (ver `ensureInterestCategory`). Después de la
+ * migración ya no queda ninguna categoría con `isSystem`, y devuelve undefined.
+ */
+export async function getLegacyInterestsCategoryId(
   ctx: MutationCtx | QueryCtx,
   userId: string
 ): Promise<Id<"categories"> | undefined> {
   const cat = await ctx.db
     .query("categories")
     .withIndex("by_user", (q) => q.eq("userId", userId))
-    .filter((q) =>
-      q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), SYSTEM_CATEGORY_PAYMENT_NAME))
-    )
-    .first();
-  return cat?._id;
-}
-
-/** Resuelve el ID de la categoría sistema "Gastos financieros" para el usuario dado. */
-export async function getSystemInterestsCategoryId(
-  ctx: MutationCtx | QueryCtx,
-  userId: string
-): Promise<Id<"categories"> | undefined> {
-  const cat = await ctx.db
-    .query("categories")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .filter((q) =>
-      q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), SYSTEM_CATEGORY_INTERESTS_NAME))
-    )
+    .filter((q) => q.and(q.eq(q.field("isSystem"), true), q.eq(q.field("name"), "Gastos financieros")))
     .first();
   return cat?._id;
 }

@@ -15,6 +15,7 @@ import {
   deleteTransactionWithEffects,
 } from "./lib/transactionEffects";
 import { getUserRateMap, convertAmount } from "./lib/money";
+import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
 import {
   ACCRUAL_EXPENSE_TYPES,
   isAccrualExpense,
@@ -87,9 +88,10 @@ export const listRecent = query({
     const clerkId = await getCurrentUserId(ctx);
     const safeLimit = Math.min(Math.max(1, Math.floor(limit)), 100);
 
-    // Pool grande: las gasto_tarjeta tienen date = fecha de vencimiento (futura),
-    // lo que las desplaza al tope del índice by_user_date. Tomamos más candidatos
-    // para asegurar suficiente variedad tras reordenar por fecha real.
+    // Pool grande: las gasto_tarjeta del modelo anterior (sin `cardChargeKind`)
+    // tienen date = fecha de la cuota, futura, y se amontonan al tope del índice
+    // by_user_date. Tomamos más candidatos para tener variedad tras reordenar.
+    // Las del modelo nuevo se crean al facturarse, con su fecha real.
     const candidates = await ctx.db
       .query("transactions")
       .withIndex("by_user_date", (q) => q.eq("userId", clerkId))
@@ -98,12 +100,12 @@ export const listRecent = query({
 
     type TxWithEffectiveDate = (typeof candidates)[number] & { date: number };
 
-    // Separar gasto_tarjeta del resto para batch-resolverlos en paralelo
-    const cardCandidates = candidates.filter(
-      tx => tx.type === "gasto_tarjeta" && tx.cardInstallmentId != null
-    );
+    // Separar las gasto_tarjeta antiguas del resto para batch-resolverlas en paralelo
+    const isLegacyCardTx = (tx: (typeof candidates)[number]) =>
+      tx.type === "gasto_tarjeta" && tx.cardInstallmentId != null && tx.cardChargeKind === undefined;
+    const cardCandidates = candidates.filter(isLegacyCardTx);
     const nonCardTxs = candidates.filter(
-      tx => tx.type !== "gasto_tarjeta"
+      tx => !isLegacyCardTx(tx)
     ) as TxWithEffectiveDate[];
 
     // Batch 1: resolver todas las cuotas a la vez (evita N awaits serializados)
@@ -623,14 +625,44 @@ export const update = mutation({
       return;
     }
 
-    // gasto_tarjeta vinculado a cuota: solo editar descripción y notas.
-    // La categoría NO se permite aquí: el presupuesto se calculó al crear la compra
-    // con split principal/interés (ver cardPurchases.createPurchase); revertir/aplicar
-    // con tx.amount completo (como hace este bloque más abajo) corrompería budget.spent
-    // en compras con interés. Cambiar la categoría debe ir vía cardPurchases.updatePurchase,
-    // que sí replica el split correcto en todas las cuotas de la compra.
+    // Interés de una cuota: se puede ajustar el monto al del extracto del banco
+    // (el calculado es una estimación). La diferencia va a la deuda de la tarjeta y
+    // al presupuesto, y la cuota guarda el interés real para que lo que debe cuadre.
+    if (tx.type === "gasto_tarjeta" && tx.cardChargeKind === "interes") {
+      if (fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined || fields.categoryId !== undefined || clearCategory) {
+        throw new Error("Del interés de una cuota solo se pueden cambiar el monto, la descripción y las notas.");
+      }
+      const now = Date.now();
+      const diff = fields.amount !== undefined ? fields.amount - tx.amount : 0;
+      if (diff !== 0) {
+        if (tx.cardId) await applyCardDelta(ctx, tx.cardId, diff);
+        if (tx.categoryId) await applyBudgetDelta(ctx, tx.userId, tx.categoryId, tx.month, diff, tx.currency);
+        if (tx.cardInstallmentId) {
+          const inst = await ctx.db.get(tx.cardInstallmentId);
+          if (inst) {
+            const interestAmount = fields.amount!;
+            await ctx.db.patch(inst._id, {
+              interestAmount,
+              amount: (inst.principalAmount ?? inst.amount) + interestAmount,
+            });
+          }
+        }
+      }
+      const patch: Record<string, unknown> = { updatedAt: now };
+      if (fields.amount !== undefined) patch.amount = fields.amount;
+      if (fields.description !== undefined) patch.description = fields.description;
+      if (clearNotes) patch.notes = undefined;
+      else if (fields.notes !== undefined) patch.notes = fields.notes;
+      await ctx.db.patch(transactionId, patch);
+      if (diff !== 0 && tx.cardId) await recomputeInstallmentsPaid(ctx, tx.cardId);
+      return;
+    }
+
+    // Capital de una cuota: solo descripción y notas. El monto, la fecha y la
+    // categoría salen de la compra; se cambian editando la compra, que rehace el
+    // cronograma y mueve el presupuesto de todas sus cuotas a la vez.
     if (tx.type === "gasto_tarjeta" && tx.cardInstallmentId) {
-      if (fields.amount !== undefined || fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined || fields.categoryId !== undefined) {
+      if (fields.amount !== undefined || fields.accountId !== undefined || fields.cardId !== undefined || fields.date !== undefined || fields.categoryId !== undefined || clearCategory) {
         throw new Error("Los gastos con tarjeta vinculados a una cuota solo permiten editar la descripción y las notas. Para cambiar la categoría o datos financieros, edita la compra directamente.");
       }
     }
@@ -766,6 +798,11 @@ export const remove = mutation({
     // en el registro, por lo que no es posible revertirlo con seguridad.
     if (tx.type === "ajuste") {
       throw new Error("No se puede eliminar una reasignación. Crea una nueva reasignación si necesitas corregir el saldo.");
+    }
+    // Una cuota (o su interés) es parte del cronograma de una compra: borrarla sola
+    // dejaría la compra, la deuda y los pagos descuadrados.
+    if (tx.type === "gasto_tarjeta" && tx.cardInstallmentId) {
+      throw new Error("Este movimiento es una cuota de una compra con tarjeta. Para quitarlo, elimina o edita la compra.");
     }
     await deleteTransactionWithEffects(ctx, tx);
   },

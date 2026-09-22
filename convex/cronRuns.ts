@@ -1,10 +1,10 @@
 /**
  * Despachador de los trabajos programados: ejecuta el job y deja constancia.
  *
- * Siete de los nueve crons apuntan aquí en lugar de a su función directamente.
- * Se hace así, y no envolviendo cada una de las siete funciones, para que la
+ * Ocho de los diez crons apuntan aquí en lugar de a su función directamente.
+ * Se hace así, y no envolviendo cada una de las ocho funciones, para que la
  * lógica del latido —registrar, capturar el error, podar el historial— exista
- * en un solo sitio. Siete copias divergen.
+ * en un solo sitio. Ocho copias divergen.
  *
  * Los otros dos (`captureNetWorth` y `rolloverBudgets`) siguen siendo destino
  * directo del cron y registran su propio latido: son mutations, y pasarlas por
@@ -19,7 +19,7 @@ import { CRON_JOBS, JOBS_CON_LATIDO_PROPIO, type JobDespachado } from "./lib/cro
 import { registrarEjecucion, truncarError } from "./lib/cronHeartbeat";
 
 /**
- * Identificadores que este módulo acepta: solo los siete que despacha.
+ * Identificadores que este módulo acepta: solo los ocho que despacha.
  *
  * Se listan explícitos en vez de derivarse de `CRON_JOBS` para que sean
  * literales que Convex pueda validar, pero no pueden desincronizarse en
@@ -35,6 +35,7 @@ const jobDespachadoValidator = v.union(
   v.literal("sendWeeklySummary"),
   v.literal("sendMonthlySummary"),
   v.literal("recomputeUserStats"),
+  v.literal("billCardInstallments"),
 );
 
 export const record = internalMutation({
@@ -136,6 +137,11 @@ async function dispatch(ctx: ActionCtx, job: JobDespachado): Promise<void> {
       // una ejecución (la garantía "como mucho una vez" de una action) se cura
       // sola al día siguiente. No hay dato irrecuperable en juego.
       await ctx.runMutation(internal.adminStats.recomputeAll, {});
+      return;
+    case "billCardInstallments":
+      // Idempotente: una cuota facturada no vuelve a salir. Un día perdido se
+      // factura al siguiente, así que «como mucho una vez» no pierde datos.
+      await ctx.runMutation(internal.cardBilling.billDue, {});
       return;
     default: {
       const sinManejar: never = job;

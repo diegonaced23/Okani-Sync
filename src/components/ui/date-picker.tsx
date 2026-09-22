@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format, parseISO, isValid } from "date-fns"
+import { addYears, endOfYear, format, parseISO, isValid } from "date-fns"
 import { es } from "date-fns/locale"
 import { CalendarIcon } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
@@ -20,6 +20,11 @@ interface DatePickerProps {
   style?: React.CSSProperties
 }
 
+// Con captionLayout="dropdown", react-day-picker corta el selector de año en
+// el año actual si no recibe endMonth. Fechas límite y plazos viven en el
+// futuro, así que se abre el rango con margen.
+const YEARS_AHEAD = 30
+
 export function DatePicker({ value, onChange, id, required, className, style }: DatePickerProps) {
   const isDesktop = useMediaQuery("(min-width: 768px)")
   const [open, setOpen] = React.useState(false)
@@ -35,7 +40,7 @@ export function DatePicker({ value, onChange, id, required, className, style }: 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
-        className={cn("w-full appearance-none", className)}
+        className={cn("w-full min-w-0 appearance-none", className)}
         style={style}
       />
     )
@@ -48,15 +53,17 @@ export function DatePicker({ value, onChange, id, required, className, style }: 
         aria-required={required}
         className={cn(
           buttonVariants({ variant: "outline" }),
-          "w-full justify-start text-left font-normal",
+          "w-full min-w-0 justify-start overflow-hidden text-left font-normal",
           !validDate && "text-muted-foreground",
           className
         )}
       >
         <CalendarIcon className="mr-2 h-4 w-4" />
-        {validDate
-          ? format(validDate, "d 'de' MMMM yyyy", { locale: es })
-          : "Seleccionar fecha"}
+        <span className="truncate">
+          {validDate
+            ? format(validDate, "d MMM yyyy", { locale: es })
+            : "Seleccionar fecha"}
+        </span>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         <Calendar
@@ -69,6 +76,7 @@ export function DatePicker({ value, onChange, id, required, className, style }: 
           locale={es}
           captionLayout="dropdown"
           defaultMonth={validDate ?? new Date()}
+          endMonth={endOfYear(addYears(new Date(), YEARS_AHEAD))}
         />
       </PopoverContent>
     </Popover>

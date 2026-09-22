@@ -90,7 +90,8 @@ export function CardPurchaseDetailSheet({
   const totalCount  = purchase?.totalInstallments ?? 1;
   const progress    = totalCount > 0 ? (paidCount / totalCount) * 100 : 0;
 
-  const amountPaid    = (installments ?? []).filter((i) => i.paid).reduce((s, i) => s + i.amount, 0);
+  // Incluye los abonos parciales; una cuota antigua sin `paidAmount` cuenta entera si está pagada
+  const amountPaid    = (installments ?? []).reduce((s, i) => s + (i.paidAmount ?? (i.paid ? i.amount : 0)), 0);
   const amountPending = (purchase?.totalWithInterest ?? 0) - amountPaid;
 
   const currentInstallment = (installments ?? []).find(

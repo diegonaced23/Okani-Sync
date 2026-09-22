@@ -21,6 +21,9 @@ export const CRON_JOBS = [
   // y diario, así que perder una ejecución se cura sola al día siguiente. No
   // hay dato irrecuperable en juego, a diferencia de captureNetWorth.
   { id: "recomputeUserStats", label: "Contadores del panel", everyMs: 24 * 60 * 60 * 1000 },
+  // Por el despachador por el mismo motivo: es idempotente (una cuota facturada no
+  // vuelve a salir), así que un día perdido se factura al siguiente.
+  { id: "billCardInstallments", label: "Facturación de cuotas de tarjeta", everyMs: 24 * 60 * 60 * 1000 },
 ] as const;
 
 export type CronJobId = (typeof CRON_JOBS)[number]["id"];
@@ -48,5 +51,5 @@ export const JOBS_CON_LATIDO_PROPIO = ["captureNetWorth", "rolloverBudgets"] as 
 
 export type JobConLatidoPropio = (typeof JOBS_CON_LATIDO_PROPIO)[number];
 
-/** Los siete jobs que sí ejecuta el despachador de `convex/cronRuns.ts`. */
+/** Los ocho jobs que sí ejecuta el despachador de `convex/cronRuns.ts`. */
 export type JobDespachado = Exclude<CronJobId, JobConLatidoPropio>;

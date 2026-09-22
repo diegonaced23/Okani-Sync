@@ -46,7 +46,7 @@ export const listByCardMonth = query({
 /**
  * Todas las cuotas de una tarjeta (pagadas + pendientes), enriquecidas con la
  * descripción y el total de cuotas de la compra correspondiente.
- * Usadas por la simulación FIFO client-side en el formulario de pago.
+ * Usadas por la vista previa del pago (`simulateCardPayment`) en la hoja de pago.
  */
 export const listAllByCard = query({
   args: { cardId: v.id("cards") },
@@ -81,6 +81,12 @@ export const listAllByCard = query({
         month: inst.month,
         paid: inst.paid,
         paidAt: inst.paidAt,
+        // Lo que necesita `simulateCardPayment` para saber cuánto debe cada cuota
+        principalAmount: inst.principalAmount,
+        interestAmount: inst.interestAmount,
+        interestBilling: inst.interestBilling,
+        billedAt: inst.billedAt,
+        paidAmount: inst.paidAmount,
         installmentNumber: inst.installmentNumber,
         totalInstallments: purchase.totalInstallments,
         description:

@@ -97,6 +97,10 @@ export interface InstallmentLike {
   principalAmount?: number;
   interestAmount?: number;
   remainingPrincipal?: number;
+  /** Lo abonado (admite pagos parciales) */
+  paidAmount?: number;
+  /** Lo que la cuota debe hoy: sin intereses aún no cobrados ni lo abonado */
+  remaining?: number;
 }
 
 /**

@@ -13,12 +13,13 @@ import { AppSheetFooter } from "@/components/ui/app-sheet";
 import { MoneyAmountField } from "./MoneyAmountField";
 import { CategorySelect } from "./CategorySelect";
 import { toast } from "sonner";
-import { addMonthsClamped, toCents, dateStrToTs, parseMoneyInput, formatCents } from "@/lib/money";
+import { toCents, dateStrToTs, parseMoneyInput, formatCents } from "@/lib/money";
 import { buildTxConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 
 const FORM_ID = "tx-card-form";
 
@@ -58,9 +59,7 @@ export function CardPurchaseFields({
   const [showNotes, setShowNotes] = useState(false);
 
   // Las compras con tarjeta siempre son de tipo "gasto"
-  const filteredCategories = (categories ?? []).filter(
-    (c) => c.type === "gasto" || c.type === "ambos"
-  );
+  const filteredCategories = selectableCategories(categories ?? [], "gasto");
 
   const amountPreview = parseMoneyInput(amount);
   const saveLabel = amountPreview > 0
@@ -85,11 +84,6 @@ export function CardPurchaseFields({
     }
     setFieldErrors({});
 
-    // Primera cuota: un mes después de la fecha de compra. Con `setMonth` a pelo, una
-    // compra del 31 de enero daba el 3 de marzo y todo el cronograma quedaba corrido;
-    // `addMonthsClamped` recorta al último día real del mes destino.
-    const firstInstallmentDate = addMonthsClamped(dateStrToTs(date), 1);
-
     setLoading(true);
     try {
       await createPurchase({
@@ -100,8 +94,8 @@ export function CardPurchaseFields({
         totalInstallments: nInstallments,
         hasInterest,
         interestRate: hasInterest ? rate : undefined,
+        // Las fechas de las cuotas las calcula el backend desde el corte de la tarjeta
         purchaseDate: dateStrToTs(date),
-        firstInstallmentDate,
         // `createPurchase` acepta notas y el formulario de edición ya las tenía
         notes: notes.trim() || undefined,
       });

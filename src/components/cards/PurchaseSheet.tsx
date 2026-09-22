@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { EASE_OUT_EXPO, SPRING, haptic, tint, type Purchase } from "./shared";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 
 /** Números de cuotas que ofrecen los bancos; el resto se escribe a mano. */
 const COMMON_INSTALLMENTS = [1, 3, 6, 12, 24, 36];
@@ -131,7 +132,6 @@ function PurchaseFields({
     e.preventDefault();
     if (!canSubmit) return;
     setStatus("saving");
-    const firstInstallmentDate = new Date(`${date}T12:00:00`).getTime();
     try {
       if (isEdit) {
         await updatePurchase({
@@ -146,7 +146,6 @@ function PurchaseFields({
             hasInterest,
             interestRate: hasInterest ? rate : undefined,
             purchaseDate: dateStrToTs(date),
-            firstInstallmentDate,
           }),
         });
       } else {
@@ -158,8 +157,8 @@ function PurchaseFields({
           totalInstallments: count,
           hasInterest,
           interestRate: hasInterest ? rate : undefined,
+          // Las fechas de las cuotas las calcula el backend desde el corte de la tarjeta
           purchaseDate: dateStrToTs(date),
-          firstInstallmentDate,
           notes: notes.trim() || undefined,
         });
       }
@@ -362,7 +361,7 @@ function PurchaseFields({
           >
             Sin categoría
           </button>
-          {(categories ?? []).map((c) => {
+          {selectableCategories(categories ?? [], "gasto", purchase?.categoryId).map((c) => {
             const active = categoryId === c._id;
             return (
               <button

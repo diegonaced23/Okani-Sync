@@ -19,6 +19,7 @@ import { formatCents, formatMonth, fromCents, toCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { type Budget, ratioOf } from "./shared";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 
 /** Atajos de umbral: los porcentajes que la gente elige de verdad. */
 const THRESHOLDS = [60, 70, 80, 90, 95];
@@ -92,7 +93,7 @@ function BudgetFields({
 
   // Una categoría solo puede tener un presupuesto por mes: las que ya lo tienen se ocultan
   const taken = new Set((existing ?? []).map((b) => b.categoryId));
-  const options = (categories ?? []).filter((c) => !taken.has(c._id));
+  const options = selectableCategories(categories ?? [], "gasto").filter((c) => !taken.has(c._id));
   const selected = isEdit
     ? { name: budget.categoryName ?? "Sin categoría", color: budget.categoryColor ?? "var(--os-lime)", icon: budget.categoryIcon ?? "tag" }
     : (() => {

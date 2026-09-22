@@ -231,6 +231,12 @@ export default defineSchema({
     // Excluir del patrimonio neto. Optativo a propósito: las filas que ya existen
     // no lo traen y se leen como incluidas (`!== false`), igual que en `accounts`.
     includeInBalance: v.optional(v.boolean()),
+    // Cuenta de cobro: la que sale preseleccionada al pagar (y la que usará el pago
+    // automático). Optativa: las tarjetas existentes no la traen.
+    billingAccountId: v.optional(v.id("accounts")),
+    // Categoría donde van los intereses de esta tarjeta («Gastos financieros» por
+    // defecto). Se guarda el id para no buscar nunca por nombre.
+    interestCategoryId: v.optional(v.id("categories")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -287,10 +293,21 @@ export default defineSchema({
     month: v.string(),
     paid: v.boolean(),
     paidAt: v.optional(v.number()),
+    // Lo abonado a esta cuota (centavos). Permite pagos parciales; `paid` se deriva
+    // de él en `recomputeInstallmentsPaid`. Sin él (cuotas antiguas), manda `paid`.
+    paidAmount: v.optional(v.number()),
+    // "at_cutoff": el interés de la cuota se cobra cuando se factura (modelo de la
+    // fase 3). Sin él, la cuota es del modelo anterior y su interés ya estaba en la
+    // deuda desde la compra. La migración `migrateCardInterestModel` lo pone.
+    interestBilling: v.optional(v.literal("at_cutoff")),
+    // Cuándo se facturó: se registraron su gasto y su interés. Lo pone el cron
+    // `billCardInstallments` (o la compra misma si la cuota ya tocaba).
+    billedAt: v.optional(v.number()),
     transactionId: v.optional(v.id("transactions")),
     createdAt: v.number(),
   })
     .index("by_purchase", ["purchaseId"])
+    .index("by_billing_due", ["interestBilling", "billedAt", "dueDate"])
     .index("by_user_month", ["userId", "month"])
     .index("by_card_month", ["cardId", "month"])
     .index("by_user_paid", ["userId", "paid"]),
@@ -446,6 +463,9 @@ export default defineSchema({
 
     cardPurchaseId: v.optional(v.id("cardPurchases")),
     cardInstallmentId: v.optional(v.id("cardInstallments")),
+    // Qué es una gasto_tarjeta ligada a una cuota: el capital de la cuota o su
+    // interés. Sin él, gasto_tarjeta del modelo anterior (cuota entera).
+    cardChargeKind: v.optional(v.union(v.literal("cuota"), v.literal("interes"))),
     debtId: v.optional(v.id("debts")),
     loanId: v.optional(v.id("loans")),
     goalId: v.optional(v.id("goals")),      // gasto vinculado a meta de ahorro (ahorro en casa)

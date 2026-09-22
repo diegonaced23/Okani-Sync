@@ -1,10 +1,15 @@
-import { query, mutation, internalQuery } from "./_generated/server";
+import { query, mutation, internalQuery, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { getCurrentUser, getCurrentUserId } from "./lib/auth";
-import { toMonthString, getSystemPaymentCategoryId } from "./lib/utils";
+import { toMonthString } from "./lib/utils";
+import { ensureInterestCategory } from "./lib/cardBilling";
+import { installmentRemaining } from "../src/lib/cardPayments";
 import { recomputeInstallmentsPaid, getBillingCycleDates, getNextPaymentTs } from "./lib/cardHelpers";
-import { deleteTransactionWithEffects } from "./lib/transactionEffects";
+import { applyAccountDelta, deleteTransactionWithEffects } from "./lib/transactionEffects";
+import { assertCanWrite } from "./lib/permissions";
 import { convertAmount, getUserRateMap } from "./lib/money";
+import { computeStatement } from "./lib/cardStatement";
 
 export const list = query({
   args: {},
@@ -66,11 +71,14 @@ export const overview = query({
       .take(200);
 
     let debt = 0;
+    // Solo las que suman al total: es la cifra que se resta de lo que tienes en Productos
+    let includedDebt = 0;
     let limit = 0;
     let available = 0;
     let overUsedCount = 0;
     for (const c of cards) {
       debt += conv(c.currentBalance, c.currency);
+      if (c.includeInBalance !== false) includedDebt += conv(c.currentBalance, c.currency);
       limit += conv(c.creditLimit, c.currency);
       available += conv(c.availableCredit, c.currency);
       if (c.creditLimit > 0 && c.currentBalance / c.creditLimit >= 0.8) overUsedCount += 1;
@@ -79,6 +87,7 @@ export const overview = query({
     return {
       currency: preferredCurrency,
       debt,
+      includedDebt,
       limit,
       available,
       count: cards.length,
@@ -124,6 +133,7 @@ export const create = mutation({
     color: v.string(),
     icon: v.string(),
     notes: v.optional(v.string()),
+    billingAccountId: v.optional(v.id("accounts")),
   },
   handler: async (ctx, args) => {
     if (args.name.length === 0 || args.name.length > 100) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
@@ -141,6 +151,8 @@ export const create = mutation({
     if (args.notes !== undefined && args.notes.length > 500) throw new Error("Las notas no pueden superar 500 caracteres");
 
     const user = await getCurrentUser(ctx);
+    if (args.billingAccountId) await assertBillingAccount(ctx, args.billingAccountId, args.currency);
+    const interestCategoryId = await ensureInterestCategory(ctx, user.clerkId);
     const now = Date.now();
     return await ctx.db.insert("cards", {
       userId: user.clerkId,
@@ -159,11 +171,28 @@ export const create = mutation({
       icon: args.icon,
       archived: false,
       notes: args.notes,
+      billingAccountId: args.billingAccountId,
+      interestCategoryId,
       createdAt: now,
       updatedAt: now,
     });
   },
 });
+
+/**
+ * La cuenta de cobro tiene que poder pagar la tarjeta: el usuario debe poder
+ * escribir en ella (mismo criterio que `payCard`) y estar en la misma moneda,
+ * porque el pago no convierte.
+ */
+async function assertBillingAccount(ctx: MutationCtx, accountId: Id<"accounts">, currency: string) {
+  await assertCanWrite(ctx, accountId);
+  const account = await ctx.db.get(accountId);
+  if (!account) throw new Error("Cuenta no encontrada");
+  if (account.archived) throw new Error("La cuenta de cobro no puede estar archivada");
+  if (account.currency !== currency) {
+    throw new Error(`La cuenta de cobro usa ${account.currency} pero la tarjeta es en ${currency}`);
+  }
+}
 
 export const update = mutation({
   args: {
@@ -176,8 +205,14 @@ export const update = mutation({
     paymentDay: v.optional(v.number()),
     color: v.optional(v.string()),
     notes: v.optional(v.string()),
+    billingAccountId: v.optional(v.id("accounts")),
+    /** true deja la tarjeta sin cuenta de cobro: en un patch parcial, omitir el campo es «no tocar». */
+    clearBillingAccount: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cardId, creditLimit, ...fields }) => {
+  handler: async (ctx, { cardId, creditLimit, clearBillingAccount, ...fields }) => {
+    if (clearBillingAccount && fields.billingAccountId !== undefined) {
+      throw new Error("No se puede asignar y quitar la cuenta de cobro a la vez");
+    }
     if (fields.name !== undefined && (fields.name.length === 0 || fields.name.length > 100)) throw new Error("El nombre debe tener entre 1 y 100 caracteres");
     if (creditLimit !== undefined && (creditLimit <= 0 || !Number.isFinite(creditLimit))) throw new Error("El límite de crédito debe ser mayor que cero");
     if (fields.cutoffDay !== undefined && (fields.cutoffDay < 1 || fields.cutoffDay > 31)) throw new Error("El día de corte debe estar entre 1 y 31");
@@ -188,11 +223,14 @@ export const update = mutation({
     const user = await getCurrentUser(ctx);
     const card = await ctx.db.get(cardId);
     if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
+    if (fields.billingAccountId) await assertBillingAccount(ctx, fields.billingAccountId, card.currency);
 
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [k, v] of Object.entries(fields)) {
       if (v !== undefined) patch[k] = v;
     }
+    // undefined en un patch de Convex borra el campo
+    if (clearBillingAccount) patch.billingAccountId = undefined;
     if (creditLimit !== undefined) {
       patch.creditLimit = creditLimit;
       patch.availableCredit = creditLimit - card.currentBalance;
@@ -303,6 +341,9 @@ export const payCard = mutation({
     if (!card || card.userId !== user.clerkId) throw new Error("Tarjeta no encontrada");
     if (card.currentBalance <= 0) throw new Error("La tarjeta no tiene deuda pendiente");
 
+    // Autorizar ANTES de leer la cuenta: sin esto, cualquiera que conociera un
+    // accountId ajeno podía pagar su tarjeta con el dinero de esa cuenta.
+    await assertCanWrite(ctx, args.fromAccountId);
     const account = await ctx.db.get(args.fromAccountId);
     if (!account) throw new Error("Cuenta no encontrada");
     if (account.currency !== card.currency) {
@@ -314,8 +355,6 @@ export const payCard = mutation({
     const month = toMonthString(paymentDate);
     const now = Date.now();
 
-    const categoryId = await getSystemPaymentCategoryId(ctx, user.clerkId);
-
     await ctx.db.insert("transactions", {
       userId: user.clerkId,
       type: "pago_tarjeta",
@@ -326,7 +365,8 @@ export const payCard = mutation({
       currency: card.currency,
       accountId: args.fromAccountId,
       cardId: args.cardId,
-      categoryId,
+      // Sin categoría: pagar la tarjeta mueve dinero entre dos cuentas tuyas, no es
+      // un gasto. La etiqueta «Pago de tarjeta» la pone el tipo (tx-type-config.ts).
       notes: args.notes,
       status: "completada",
       isRecurring: false,
@@ -335,10 +375,7 @@ export const payCard = mutation({
     });
 
     // Descontar de la cuenta
-    await ctx.db.patch(args.fromAccountId, {
-      balance: account.balance - paymentAmount,
-      updatedAt: now,
-    });
+    await applyAccountDelta(ctx, args.fromAccountId, -paymentAmount);
 
     // Reducir deuda de la tarjeta
     const newBalance = Math.max(0, card.currentBalance - paymentAmount);
@@ -350,76 +387,6 @@ export const payCard = mutation({
 
     // Recalcular estado de cuotas FIFO
     await recomputeInstallmentsPaid(ctx, args.cardId);
-  },
-});
-
-/**
- * Calcula el pago mínimo y el pago total recomendado para la tarjeta.
- *
- * Pago mínimo: suma de cuotas no pagadas cuyo vencimiento cae dentro del
- * ciclo de facturación actual (entre el corte anterior y el próximo corte).
- *
- * Pago total: para compras SIN interés → paga todas las cuotas restantes de una vez;
- * para compras CON interés → solo la cuota actual (capital + interés del período),
- * ya que las futuras aún no devengan.
- */
-export const getPaymentSummary = query({
-  args: { cardId: v.id("cards") },
-  handler: async (ctx, { cardId }) => {
-    const clerkId = await getCurrentUserId(ctx);
-    const card = await ctx.db.get(cardId);
-    if (!card || card.userId !== clerkId) return null;
-
-    // Sin deuda no hay nada que calcular
-    if (card.currentBalance <= 0) {
-      return { minimumPayment: 0, totalPayment: 0, currency: card.currency };
-    }
-
-    const { prevCutoffTs, nextCutoffTs } = getBillingCycleDates(card.cutoffDay);
-
-    // Compras activas de esta tarjeta
-    const activePurchases = await ctx.db
-      .query("cardPurchases")
-      .withIndex("by_card", (q) => q.eq("cardId", cardId))
-      .filter((q) => q.eq(q.field("status"), "activa"))
-      .collect();
-
-    let minimumPayment = 0;
-    let totalPayment = 0;
-
-    for (const purchase of activePurchases) {
-      // Cuotas no pagadas de esta compra ordenadas de más antigua a más reciente
-      const unpaid = await ctx.db
-        .query("cardInstallments")
-        .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
-        .filter((q) => q.eq(q.field("paid"), false))
-        .collect();
-
-      unpaid.sort((a, b) => a.dueDate - b.dueDate);
-
-      // Pago mínimo: cuotas cuya fecha de vencimiento cae dentro del ciclo actual
-      for (const inst of unpaid) {
-        if (inst.dueDate > prevCutoffTs && inst.dueDate <= nextCutoffTs) {
-          minimumPayment += inst.amount;
-        }
-      }
-
-      // Pago total según si la compra genera interés
-      if (purchase.hasInterest) {
-        // Con interés: solo la cuota más antigua pendiente (capital + interés del período).
-        // No conviene pagar anticipado porque el interés de cuotas futuras ya está fijo.
-        if (unpaid.length > 0) {
-          totalPayment += unpaid[0].amount;
-        }
-      } else {
-        // Sin interés: paga todo lo que queda de una vez sin penalidad
-        for (const inst of unpaid) {
-          totalPayment += inst.amount;
-        }
-      }
-    }
-
-    return { minimumPayment, totalPayment, currency: card.currency };
   },
 });
 
@@ -480,8 +447,9 @@ export const getCardDetailData = query({
     // Mapa id → cuota para lookup rápido
     const installmentById: Record<string, (typeof installmentsByPurchase)[string][number]> = {};
 
-    let minimumPayment = 0;
     let totalPayment = 0;
+    // Lo que cada cuota debe hoy, para repartir el saldo (computeStatement)
+    const allInstallments: { remaining: number; dueDate: number }[] = [];
 
     for (const purchase of allPurchases) {
       const installments = await ctx.db
@@ -505,12 +473,15 @@ export const getCardDetailData = query({
         principalAmount: i.principalAmount,
         interestAmount: i.interestAmount,
         remainingPrincipal: i.remainingPrincipal,
+        paidAmount: i.paidAmount,
+        remaining: installmentRemaining(i),
       }));
 
       for (const inst of installments) {
         installmentById[inst._id] = installmentsByPurchase[purchase._id].find(
           (i) => i._id === inst._id
         )!;
+        allInstallments.push({ remaining: installmentRemaining(inst), dueDate: inst.dueDate });
       }
 
       // Cuotas no pagadas ordenadas de más antigua a más reciente (FIFO)
@@ -521,18 +492,20 @@ export const getCardDetailData = query({
       for (const inst of unpaid) {
         if (inst.dueDate <= prevCutoffTs) {
           overdueCuotas.push(inst._id);
-          // El pago mínimo son las cuotas del ciclo cerrado (no las del ciclo en curso)
-          minimumPayment += inst.amount;
         } else if (inst.dueDate <= nextCutoffTs) {
           currentCycleCuotas.push(inst._id);
         }
       }
 
-      // Pago total: sin interés → todas las cuotas; con interés → solo la más antigua
-      if (purchase.hasInterest) {
-        if (unpaid.length > 0) totalPayment += unpaid[0].amount;
+      // Atajo «Pagar total»: lo que la compra debe hoy. En el modelo nuevo es su
+      // capital pendiente más los intereses ya cobrados, así que suma la deuda real.
+      // Una compra del modelo anterior (sin migrar) tiene en la deuda los intereses
+      // de todas sus cuotas: con interés, solo se ofrece la cuota más antigua.
+      const legacy = installments.some((i) => i.interestBilling !== "at_cutoff");
+      if (legacy && purchase.hasInterest) {
+        if (unpaid.length > 0) totalPayment += installmentRemaining(unpaid[0]);
       } else {
-        for (const inst of unpaid) totalPayment += inst.amount;
+        for (const inst of unpaid) totalPayment += installmentRemaining(inst);
       }
     }
 
@@ -544,6 +517,17 @@ export const getCardDetailData = query({
     currentCycleCuotas.sort(
       (a, b) => (installmentById[a]?.dueDate ?? 0) - (installmentById[b]?.dueDate ?? 0)
     );
+
+    // El pago mínimo es lo que queda del extracto cerrado (ya descontados los abonos parciales)
+    const statement = computeStatement({
+      installments: allInstallments,
+      currentBalance: card.currentBalance,
+      prevCutoffTs,
+      nextCutoffTs,
+    });
+    const minimumPayment = statement.porPagar;
+    // La deuda que no viene de compras (p. ej. la inicial) también se paga con el total
+    totalPayment += statement.sinDetalle;
 
     // Compras hechas en el ciclo en curso (para el tab "Ciclo actual"), desc por fecha
     const purchasesInCurrentCycle = allPurchases
@@ -568,6 +552,7 @@ export const getCardDetailData = query({
       installmentsByPurchase,
       minimumPayment,
       totalPayment,
+      statement,
       // El pago mínimo está vencido solo si el día de pago de la tarjeta ya pasó
       isPaymentOverdue: Date.now() > prevPaymentTs,
     };
@@ -605,14 +590,22 @@ export const remove = mutation({
       }
     }
 
-    // 3. Registros de compras — sus gasto_tarjeta e installments ya fueron eliminados.
+    // 3. Cronogramas: las cuotas aún sin facturar no tienen movimiento, así que no
+    //    las borró el paso 1.
+    const leftInstallments = await ctx.db
+      .query("cardInstallments")
+      .withIndex("by_card_month", (q) => q.eq("cardId", cardId))
+      .collect();
+    for (const inst of leftInstallments) await ctx.db.delete(inst._id);
+
+    // 4. Registros de compras — sus movimientos y cuotas ya fueron eliminados.
     const purchases = await ctx.db
       .query("cardPurchases")
       .withIndex("by_card", (q) => q.eq("cardId", cardId))
       .collect();
     for (const purchase of purchases) await ctx.db.delete(purchase._id);
 
-    // 4. Transacciones recurrentes que referencien esta tarjeta
+    // 5. Transacciones recurrentes que referencien esta tarjeta
     const recurring = await ctx.db
       .query("recurringTransactions")
       .withIndex("by_user", (q) => q.eq("userId", user.clerkId))
@@ -623,7 +616,7 @@ export const remove = mutation({
       }
     }
 
-    // 5. La tarjeta
+    // 6. La tarjeta
     await ctx.db.delete(cardId);
   },
 });

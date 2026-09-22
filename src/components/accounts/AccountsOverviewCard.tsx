@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { EyeOff, TrendingDown } from "lucide-react";
 import { formatCents } from "@/lib/money";
+import { formatCardBalance } from "@/lib/cardCycle";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_META } from "./accountTypes";
 import { EASE_OUT_EXPO, GLASS_SURFACE, GROUP_LABELS, GROUP_ORDER, tint } from "./shared";
@@ -22,7 +23,14 @@ export interface AccountsOverview {
  * sola barra: es más fácil ver de un vistazo que el ahorro es una rendija al lado
  * del día a día que comparando cuatro cifras.
  */
-export function AccountsOverviewCard({ data }: { data: AccountsOverview | undefined }) {
+export function AccountsOverviewCard({
+  data,
+  cards,
+}: {
+  data: AccountsOverview | undefined;
+  /** Deuda de las tarjetas que suman al total, ya en la moneda preferida. Sin tarjetas no se pasa. */
+  cards?: { currency: string; includedDebt: number };
+}) {
   const reduce = useReducedMotion();
   if (!data) return <div className={cn("h-[168px] animate-pulse rounded-[28px]", GLASS_SURFACE)} />;
 
@@ -117,6 +125,24 @@ export function AccountsOverviewCard({ data }: { data: AccountsOverview | undefi
           </span>
         )}
       </div>
+
+      {/* Como en Money Manager: lo que tienes, lo que debes en tarjetas y lo que queda */}
+      {cards && cards.currency === currency && (
+        <dl className="relative mt-4 grid grid-cols-2 gap-3 border-t border-border/60 pt-3">
+          <div className="min-w-0">
+            <dt className="text-[11px] font-semibold text-muted-foreground">Debes en tarjetas</dt>
+            <dd className="truncate font-mono-num text-[15px] font-bold tabular-nums text-foreground">
+              {formatCardBalance(cards.includedDebt, currency)}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[11px] font-semibold text-muted-foreground">Te queda si las pagas</dt>
+            <dd className="truncate font-mono-num text-[15px] font-bold tabular-nums text-foreground">
+              {formatCents(total - cards.includedDebt, currency)}
+            </dd>
+          </div>
+        </dl>
+      )}
 
       {data.missingRate && (
         <p className="relative mt-2 text-[11px] text-muted-foreground/80">

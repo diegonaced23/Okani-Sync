@@ -19,6 +19,7 @@ import { buildEditConfirmation } from "@/lib/txConfirmation";
 import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 
 interface TransactionEditFormProps {
   tx: Doc<"transactions">;
@@ -49,20 +50,20 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
   // Los gastos con tarjeta vinculados a una cuota solo permiten editar
   // descripción y categoría — el backend rechaza cualquier otro campo (ver convex/transactions.ts).
   const isLockedCardExpense = tx.type === "gasto_tarjeta" && tx.cardInstallmentId != null;
+  // El interés de una cuota lo calcula la app: se puede ajustar al monto del extracto
+  const isInterestCharge = isLockedCardExpense && tx.cardChargeKind === "interes";
 
   const [sourceKind, sourceRawId] = sourceId.includes(":") ? sourceId.split(":") : ["", ""];
 
   // Solo mostrar categorías que correspondan al tipo de la transacción
-  const filteredCategories = (categories ?? []).filter(
-    (c) => c.type === tx.type || c.type === "ambos"
-  );
+  const filteredCategories = selectableCategories(categories ?? [], tx.type, tx.categoryId);
 
   async function handleSave() {
     // Validación inline para feedback inmediato (en vez de solo un toast transitorio)
     const errors: Record<string, string> = {};
     if (!desc.trim()) errors.description = "La descripción es obligatoria";
 
-    const needsAmountValidation = tx.type !== "transferencia" && !isLockedCardExpense;
+    const needsAmountValidation = tx.type !== "transferencia" && (!isLockedCardExpense || isInterestCharge);
     const amountNum = parseMoneyInput(amount);
     if (needsAmountValidation && (!amountNum || amountNum <= 0)) {
       errors.amount = "El monto debe ser mayor que cero";
@@ -100,8 +101,13 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
     if (isLockedCardExpense) {
       setLoading(true);
       try {
-        await updateTx({ transactionId: tx._id, description: desc.trim() });
-        confirm(buildEditConfirmation({ type: tx.type, amountCents: tx.amount, currency: tx.currency, description: desc }));
+        const newAmount = isInterestCharge ? toCents(amountNum) : tx.amount;
+        await updateTx({
+          transactionId: tx._id,
+          description: desc.trim(),
+          ...(isInterestCharge && newAmount !== tx.amount ? { amount: newAmount } : {}),
+        });
+        confirm(buildEditConfirmation({ type: tx.type, amountCents: newAmount, currency: tx.currency, description: desc }));
       } catch (err) {
         toast.error(errorMessage(err, "Error al actualizar"));
       } finally {
@@ -155,12 +161,14 @@ export function TransactionEditForm({ tx, onSuccess, onCancel }: TransactionEdit
           className="rounded-xl p-3 text-xs text-muted-foreground"
           style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
         >
-          Aquí solo puedes editar la descripción. Para cambiar la categoría, el monto, la fecha o la tarjeta, edita la compra directamente.
+          {isInterestCharge
+            ? "Es el interés que la app calculó para esta cuota. Si tu extracto dice otra cifra, escríbela aquí: la deuda de la tarjeta se ajusta con la diferencia."
+            : "Aquí solo puedes editar la descripción. Para cambiar la categoría, el monto, la fecha o la tarjeta, edita la compra directamente."}
         </div>
       )}
 
       {/* Monto — oculto para transferencias y gasto_tarjeta con cuota */}
-      {tx.type !== "transferencia" && !isLockedCardExpense && (
+      {tx.type !== "transferencia" && (!isLockedCardExpense || isInterestCharge) && (
         <MoneyAmountField
           id="edit-amount"
           label={<>Monto ({tx.currency}) <span aria-hidden="true" className="text-danger">*</span></>}

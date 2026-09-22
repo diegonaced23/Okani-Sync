@@ -21,6 +21,7 @@ import { useAppData } from "@/contexts/app-data";
 import { SaveMovementButton, useSaveConfirmation } from "./SaveMovementButton";
 import { AddChip, DateChip, ExtrasRow, Reveal } from "./FormExtras";
 import { errorMessage } from "@/lib/errorMessage";
+import { selectableCategories } from "@/lib/categories";
 
 const FORM_ID = "tx-form";
 
@@ -66,9 +67,7 @@ export function AccountTransactionFields({
   const [showNotes, setShowNotes] = useState(false);
   const [showGoal, setShowGoal]   = useState(false);
 
-  const filteredCategories = (categories ?? []).filter(
-    (c) => c.type === type || c.type === "ambos"
-  );
+  const filteredCategories = selectableCategories(categories ?? [], type);
   // Metas activas sin cuenta vinculada (disponibles para asociar a un gasto)
   const availableGoals = (goals ?? []).filter(
     (g) => g.status === "activa" && !g.linkedAccountId

@@ -2,10 +2,10 @@ import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
 
 /**
- * Los nueve trabajos dejan constancia de cada ejecución en la tabla `cronRuns`,
+ * Los diez trabajos dejan constancia de cada ejecución en la tabla `cronRuns`,
  * para que el panel de administración pueda avisar si uno dejó de correr.
  *
- * Siete lo consiguen apuntando al despachador `internal.cronRuns.run` con su
+ * Ocho lo consiguen apuntando al despachador `internal.cronRuns.run` con su
  * identificador. Los otros dos —los dos `crons.monthly`— siguen apuntando a su
  * mutation directamente y escriben su propio latido, porque Convex solo
  * garantiza «exactamente una vez» a las mutations programadas: una action se
@@ -90,6 +90,15 @@ crons.daily(
   { hourUTC: 3, minuteUTC: 0 },
   internal.cronRuns.run,
   { job: "recomputeUserStats" }
+);
+
+// Factura las cuotas de tarjeta cuyo corte ya pasó (su gasto y su interés):
+// diario a las 0:30 Colombia (5:30 UTC), antes de las alertas de la mañana.
+crons.daily(
+  "facturar cuotas de tarjeta",
+  { hourUTC: 5, minuteUTC: 30 },
+  internal.cronRuns.run,
+  { job: "billCardInstallments" }
 );
 
 export default crons;

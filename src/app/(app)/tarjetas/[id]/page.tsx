@@ -151,9 +151,10 @@ export default function CardDetailPage({
   // Mismo criterio que las pestañas: la fecha límite es la del ciclo cerrado
   // mientras quede algo facturado sin pagar.
   const billed = data.overdueCuotas.length;
-  const paymentTs = billed > 0 ? data.cycle.prevPaymentTs : data.cycle.nextPaymentTs;
-  // Vencido = pasó el día de pago Y hay algo facturado pendiente
-  const overdue = data.isPaymentOverdue && billed > 0;
+  const owesBilled = data.statement.porPagar > 0;
+  const paymentTs = owesBilled ? data.cycle.prevPaymentTs : data.cycle.nextPaymentTs;
+  // Vencido = pasó el día de pago Y queda algo del extracto cerrado sin pagar
+  const overdue = data.isPaymentOverdue && owesBilled;
 
   return (
     <PageContainer className="space-y-5">
@@ -166,6 +167,7 @@ export default function CardDetailPage({
         billedCount={billed}
         billedAmount={data.minimumPayment}
         currentCycleCount={data.currentCycleCuotas.length}
+        statement={data.statement}
         isPaymentOverdue={overdue}
         onPay={() => setPayOpen(true)}
         onEdit={() => setEditOpen(true)}

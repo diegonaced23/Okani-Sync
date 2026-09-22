@@ -299,15 +299,15 @@ function LoanForm({ loan, onDone, onDeleted }: { loan: Loan | null; onDone: () =
 
       <div className={cn("grid gap-2", isEdit ? "grid-cols-1" : "grid-cols-2")}>
         {!isEdit && (
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label htmlFor={`${formId}-start`} className={FIELD_LABEL}>Prestado el</label>
             <DatePicker id={`${formId}-start`} value={startDate} onChange={setStartDate} required className="h-11 rounded-[14px]" />
           </div>
         )}
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label htmlFor={`${formId}-due`} className={FIELD_LABEL}>Devuelve antes de</label>
           <div className="relative">
-            <DatePicker id={`${formId}-due`} value={dueDate} onChange={setDueDate} className="h-11 rounded-[14px]" />
+            <DatePicker id={`${formId}-due`} value={dueDate} onChange={setDueDate} className={cn("h-11 rounded-[14px]", dueDate && "pr-10")} />
             {dueDate && (
               <button
                 type="button"

@@ -6,10 +6,11 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
-import type { Doc } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { AppSheet, AppSheetFooter } from "@/components/ui/app-sheet";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
+import { SourceChip } from "@/components/ui/source-chip";
 import { MoneyInput } from "@/components/ui/money-input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -95,6 +96,7 @@ function CardFields({ card, onDone }: { card: Doc<"cards"> | null; onDone: () =>
   const me = useQuery(api.users.getMe);
   const createCard = useMutation(api.cards.create);
   const updateCard = useMutation(api.cards.update);
+  const accounts = useQuery(api.accounts.list);
 
   // En creación hay dos pasos; en edición todo cabe en una sola vista
   const [step, setStep] = useState<Step>(1);
@@ -132,6 +134,11 @@ function CardFields({ card, onDone }: { card: Doc<"cards"> | null; onDone: () =>
   // Mientras no se elija color, se sugiere el del banco
   const [colorTouched, setColorTouched] = useState(isEdit);
   const [showMore, setShowMore] = useState(false);
+  // Cuenta de cobro: sale preseleccionada al pagar. Solo cuentas en la moneda de la
+  // tarjeta, porque el pago no convierte; si cambia la moneda, la elegida deja de valer.
+  const [billingChoice, setBillingChoice] = useState<Id<"accounts"> | null>(card?.billingAccountId ?? null);
+  const billingOptions = (accounts ?? []).filter((a) => a.currency === currency);
+  const billingAccountId = billingOptions.some((a) => a._id === billingChoice) ? billingChoice : null;
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<"idle" | "saving" | "done">("idle");
 
@@ -256,6 +263,10 @@ function CardFields({ card, onDone }: { card: Doc<"cards"> | null; onDone: () =>
           paymentDay: parseInt(paymentDay),
           interestRate: interestToSave,
           color,
+          // Sin las cuentas cargadas no se sabe si la de cobro sigue disponible: no se toca
+          ...(billingAccountId
+            ? { billingAccountId }
+            : card.billingAccountId && accounts !== undefined ? { clearBillingAccount: true } : {}),
         });
       } else {
         await createCard({
@@ -271,6 +282,7 @@ function CardFields({ card, onDone }: { card: Doc<"cards"> | null; onDone: () =>
           currency,
           color,
           icon: "credit-card",
+          billingAccountId: billingAccountId ?? undefined,
         });
       }
       haptic(15);
@@ -674,6 +686,29 @@ function CardFields({ card, onDone }: { card: Doc<"cards"> | null; onDone: () =>
                       </p>
                     )}
                   </div>
+
+                  {billingOptions.length > 0 && (
+                    <div className="space-y-2">
+                      <span id={`${formId}-billing`} className={FIELD_LABEL}>La pagas desde</span>
+                      <div role="radiogroup" aria-labelledby={`${formId}-billing`} className={OVERFLOW_ROW}>
+                        {billingOptions.map((a) => (
+                          <SourceChip
+                            key={a._id}
+                            selected={billingAccountId === a._id}
+                            onSelect={() => { haptic(); setBillingChoice(billingAccountId === a._id ? null : a._id); }}
+                            color={a.color}
+                            name={a.name}
+                            detail={a.bankName ?? a.currency}
+                          />
+                        ))}
+                      </div>
+                      <p className="px-1 text-xs text-muted-foreground">
+                        {billingAccountId
+                          ? "Saldrá elegida cuando vayas a pagar. Tócala otra vez para quitarla."
+                          : "Opcional: la cuenta que saldrá elegida cuando vayas a pagar."}
+                      </p>
+                    </div>
+                  )}
 
                   {isEdit ? (
                     <>

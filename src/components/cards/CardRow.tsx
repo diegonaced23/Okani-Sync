@@ -12,9 +12,10 @@ import {
   useTransform,
   type PanInfo,
 } from "framer-motion";
-import { Archive, ArchiveRestore, GripVertical, Pencil } from "lucide-react";
+import { Archive, ArchiveRestore, Banknote, Eye, EyeOff, GripVertical, Pencil } from "lucide-react";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { formatCents } from "@/lib/money";
+import { formatCardBalance } from "@/lib/cardCycle";
 import { cn } from "@/lib/utils";
 import { CardFace } from "./CardFace";
 import {
@@ -48,6 +49,8 @@ export function CardRow({
   onOpen,
   onEdit,
   onToggleArchive,
+  onToggleInclude,
+  onPay,
   onDragEnd,
 }: {
   card: Card;
@@ -60,6 +63,10 @@ export function CardRow({
   onOpen: () => void;
   onEdit: () => void;
   onToggleArchive: () => void;
+  /** Sacarla del total o devolverla, igual que una cuenta. Sin él no se ofrece. */
+  onToggleInclude?: () => void;
+  /** Pagar la tarjeta: la única entrada al pago junto con el detalle. */
+  onPay?: () => void;
   onDragEnd: () => void;
 }) {
   const reduce = useReducedMotion();
@@ -78,10 +85,19 @@ export function CardRow({
   const tone = usageTone(usage);
   const due = archived || card.currentBalance <= 0 ? null : dueOf(card, nowMs);
 
+  const excluded = card.includeInBalance === false;
   const actions = archived
     ? [{ key: "unarchive", label: "Restaurar", icon: ArchiveRestore, className: "bg-[var(--os-cyan-2)]", onAction: onToggleArchive }]
     : [
+        ...(onPay && card.currentBalance > 0
+          ? [{ key: "pay", label: "Pagar", icon: Banknote, className: "bg-[var(--os-lime-2)]", onAction: onPay }]
+          : []),
         { key: "edit", label: "Editar", icon: Pencil, className: "bg-[var(--os-violet-2)]", onAction: onEdit },
+        ...(onToggleInclude
+          ? [excluded
+              ? { key: "include", label: "Sumar", icon: Eye, className: "bg-[var(--os-lime-2)]", onAction: onToggleInclude }
+              : { key: "exclude", label: "Excluir", icon: EyeOff, className: "bg-[var(--os-cyan-2)]", onAction: onToggleInclude }]
+          : []),
         { key: "archive", label: "Archivar", icon: Archive, className: "bg-[var(--os-orange-2)]", onAction: onToggleArchive },
       ];
 
@@ -238,7 +254,7 @@ export function CardRow({
               color={card.color}
               trailing={
                 <span className="font-mono-num shrink-0 font-bold">
-                  {formatCents(card.currentBalance, card.currency)}
+                  {formatCardBalance(card.currentBalance, card.currency)}
                 </span>
               }
             />
@@ -265,6 +281,7 @@ export function CardRow({
                   </strong>
                 </p>
                 <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {excluded && !archived ? "Fuera del total · " : ""}
                   {card.bankName} · corte {card.cutoffDay}
                   {card.interestRate ? ` · ${(card.interestRate * 100).toFixed(1)}% m.v.` : ""}
                 </p>

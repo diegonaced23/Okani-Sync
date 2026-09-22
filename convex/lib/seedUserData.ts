@@ -12,7 +12,7 @@
  * dejaría la app rota sin avisar.
  */
 
-import { DEFAULT_CATEGORIES, SYSTEM_CATEGORIES } from "../../src/lib/constants";
+import { DEFAULT_CATEGORIES } from "../../src/lib/constants";
 import type { MutationCtx } from "../_generated/server";
 
 /** Valores del perfil con los que nace una cuenta. */
@@ -60,21 +60,6 @@ export async function seedInitialUserData(
       isDefault: true,
       archived: false,
       order: i,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  for (const sysCat of SYSTEM_CATEGORIES) {
-    await ctx.db.insert("categories", {
-      userId,
-      name: sysCat.name,
-      type: sysCat.type,
-      color: sysCat.color,
-      icon: sysCat.icon,
-      isDefault: false,
-      isSystem: true,
-      archived: false,
       createdAt: now,
       updatedAt: now,
     });

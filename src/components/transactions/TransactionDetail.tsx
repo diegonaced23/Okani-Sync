@@ -243,10 +243,12 @@ export function TransactionDetail({ tx, onEdit, onDelete, editButtonRef }: Trans
         </div>
       )}
 
-      {/* Una reasignación no se borra: se corrige creando otra */}
+      {/* Lo que no se borra suelto, y cómo corregirlo */}
       {!canDelete && (
         <p className="pt-1 text-center text-xs text-muted-foreground">
-          Una reasignación de saldo no se elimina. Si el saldo quedó mal, ajústalo de nuevo desde la cuenta.
+          {tx.type === "ajuste"
+            ? "Una reasignación de saldo no se elimina. Si el saldo quedó mal, ajústalo de nuevo desde la cuenta."
+            : "Es parte de una compra con tarjeta. Para quitarlo, elimina o edita la compra."}
         </p>
       )}
 
