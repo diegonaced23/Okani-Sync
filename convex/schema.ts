@@ -85,6 +85,11 @@ export default defineSchema({
     // `undefined` = nunca ha entrado desde que existe el campo; la interfaz lo
     // dice así en vez de inventarse una fecha.
     lastSeenAt: v.optional(v.number()),
+    // Obliga a definir contraseña antes de usar la app (ver AuthGuard y
+    // /definir-password). Opcional a propósito: `undefined` significa "no
+    // aplica", así que ningún usuario existente queda atrapado en el guard al
+    // desplegar el campo.
+    mustSetPassword: v.optional(v.boolean()),
   })
     .index("by_clerkId", ["clerkId"])
     .index("by_authId", ["authId"])
@@ -566,6 +571,34 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_clerk_session", ["clerkSessionId"]),
+
+  // ============================================================
+  // SOLICITUDES DE REGISTRO — formulario público de /solicitar-acceso.
+  // NO es el gate de acceso: aprobar una solicitud EMITE una fila en
+  // `invitations`, que es lo que lee users.ensureExists. Son tablas separadas
+  // porque son cosas distintas: esto lo escribe un desconocido y puede
+  // rechazarse; una invitación la emite un admin y da acceso.
+  // ============================================================
+  registrationRequests: defineTable({
+    email: v.string(),        // SIEMPRE normalizado (normalizeEmail)
+    name: v.string(),
+    city: v.string(),
+    source: v.string(),       // clave de REGISTRATION_SOURCES
+    referredBy: v.optional(v.string()),
+    note: v.string(),         // por qué quiere usar la app
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected")
+    ),
+    createdAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.string()),   // clerkId del admin que decidió
+  })
+    // by_createdAt es para el limitador por ventana de tiempo, no para la UI.
+    .index("by_email", ["email"])
+    .index("by_status", ["status"])
+    .index("by_createdAt", ["createdAt"]),
 
   // ============================================================
   // INVITACIONES — Control de acceso: solo usuarios invitados por un admin

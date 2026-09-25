@@ -23,6 +23,7 @@ import type * as actions_sendMagicLinkEmail from "../actions/sendMagicLinkEmail.
 import type * as actions_sendMigrationMagicLinks from "../actions/sendMigrationMagicLinks.js";
 import type * as actions_sendMonthlySummary from "../actions/sendMonthlySummary.js";
 import type * as actions_sendPushNotification from "../actions/sendPushNotification.js";
+import type * as actions_sendRegistrationEmails from "../actions/sendRegistrationEmails.js";
 import type * as actions_sendResetPasswordEmail from "../actions/sendResetPasswordEmail.js";
 import type * as actions_sendWeeklySummary from "../actions/sendWeeklySummary.js";
 import type * as actions_sendWelcomeEmail from "../actions/sendWelcomeEmail.js";
@@ -46,6 +47,7 @@ import type * as factoryReset from "../factoryReset.js";
 import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
+import type * as lib_accessLink from "../lib/accessLink.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_cardBilling from "../lib/cardBilling.js";
 import type * as lib_cardBudget from "../lib/cardBudget.js";
@@ -72,6 +74,7 @@ import type * as netWorthSnapshots from "../netWorthSnapshots.js";
 import type * as notifications from "../notifications.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as recurringTransactions from "../recurringTransactions.js";
+import type * as registrationRequests from "../registrationRequests.js";
 import type * as reports from "../reports.js";
 import type * as transactions from "../transactions.js";
 import type * as users from "../users.js";
@@ -98,6 +101,7 @@ declare const fullApi: ApiFromModules<{
   "actions/sendMigrationMagicLinks": typeof actions_sendMigrationMagicLinks;
   "actions/sendMonthlySummary": typeof actions_sendMonthlySummary;
   "actions/sendPushNotification": typeof actions_sendPushNotification;
+  "actions/sendRegistrationEmails": typeof actions_sendRegistrationEmails;
   "actions/sendResetPasswordEmail": typeof actions_sendResetPasswordEmail;
   "actions/sendWeeklySummary": typeof actions_sendWeeklySummary;
   "actions/sendWelcomeEmail": typeof actions_sendWelcomeEmail;
@@ -121,6 +125,7 @@ declare const fullApi: ApiFromModules<{
   goals: typeof goals;
   http: typeof http;
   invitations: typeof invitations;
+  "lib/accessLink": typeof lib_accessLink;
   "lib/auth": typeof lib_auth;
   "lib/cardBilling": typeof lib_cardBilling;
   "lib/cardBudget": typeof lib_cardBudget;
@@ -147,6 +152,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   pushSubscriptions: typeof pushSubscriptions;
   recurringTransactions: typeof recurringTransactions;
+  registrationRequests: typeof registrationRequests;
   reports: typeof reports;
   transactions: typeof transactions;
   users: typeof users;

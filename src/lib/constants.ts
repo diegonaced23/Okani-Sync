@@ -163,6 +163,10 @@ export const AUDIT_ACTIONS = {
   USER_ROLE_CHANGED: "user.role.changed",
   /** Un admin anuló una invitación pendiente antes de que se usara. */
   USER_INVITE_REVOKED: "user.invite.revoked",
+  /** Un admin aprobó una solicitud de registro del formulario público. */
+  REGISTRATION_APPROVED: "registration.approved",
+  /** Un admin rechazó una solicitud de registro. El solicitante no se entera. */
+  REGISTRATION_REJECTED: "registration.rejected",
   // Cuentas
   ACCOUNT_CREATED: "account.created",
   ACCOUNT_DELETED: "account.deleted",
@@ -211,6 +215,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   [AUDIT_ACTIONS.USER_DEACTIVATED]: "Usuario desactivado",
   [AUDIT_ACTIONS.USER_ROLE_CHANGED]: "Rol cambiado",
   [AUDIT_ACTIONS.USER_INVITE_REVOKED]: "Invitación revocada",
+  [AUDIT_ACTIONS.REGISTRATION_APPROVED]: "Solicitud de registro aprobada",
+  [AUDIT_ACTIONS.REGISTRATION_REJECTED]: "Solicitud de registro rechazada",
   [AUDIT_ACTIONS.USER_DATA_RESET]: "Datos restablecidos de fábrica",
   [AUDIT_ACTIONS.ACCOUNT_CREATED]: "Cuenta creada",
   [AUDIT_ACTIONS.ACCOUNT_DELETED]: "Cuenta eliminada",
@@ -230,6 +236,41 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
 };
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+
+// ─── Solicitudes de registro ─────────────────────────────────────────────────
+
+/**
+ * De dónde dice la gente que conoció la app. Lista cerrada y no texto libre
+ * para que las respuestas se puedan contar; quien elija "otro" lo explica en
+ * la nota, así que no hay campo extra.
+ */
+export const REGISTRATION_SOURCES = [
+  { value: "amigo", label: "Un amigo o familiar" },
+  { value: "redes", label: "Redes sociales" },
+  { value: "busqueda", label: "Buscando en internet" },
+  { value: "trabajo", label: "En el trabajo" },
+  { value: "otro", label: "Otro" },
+] as const;
+
+/**
+ * Topes de longitud del formulario público. Se aplican en el SERVIDOR: la
+ * mutation no tiene sesión, así que sin ellos es un buzón abierto para escribir
+ * megabytes en la base. El `maxLength` del navegador es solo comodidad.
+ */
+export const REGISTRATION_FIELD_LIMITS = {
+  email: 254,
+  name: 80,
+  city: 80,
+  referredBy: 80,
+  note: 1000,
+} as const;
+
+/**
+ * Tope GLOBAL de solicitudes por hora. El tope por correo ya lo cubre la regla
+ * de "una pendiente por correo"; esto frena una ráfaga desde el mismo sitio con
+ * correos distintos. 20/h es holgado para el uso real y corta en seco un script.
+ */
+export const REGISTRATION_REQUESTS_PER_HOUR = 20;
 
 // ─── Configuración de presupuestos ───────────────────────────────────────────
 

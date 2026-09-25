@@ -1,7 +1,7 @@
 "use node";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { sendAccessMagicLink } from "./adminUsers";
+import { sendAccessMagicLink } from "../lib/accessLink";
 
 /**
  * Fase 4 del corte a Better Auth (docs/migracion-better-auth.md): le manda a

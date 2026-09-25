@@ -5,25 +5,7 @@ import { v } from "convex/values";
 import { AUDIT_ACTIONS } from "../../src/lib/constants";
 import { normalizeEmail } from "../../src/lib/email";
 import { assertAdminFromAction } from "../lib/auth";
-import { createAuth } from "../auth";
-
-/**
- * Envía un magic link de acceso al email dado. Mismo mecanismo que usa
- * cualquier login normal (auth.api.signInMagicLink) — llamado server-side, sin
- * un Request real, así que el chequeo de origen/CSRF de Better Auth (que solo
- * corre cuando hay ctx.request) no aplica; ver originCheckMiddleware.
- *
- * Exportada para que convex/actions/seedAdmin.ts reuse el mismo mecanismo.
- */
-export async function sendAccessMagicLink(
-  ctx: Parameters<typeof createAuth>[0],
-  email: string
-) {
-  await createAuth(ctx).api.signInMagicLink({
-    body: { email, callbackURL: "/" },
-    headers: new Headers(),
-  });
-}
+import { sendAccessMagicLink } from "../lib/accessLink";
 
 /**
  * El administrador invita a un nuevo usuario. La fila de `invitations` sigue

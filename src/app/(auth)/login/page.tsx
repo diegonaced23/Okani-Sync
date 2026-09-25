@@ -30,7 +30,15 @@ export default async function SignInPage() {
         </>
       }
       subtitle="Gestión de finanzas personales"
-      footer="El acceso es solo por invitación. Si no tienes cuenta, pídesela a tu administrador."
+      footer={
+        <>
+          El acceso es solo por invitación.{" "}
+          <a href="/solicitar-acceso" className="font-medium text-lime-text hover:underline">
+            Solicita acceso
+          </a>
+          .
+        </>
+      }
     >
       <SignInForm />
     </AuthShell>

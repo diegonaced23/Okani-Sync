@@ -1,4 +1,5 @@
-import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
+import { action, internalMutation, internalQuery, query, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
@@ -10,9 +11,14 @@ import {
 } from "../src/lib/constants";
 import { normalizeEmail } from "../src/lib/email";
 import { shouldRefreshLastSeen } from "../src/lib/adminHealth";
-import { getCurrentUser, getCurrentUserOrNull, assertAdmin } from "./lib/auth";
+import {
+  getCurrentUser,
+  getCurrentUserOrNull,
+  getCurrentUserFromAction,
+  assertAdmin,
+} from "./lib/auth";
 import { seedInitialUserData } from "./lib/seedUserData";
-import { authComponent } from "./auth";
+import { authComponent, createAuth } from "./auth";
 import {
   DEFAULT_NOTIFICATION_PREFS,
   isNotificationAllowed,
@@ -79,10 +85,8 @@ export const ensureExists = mutation({
       return existing._id;
     }
 
-    // Se usa para el enlace por email de un usuario legacy y para la
-    // búsqueda de invitación (ver más abajo) — no para el email guardado en
-    // `users.email`, que conserva el comportamiento exacto de siempre (sin
-    // normalizar) para no alterar el flujo de Clerk que ya está en producción.
+    // Se usa para el enlace por email de un usuario legacy, para la búsqueda
+    // de invitación y para el `users.email` de un alta nueva (ver más abajo).
     const normalizedEmail = normalizeEmail(identity.email ?? "");
 
     // Primer login de un usuario preexistente bajo Better Auth: vincular por
@@ -154,7 +158,15 @@ export const ensureExists = mutation({
       // y en su primer login real bajo Better Auth terminaría bloqueado con
       // "usuario no invitado" (su invitación ya se consumió acá).
       clerkId: identity.subject,
-      email,
+      // Normalizado, no crudo. Antes se guardaba tal cual "para no alterar el
+      // flujo de Clerk que ya está en producción" — Clerk ya no existe.
+      // Guardarlo crudo reabre el agujero que tapó
+      // migrations:normalizeUserEmails: si el proveedor devolviera el correo
+      // con mayúsculas distintas, el chequeo anti-secuestro de
+      // registrationRequests.approve (que busca por by_email en minúsculas) no
+      // encontraría a este usuario. El trigger onCreate de convex/auth.ts ya
+      // asume que esta columna está en minúsculas.
+      email: normalizedEmail,
       name,
       imageUrl: identity.pictureUrl,
       role: invitation.role,
@@ -170,6 +182,13 @@ export const ensureExists = mutation({
       // que es lo normal el primer día— como «Cuenta dormida»: justo el flujo
       // que vigila la tarjeta de invitaciones.
       lastSeenAt: now,
+      // Obliga a definir contraseña antes de usar la app (ver AuthGuard y
+      // /definir-password). Se marca a TODO usuario nuevo, no solo a los que
+      // llegan por el formulario público: quien entra por magic link no tiene
+      // cuenta `credential` en Better Auth, así que sin esto no puede volver a
+      // entrar nunca —ni siquiera con «¿olvidaste tu contraseña?», que no le
+      // enviaría nada.
+      mustSetPassword: true,
     });
 
     await ctx.db.patch(invitation._id, { status: "accepted", acceptedAt: now });
@@ -645,14 +664,20 @@ export const getByClerkIdInternal = internalQuery({
   },
 });
 
-/** Usado solo por seedAdmin para su chequeo de idempotencia (sin clerkId estable de Clerk que buscar). */
+/**
+ * Busca un usuario por correo. La usa el chequeo de idempotencia de seedAdmin.
+ *
+ * El correo se normaliza acá, igual que se guarda. `first()` y no `unique()`:
+ * si quedaran dos filas con el mismo correo, la respuesta correcta sigue
+ * siendo "ya existe", no lanzar.
+ */
 export const getByEmailInternal = internalQuery({
   args: { email: v.string() },
   handler: async (ctx, { email }) => {
     return await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .unique();
+      .withIndex("by_email", (q) => q.eq("email", normalizeEmail(email)))
+      .first();
   },
 });
 
@@ -696,7 +721,7 @@ export const createFromAdmin = internalMutation({
     const now = Date.now();
     const userId = await ctx.db.insert("users", {
       clerkId: args.clerkId,
-      email: args.email,
+      email: normalizeEmail(args.email),
       name: args.name,
       role: args.role,
       active: true,
@@ -822,3 +847,109 @@ async function touchLastSeen(
   if (!shouldRefreshLastSeen(user.lastSeenAt, now)) return;
   await ctx.db.patch(user._id, { lastSeenAt: now });
 }
+
+/**
+ * Correos de los administradores activos. La usa el aviso de nueva solicitud
+ * de registro: así, un admin que se añada mañana se entera sin tocar ninguna
+ * variable de entorno.
+ */
+export const listAdminEmailsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const admins = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "admin"))
+      .collect();
+    return admins.filter((u) => u.active).map((u) => u.email);
+  },
+});
+
+/**
+ * Quita el flag de contraseña obligatoria. La llama users.setInitialPassword.
+ *
+ * `logAudit` es false cuando el flag se limpia porque la persona YA tenía
+ * contraseña (la definió por /forgot-password): ahí no se cambió ninguna
+ * contraseña y registrarlo sería mentir en el log.
+ */
+export const clearMustSetPassword = internalMutation({
+  args: { clerkId: v.string(), logAudit: v.boolean() },
+  handler: async (ctx, { clerkId, logAudit }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", clerkId))
+      .unique();
+    if (!user) throw new Error("Usuario no encontrado");
+
+    const now = Date.now();
+    await ctx.db.patch(user._id, { mustSetPassword: false, updatedAt: now });
+
+    if (logAudit) {
+      await ctx.db.insert("auditLogs", {
+        userId: clerkId,
+        action: AUDIT_ACTIONS.USER_PASSWORD_CHANGED,
+        createdAt: now,
+      });
+    }
+  },
+});
+
+/**
+ * Define la PRIMERA contraseña del usuario que ya tiene sesión.
+ *
+ * `auth.api.setPassword` es `serverOnly` en Better Auth: no está expuesto por
+ * HTTP, así que no existe `authClient.setPassword` y tiene que llamarse desde
+ * acá. `authComponent.getAuth` arma los headers de la sesión actual a partir de
+ * `identity.sessionId` — es la forma soportada de llamar a un endpoint con
+ * sesión desde una función de Convex.
+ *
+ * Nota para quien mantenga convex/auth.ts: `getHeaders` depende de que
+ * `sessionId` esté en el payload del JWT. Lo inyecta el plugin de Convex
+ * DESPUÉS de esparcir nuestro `definePayload`, así que sobrevive aunque ese
+ * callback no lo mencione. No lo quites.
+ *
+ * `setPassword` lanza PASSWORD_ALREADY_SET si la cuenta ya tiene contraseña, y
+ * ese error SE CAPTURA. Si se dejara propagar sería un bloqueo permanente:
+ * alguien con el flag puesto puede abrir /forgot-password en otra pestaña (es
+ * ruta pública), definir su contraseña por ahí, volver, y quedar rebotando
+ * para siempre contra una pantalla que no puede completar.
+ */
+export const setInitialPassword = action({
+  args: { newPassword: v.string() },
+  handler: async (ctx, { newPassword }): Promise<{ alreadyHadPassword: boolean }> => {
+    const user = await getCurrentUserFromAction(ctx);
+    // Solo quien tiene el flag puesto. Sin esto, cualquier sesión de una cuenta
+    // sin contraseña —un usuario migrado que solo entró por magic link, por
+    // ejemplo— podría fijar una sin reautenticarse, y una sesión robada se
+    // convertiría en acceso permanente que sobrevive a revocar la sesión.
+    if (user.mustSetPassword !== true) {
+      throw new Error("Tu contraseña ya está definida. Cámbiala desde tu perfil.");
+    }
+
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+
+    let alreadyHadPassword = false;
+    try {
+      await auth.api.setPassword({ body: { newPassword }, headers });
+    } catch (err) {
+      // El APIError de Better Auth lleva el código en `body.code`; esa es la
+      // vía buena. El texto del mensaje es el respaldo por si el error llega
+      // envuelto y pierde el cuerpo. Cualquier otro fallo (contraseña corta,
+      // sesión inválida) se vuelve a lanzar para que el usuario lo vea.
+      const codigo = (err as { body?: { code?: string } })?.body?.code;
+      const mensaje = err instanceof Error ? err.message : String(err);
+      const yaTenia =
+        codigo === "PASSWORD_ALREADY_SET" ||
+        /PASSWORD_ALREADY_SET/.test(mensaje) ||
+        /already\s*set/i.test(mensaje);
+      if (!yaTenia) throw err;
+      alreadyHadPassword = true;
+    }
+
+    await ctx.runMutation(internal.users.clearMustSetPassword, {
+      clerkId: user.clerkId,
+      logAudit: !alreadyHadPassword,
+    });
+
+    return { alreadyHadPassword };
+  },
+});

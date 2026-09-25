@@ -67,8 +67,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     me != null &&
     me.active === true &&
     me.role === "admin" &&
+    // La contraseña obligatoria manda sobre el guard de rol: sin esto, los dos
+    // efectos compiten por el redirect y un admin nuevo rebota entre /admin y
+    // /definir-password.
+    me.mustSetPassword !== true &&
     !pathname.startsWith("/admin") &&
     !pathname.startsWith("/perfil");
+
+  // Contraseña obligatoria. Va acá y NO en un guard de servidor en
+  // (app)/layout.tsx por un problema de orden: en el primer login de alguien,
+  // su fila de `users` todavía no existe cuando el layout renderiza —la crea
+  // ensureExists, desde este mismo componente—, así que un getMe de servidor
+  // leería null y no redirigiría. Este componente está suscrito a getMe, así
+  // que ve el flag en cuanto la fila se crea.
+  const mustSetPassword = me != null && me.active === true && me.mustSetPassword === true;
 
   useEffect(() => {
     if (sessionPending || !session || !isAuthenticated) return;
@@ -80,6 +92,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isAdminOnRestrictedRoute) router.replace("/admin");
   }, [isAdminOnRestrictedRoute, router]);
+
+  useEffect(() => {
+    if (mustSetPassword) router.replace("/definir-password");
+  }, [mustSetPassword, router]);
 
   async function handleSignOut() {
     await authClient.signOut();
@@ -144,6 +160,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (mustSetPassword) return <AppShellSkeleton />;
   if (isAdminOnRestrictedRoute) return <AppShellSkeleton />;
 
   return <>{children}</>;

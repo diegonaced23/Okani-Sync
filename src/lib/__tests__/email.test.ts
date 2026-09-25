@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeEmail } from "../email";
+import { findEmailCollisions, normalizeEmail } from "../email";
 
 describe("normalizeEmail", () => {
   it("deja intacto un correo ya normalizado", () => {
@@ -32,5 +32,25 @@ describe("normalizeEmail", () => {
       const once = normalizeEmail(caso);
       expect(normalizeEmail(once)).toBe(once);
     }
+  });
+});
+
+describe("findEmailCollisions", () => {
+  it("no encuentra nada cuando cada correo normalizado es único", () => {
+    expect(findEmailCollisions(["ana@x.com", "Luis@x.com", "pepe@y.com"])).toEqual([]);
+  });
+
+  it("agrupa los correos que colapsan al mismo valor normalizado", () => {
+    expect(
+      findEmailCollisions(["Ana@x.com", "luis@x.com", " ana@X.com", "ana@x.com"])
+    ).toEqual([
+      { normalized: "ana@x.com", originals: ["Ana@x.com", " ana@X.com", "ana@x.com"] },
+    ]);
+  });
+
+  it("cuenta como colisión dos filas con el mismo correo exacto", () => {
+    expect(findEmailCollisions(["ana@x.com", "ana@x.com"])).toEqual([
+      { normalized: "ana@x.com", originals: ["ana@x.com", "ana@x.com"] },
+    ]);
   });
 });

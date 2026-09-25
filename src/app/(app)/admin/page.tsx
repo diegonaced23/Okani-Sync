@@ -6,6 +6,7 @@ import { RatesHealthCard } from "@/components/admin/RatesHealthCard";
 import { CronsHealthCard } from "@/components/admin/CronsHealthCard";
 import { UsersSummaryCard } from "@/components/admin/UsersSummaryCard";
 import { PendingInvitationsCard } from "@/components/admin/PendingInvitationsCard";
+import { PendingRequestsCard } from "@/components/admin/PendingRequestsCard";
 import { DormantUsersCard } from "@/components/admin/DormantUsersCard";
 import { VolumeCard } from "@/components/admin/VolumeCard";
 import { RecentActivityCard } from "@/components/admin/RecentActivityCard";
@@ -50,19 +51,20 @@ export default function AdminDashboardPage() {
             <PendingInvitationsCard index={3} />
             <DormantUsersCard index={4} />
           </div>
+          <PendingRequestsCard index={5} />
         </div>
       </section>
 
       <section className="space-y-2.5">
         <h2 className={FIELD_LABEL}>Uso</h2>
-        <VolumeCard index={5} />
+        <VolumeCard index={6} />
       </section>
 
       <section className="space-y-2.5">
         <h2 className={FIELD_LABEL}>Operación</h2>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <RecentActivityCard index={6} />
-          <ManualRateCard index={7} />
+          <RecentActivityCard index={7} />
+          <ManualRateCard index={8} />
         </div>
       </section>
     </PageContainer>

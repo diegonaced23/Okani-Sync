@@ -6,6 +6,7 @@
  *   # De verdad: recorre todas las tarjetas por lotes y luego las categorías
  *   npx convex run migrations:migrateCardInterestModel
  *   npx convex run migrations:normalizeInvitationEmails
+ *   npx convex run migrations:normalizeUserEmails
  *
  * Todas son idempotentes: se pueden correr más de una vez sin duplicar datos.
  *
@@ -19,7 +20,7 @@ import { internalMutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { normalizeEmail } from "../src/lib/email";
+import { findEmailCollisions, normalizeEmail } from "../src/lib/email";
 import { applyBudgetDelta } from "./lib/transactionEffects";
 import { recomputeInstallmentsPaid } from "./lib/cardHelpers";
 import { ensureInterestCategory } from "./lib/cardBilling";
@@ -419,5 +420,41 @@ export const normalizeInvitationEmails = internalMutation({
       changed++;
     }
     return { total: all.length, changed };
+  },
+});
+
+/**
+ * Pone en forma canónica los correos de `users`.
+ *
+ * `users.email` se guardó históricamente tal cual llegaba del webhook de Clerk,
+ * sin normalizar. Cualquier búsqueda por el índice `by_email` con un correo en
+ * minúsculas se pierde a esos usuarios — y una de esas búsquedas es el chequeo
+ * de `registrationRequests.approve` que impide aprobar una solicitud hecha con
+ * el correo de alguien que ya tiene cuenta. Sin esta migración, ese chequeo
+ * tiene un agujero.
+ *
+ * Si hay correos que colapsan al mismo valor (`Ana@x.com` y `ana@x.com` en
+ * filas distintas) NO toca nada y los devuelve en `collisions`: normalizarlos
+ * dejaría dos usuarios con el mismo correo y los `unique()` sobre `by_email`
+ * del login lanzarían para los dos. Qué fila sobrevive se decide a mano.
+ *
+ * Idempotente: correr dos veces no cambia nada.
+ */
+export const normalizeUserEmails = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("users").collect();
+    const collisions = findEmailCollisions(all.map((u) => u.email));
+    if (collisions.length > 0) {
+      return { total: all.length, changed: 0, collisions };
+    }
+    let changed = 0;
+    for (const user of all) {
+      const normalized = normalizeEmail(user.email);
+      if (normalized === user.email) continue;
+      await ctx.db.patch(user._id, { email: normalized });
+      changed++;
+    }
+    return { total: all.length, changed, collisions };
   },
 });

@@ -2,7 +2,7 @@
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { randomUUID } from "node:crypto";
-import { sendAccessMagicLink } from "./adminUsers";
+import { sendAccessMagicLink } from "../lib/accessLink";
 
 const ADMIN_EMAIL = "diego-naced@hotmail.com";
 const ADMIN_NAME = "Admin OkanySync";

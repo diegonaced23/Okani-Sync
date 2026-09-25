@@ -28,9 +28,15 @@ export const run = internalAction({
 
       if (error) {
         console.error("sendMagicLinkEmail: Resend error →", error);
+        throw new Error(`No se pudo enviar el enlace de acceso: ${error.message}`);
       }
     } catch (err) {
+      // Se relanza: todos los que llaman (aprobar una solicitud, invitar,
+      // reenviar el acceso, el envío masivo de la migración) necesitan saber
+      // que el enlace NO salió. Tragárselo dejaba una solicitud "aprobada" o
+      // un "acceso enviado" cuyo destinatario nunca recibió nada.
       console.error("sendMagicLinkEmail: error inesperado →", err);
+      throw err;
     }
   },
 });

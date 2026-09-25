@@ -5,7 +5,7 @@ import { getSessionCookie } from "better-auth/cookies";
 // "/sign-in" sigue acá aunque la ruta ahora sea "/login": es el origen del
 // redirect 308 de next.config.ts, y tiene que ser alcanzable sin sesión para
 // que los enlaces viejos que están en correos ya enviados lleguen a redirigir.
-const PUBLIC_PREFIXES = ["/login", "/sign-in", "/forgot-password", "/reset-password", "/api/auth", "/sw.js"];
+const PUBLIC_PREFIXES = ["/login", "/sign-in", "/forgot-password", "/reset-password", "/solicitar-acceso", "/api/auth", "/sw.js"];
 
 function isPublicRoute(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));

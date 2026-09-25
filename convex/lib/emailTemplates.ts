@@ -225,3 +225,140 @@ export function magicLinkEmailHtml(url: string): string {
 </body>
 </html>`;
 }
+
+/**
+ * Marco común de los correos de registro. Las tres plantillas de abajo lo
+ * comparten para no repetir la misma tabla HTML tres veces; las plantillas
+ * anteriores de este archivo se quedan como están — reescribirlas no es parte
+ * de este trabajo.
+ *
+ * `bodyHtml` se inserta CRUDO: quien la llama es responsable de haber pasado
+ * por `escapeHtml` todo dato que venga de fuera.
+ */
+function registrationEmailShell(title: string, bodyHtml: string): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#1F262A;font-family:system-ui,sans-serif;color:#F5F5F5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#1F262A;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#343434;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:32px 40px;border-bottom:1px solid #3D4448;">
+              <span style="font-size:24px;font-weight:700;color:#4ADE80;">Okany</span>
+              <span style="font-size:24px;font-weight:300;color:#F5F5F5;"> Sync</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 40px;">${bodyHtml}</td>
+          </tr>
+          <tr>
+            <td style="padding:24px 40px;border-top:1px solid #3D4448;font-size:11px;color:#A3A8AB;">
+              Okany Sync · Gestión de finanzas personales
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/** Acuse de recibo al solicitante. No promete plazo ni resultado. */
+export function registrationReceivedEmailHtml(name: string): string {
+  return registrationEmailShell(
+    "Recibimos tu solicitud",
+    `<h1 style="margin:0 0 16px;font-size:20px;color:#F5F5F5;">Recibimos tu solicitud 📬</h1>
+     <p style="margin:0 0 16px;font-size:14px;color:#A3A8AB;line-height:1.6;">
+       Hola ${escapeHtml(name)}, gracias por escribirnos. El acceso a
+       <strong style="color:#F5F5F5;">Okany Sync</strong> es por invitación, así que
+       vamos a revisar tu solicitud a mano.
+     </p>
+     <p style="margin:0;font-size:14px;color:#A3A8AB;line-height:1.6;">
+       Si la aprobamos, te llegará otro correo a esta misma dirección con tu enlace
+       de acceso. No tienes que hacer nada más por ahora.
+     </p>`
+  );
+}
+
+/**
+ * Aviso a los administradores. Todo dato viene de un desconocido y va dentro de
+ * un HTML: pasa por escapeHtml sin excepción.
+ */
+export function newRegistrationRequestEmailHtml(
+  req: {
+    name: string;
+    email: string;
+    city: string;
+    sourceLabel: string;
+    referredBy?: string;
+    note: string;
+  },
+  adminUrl: string
+): string {
+  const safeAdminUrl =
+    adminUrl.startsWith("https://") || adminUrl.startsWith("http://localhost")
+      ? escapeHtml(adminUrl)
+      : "#";
+
+  const fila = (etiqueta: string, valor: string) =>
+    `<tr>
+       <td style="padding:6px 12px 6px 0;font-size:13px;color:#A3A8AB;white-space:nowrap;vertical-align:top;">${escapeHtml(etiqueta)}</td>
+       <td style="padding:6px 0;font-size:13px;color:#F5F5F5;">${escapeHtml(valor)}</td>
+     </tr>`;
+
+  return registrationEmailShell(
+    "Nueva solicitud de acceso",
+    `<h1 style="margin:0 0 16px;font-size:20px;color:#F5F5F5;">Nueva solicitud de acceso</h1>
+     <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+       ${fila("Nombre", req.name)}
+       ${fila("Correo", req.email)}
+       ${fila("Ciudad", req.city)}
+       ${fila("Nos conoció por", req.sourceLabel)}
+       ${req.referredBy ? fila("Lo refirió", req.referredBy) : ""}
+       ${fila("Motivo", req.note)}
+     </table>
+     <a href="${safeAdminUrl}"
+        style="display:inline-block;background:#4ADE80;color:#052e16;font-weight:700;
+               font-size:14px;padding:12px 28px;border-radius:8px;text-decoration:none;">
+       Revisar en el panel →
+     </a>`
+  );
+}
+
+/**
+ * Aprobación. No lleva el enlace de acceso: ese va en su propio correo, el
+ * magic link que manda Better Auth. Este avisa y explica qué va a pasar, para
+ * que el magic link no llegue sin contexto.
+ */
+export function registrationApprovedEmailHtml(name: string, signInUrl: string): string {
+  const safeUrl =
+    signInUrl.startsWith("https://") || signInUrl.startsWith("http://localhost")
+      ? escapeHtml(signInUrl)
+      : "#";
+
+  return registrationEmailShell(
+    "Tu solicitud fue aprobada",
+    `<h1 style="margin:0 0 16px;font-size:20px;color:#F5F5F5;">Tu solicitud fue aprobada 🎉</h1>
+     <p style="margin:0 0 16px;font-size:14px;color:#A3A8AB;line-height:1.6;">
+       Hola ${escapeHtml(name)}, ya tienes acceso a
+       <strong style="color:#F5F5F5;">Okany Sync</strong>.
+     </p>
+     <p style="margin:0 0 24px;font-size:14px;color:#A3A8AB;line-height:1.6;">
+       Te enviamos aparte un correo con tu <strong style="color:#F5F5F5;">enlace de
+       acceso</strong>. Ábrelo y entra con él: lo primero que te pediremos es definir
+       tu contraseña, y a partir de ahí entras con tu correo y esa contraseña.
+     </p>
+     <a href="${safeUrl}"
+        style="display:inline-block;background:#4ADE80;color:#052e16;font-weight:700;
+               font-size:14px;padding:12px 28px;border-radius:8px;text-decoration:none;">
+       Ir a Okany Sync →
+     </a>`
+  );
+}
